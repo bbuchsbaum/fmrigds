@@ -1,0 +1,26 @@
+Package: fmrigds
+Type: Package
+Title: Group Data Sets for fMRI
+Version: 0.0.0.9000
+Authors@R: c(
+    person("GDS", "Maintainer", email = "maintainer@example.com", role = c("aut", "cre"))
+)
+Description: Implements the Group Data Set (GDS) blueprint and technical specification
+    for representing first-level fMRI outputs in a space-aware, statistically principled,
+    and lazy-evaluated R package. The package scaffolding is a starting point for the
+    implementation defined in TECHNICAL_SPECIFICATION.md.
+License: MIT + file LICENSE
+Encoding: UTF-8
+LazyData: false
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.1
+Imports:
+    Matrix,
+    digest,
+    jsonlite,
+    data.table
+Suggests:
+    testthat (>= 3.0.0),
+    arrow,
+    neuroim2
+Config/testthat/edition: 3
