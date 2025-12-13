@@ -1,0 +1,365 @@
+---
+title: "Getting Started with fmrigds"
+output:
+  rmarkdown::html_vignette:
+    toc: true
+    toc_depth: 3
+vignette: >
+  %\VignetteIndexEntry{Getting Started with fmrigds}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  eval = FALSE
+)
+```
+
+## Introduction
+
+**fmrigds** (Group Data Sets for fMRI) provides a unified framework for
+group-level analysis of first-level fMRI statistical outputs. Whether your data
+lives in CSV files, NIfTI volumes, HDF5 stores, or parcel-based summaries,
+fmrigds gives you a single, consistent API to:
+
+- Load data from any supported format
+- Build analysis pipelines declaratively (lazy evaluation)
+- Derive statistics (t, z, p-values) with correct variance propagation
+- Run group-level analyses (fixed-effects, random-effects, meta-regression)
+- Export results to multiple formats
+
+The key insight is that fMRI group analysis shares common patterns regardless
+of whether you're working with voxels, parcels, or latent components. fmrigds
+abstracts these patterns into a clean, composable interface.
+
+## Core Concepts
+
+### The GDS Object
+
+A **GDS** (Group Data Set) is a container that holds:
+
+- **Assays**: Named statistical maps (beta, variance, t, etc.)
+- **Space**: The spatial representation (voxels, parcels, basis components)
+- **Subjects**: Who contributed data
+- **Contrasts**: What conditions are being compared
+- **Metadata**: Subject-level covariates and provenance information
+
+### Lazy Evaluation
+
+fmrigds uses lazy evaluation: you build a **plan** describing what you want to
+do, then **compute** it when ready. This has several advantages:
+
+1. **Efficiency**: Operations are optimized and streamed for large datasets
+2. **Clarity**: You can inspect and modify the plan before execution
+3. **Reproducibility**: Plans are self-documenting analysis pipelines
+
+```r
+# This doesn't load data yet - it creates a plan
+plan <- gds("my_data.csv") |>
+  derive("t") |>
+  reduce(method = "fixed")
+
+# Now execute the plan
+result <- compute(plan)
+```
+
+## Quick Start: Tabular Data
+
+Let's walk through a complete example using tabular (CSV) data, the simplest
+format to get started with.
+
+### Step 1: Prepare Your Data
+
+fmrigds expects tabular data with these columns:
+
+- `sample`: Spatial unit identifier (e.g., "ROI_1", "voxel_12345")
+- `subject`: Subject identifier (e.g., "sub-01")
+- `contrast`: Condition label (e.g., "faces_vs_places")
+- `beta`: Effect estimate
+- `var` or `se`: Variance or standard error
+
+```r
+library(fmrigds)
+
+# Create example data
+tmp <- tempfile(fileext = ".csv")
+writeLines(c(
+  "sample,subject,contrast,beta,var",
+  "ROI_1,sub-01,cope1,0.5,0.04",
+  "ROI_2,sub-01,cope1,0.8,0.09",
+  "ROI_1,sub-02,cope1,1.0,0.04",
+  "ROI_2,sub-02,cope1,1.2,0.09",
+  "ROI_1,sub-03,cope1,0.7,0.04",
+  "ROI_2,sub-03,cope1,0.9,0.09"
+), tmp)
+```
+
+### Step 2: Create a Plan
+
+Point `gds()` at your data file. The format is auto-detected:
+
+```r
+plan <- gds(tmp)
+plan
+#> GDS Plan
+#>   Source: tabular (CSV)
+#>   Space: sample_labels
+#>   Operations: (none pending)
+```
+
+### Step 3: Compute and Explore
+
+Execute the plan to get a realized GDS object:
+
+```r
+g <- compute(plan)
+
+# What assays do we have?
+names(assays(g))
+#> [1] "beta" "var"
+
+# What's the spatial layout?
+space(g)
+#> <space_sample_labels>
+#>   labels: ROI_1, ROI_2
+
+# Who are our subjects?
+subjects(g)
+#> [1] "sub-01" "sub-02" "sub-03"
+
+# What contrasts?
+contrasts(g)
+#> [1] "cope1"
+```
+
+## Deriving Statistics
+
+The `derive()` verb computes new assays from existing ones. fmrigds knows the
+statistical relationships between common assay types:
+
+```r
+# Derive t-statistics from beta and variance
+plan_with_t <- plan |> derive("t")
+g2 <- compute(plan_with_t)
+
+names(assays(g2))
+#> [1] "beta" "var" "t"
+
+# Derive multiple statistics at once
+plan_full <- plan |> derive(c("t", "z", "p"))
+g3 <- compute(plan_full)
+
+names(assays(g3))
+#> [1] "beta" "var" "t" "z" "p"
+```
+
+Available derivations include:
+
+| Target | Requirements | Description |
+|--------|--------------|-------------|
+| `t` | beta, var | t-statistic |
+| `z` | t (or beta, var) | z-score |
+| `p` | z (or t) | p-value |
+| `se` | var | Standard error |
+| `var` | se | Variance |
+
+## Group-Level Analysis with Reducers
+
+The `reduce()` verb combines data across subjects into group-level summaries.
+
+### Fixed-Effects Meta-Analysis
+
+Assumes a common true effect across subjects, weighted by precision:
+
+```r
+plan_fe <- plan |> reduce(method = "fixed")
+g_fe <- compute(plan_fe)
+
+# Group-level results
+names(assays(g_fe))
+#> [1] "beta" "var" "z" "p" "Q" "I2"
+
+subjects(g_fe)
+#> [1] "meta"
+
+# Access the group effect
+assay(g_fe, "beta")
+```
+
+### Random-Effects Meta-Analysis
+
+Accounts for between-subject heterogeneity using DerSimonian-Laird:
+
+```r
+plan_re <- plan |> reduce(method = "random")
+g_re <- compute(plan_re)
+
+# Includes tau2 (between-subject variance)
+names(assays(g_re))
+#> [1] "beta" "var" "z" "p" "Q" "I2" "tau2"
+```
+
+### Meta-Regression
+
+Include subject-level covariates in the analysis:
+
+```r
+# Define covariates (row names must match subject IDs)
+covariates <- data.frame(
+  age = c(25, 32, 28),
+  group = c("control", "patient", "control"),
+  row.names = c("sub-01", "sub-02", "sub-03")
+)
+
+# Attach covariates and run regression
+plan_reg <- plan |>
+  with_col_data(covariates) |>
+  reduce(method = "meta:fe_reg", formula = ~ age + group)
+
+g_reg <- compute(plan_reg)
+
+# Coefficients for each predictor become separate assays
+names(assays(g_reg))
+#> [1] "coef:(Intercept)" "coef:age" "coef:grouppatient"
+#> [4] "se_coef:(Intercept)" "se_coef:age" "se_coef:grouppatient"
+```
+
+## Writing Results
+
+Use `write_out()` to save results in various formats:
+
+```r
+# Save to HDF5 (preserves all metadata and provenance)
+plan_h5 <- plan |>
+  reduce(method = "fixed") |>
+  write_out("group_results.h5", format = "h5")
+compute(plan_h5)
+
+# Save to CSV (for easy import into other tools)
+plan_csv <- plan |>
+  reduce(method = "fixed") |>
+  write_out("group_results.csv", format = "csv")
+compute(plan_csv)
+```
+
+## Working with NIfTI Files
+
+For voxelwise analyses, fmrigds can read NIfTI statistical maps:
+
+```r
+# Single file
+plan <- gds("cope1.nii.gz")
+
+# Multiple subjects with beta and variance maps
+# Use image_catalog for file discovery (see below)
+```
+
+### File Discovery with image_catalog
+
+When you have many NIfTI files across subjects, `image_catalog()` helps
+organize them:
+
+```r
+# Discover files matching a pattern
+catalog <- image_catalog(
+  root = "study_dir",
+  pattern = "sub-*/stats/*.nii.gz",
+  path_regex = "sub-(?<subject>[^/]+)"
+)
+
+# Map files to assay types
+catalog <- catalog |>
+  map_assays(
+    beta = "cope[0-9]+\\.nii",
+    se = "varcope[0-9]+\\.nii"
+  )
+
+# Convert to GDS plan
+plan <- as_gds(catalog, mask = "group_mask.nii.gz")
+```
+
+## Post-hoc Corrections
+
+Apply multiple comparison corrections after group analysis:
+
+```r
+# Benjamini-Hochberg FDR
+plan_fdr <- plan |>
+  reduce(method = "fixed") |>
+  posthoc("fdr:bh")
+
+g_fdr <- compute(plan_fdr)
+assay(g_fdr, "q")  # FDR-adjusted q-values
+```
+
+Available methods:
+
+- `"fdr:bh"` - Benjamini-Hochberg
+- `"fdr:by"` - Benjamini-Yekutieli
+
+## Inspecting Plans
+
+Before computing, you can examine what operations are pending:
+
+```r
+plan <- gds(tmp) |>
+  derive("t") |>
+  reduce(method = "fixed") |>
+  posthoc("fdr:bh")
+
+# Human-readable summary
+explain(plan)
+
+# Detailed operation list
+explain_plan(plan)
+```
+
+## Validation
+
+Check that your data and plans are well-formed:
+
+```r
+# Validate a GDS object
+g <- compute(plan)
+validate(g)
+
+# Validate a catalog before conversion
+report <- validate(catalog)
+print(report)
+```
+
+## Summary of Key Functions
+
+| Function | Purpose |
+|----------|---------|
+| `gds()` | Create a lazy plan from any supported source |
+| `compute()` | Execute a plan and return results |
+| `derive()` | Add derived statistics (t, z, p, etc.) |
+| `reduce()` | Group-level analysis (fixed, random, regression) |
+| `posthoc()` | Multiple comparison correction |
+| `write_out()` | Save results to file |
+| `with_col_data()` | Attach subject-level covariates |
+| `assays()` / `assay()` | Access statistical maps |
+| `subjects()` | List subjects in the data |
+| `contrasts()` | List contrasts in the data |
+| `space()` | Get spatial representation info |
+| `explain()` | Human-readable summary |
+| `validate()` | Check data integrity |
+
+## Next Steps
+
+- **Spatial FDR**: See `vignette("as-plan-and-spatial-fdr")` for spatially-aware
+  multiple comparison correction
+- **fmristore Integration**: See `vignette("fmristore-ingestion")` for working
+  with fmristore HDF5 files
+- **Technical Details**: See `TECHNICAL_SPECIFICATION.md` for the full design
+  document
+
+## Session Info
+
+```{r session, eval=TRUE}
+sessionInfo()
+```
