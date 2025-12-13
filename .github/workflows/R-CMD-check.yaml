@@ -16,7 +16,7 @@ jobs:
           use-public-rspm: true
       - uses: r-lib/actions/setup-r-dependencies@v2
         with:
-          extra-packages: any::testthat, any::RNifti
+          extra-packages: any::testthat, any::RNifti, any::data.table
       - uses: r-lib/actions/check-r-package@v2
         with:
           args: '--no-manual'

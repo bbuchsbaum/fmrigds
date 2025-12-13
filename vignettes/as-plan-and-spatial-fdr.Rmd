@@ -1,0 +1,74 @@
+---
+title: "Working with realized GDS and spatial FDR"
+output:
+  rmarkdown::html_vignette:
+    toc: true
+    toc_depth: 2
+vignette: >
+  %\VignetteIndexEntry{Working with realized GDS and spatial FDR}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+library(fmrigds)
+set.seed(1)
+```
+
+# Verbs on realized GDS via as_plan()
+
+All verbs accept realized `gds` objects. Internally, fmrigds converts a realized
+GDS to a lazy plan using `as_plan(gds)` and uses an in-memory adapter, so you
+can chain operations without going back to disk.
+
+```{r}
+# Build a tiny ROI CSV
+tmp <- tempfile(fileext = ".csv")
+writeLines(c(
+  "sample,subject,contrast,beta,var",
+  "ROI_1,s1,c1,0.5,0.04",
+  "ROI_1,s2,c1,0.9,0.04",
+  "ROI_2,s1,c1,0.7,0.09",
+  "ROI_2,s2,c1,1.2,0.09"
+), tmp)
+
+# Plan -> realized GDS
+g0 <- compute(gds(tmp))
+
+# Reduce directly on realized object
+g_fe <- reduce(g0, method = "meta:fe") |> compute()
+
+# Post-hoc on realized object (apply after a reduce so p-values exist)
+g_bh <- reduce(g0, method = "meta:fe") |> posthoc(method = "fdr:bh") |> compute()
+
+names(assays(g_fe))  # group-level assays
+names(assays(g_bh))  # includes q
+```
+
+# Spatial FDR (fdr:spatial)
+
+`fdr:spatial` performs a group-wise adjustment by:
+
+- Aggregating p-values within groups via Simes’ method
+- Applying a weighted BH across groups (weights ~ group size, normalized)
+- Broadcasting group q-values back to samples
+
+Requirements:
+
+- Provide `p` (or `z` / `t` + `df`) so p-values can be computed/derived
+- Provide `options$group`, a vector of length equal to the number of samples
+  (first dimension), defining group membership (e.g., ROI/parcel IDs). `NA`
+  entries are ignored. Groups can be numeric, character, or factors.
+
+```{r}
+# Create a realized GDS from p-values
+gp <- compute(gds(tmp, effect_cols = list(p = "var")))  # reusing column for demo
+
+# Two groups, one sample per group (matches 2 samples in tmp)
+grp <- c(1, 2)
+
+# Apply spatial FDR
+gq <- posthoc(gp, method = "fdr:spatial", options = list(group = grp)) |> compute()
+assay(gq, "q")
+```

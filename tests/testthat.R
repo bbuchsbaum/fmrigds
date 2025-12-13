@@ -1,4 +1,4 @@
 library(testthat)
-library(gdsfmri)
+library(fmrigds)
 
-test_check("gdsfmri")
+test_check("fmrigds")

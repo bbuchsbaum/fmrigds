@@ -2,8 +2,8 @@
 
 #' Propagate variance assuming independent samples
 #'
-#' @param M Mapping matrix [n_target × n_source]
-#' @param beta Effect array [n_source × n_subject × n_contrast]
+#' @param M Mapping matrix \code{[n_target x n_source]}
+#' @param beta Effect array \code{[n_source x n_subject x n_contrast]}
 #' @param var Variance array (same dims as beta)
 #'
 #' @return List with `beta` and `var` arrays in target space
@@ -34,7 +34,7 @@ propagate_variance_independent <- function(M, beta, var) {
 
 #' Propagate variance using supplied covariance blocks
 #'
-#' @param M Mapping matrix [n_target × n_source]
+#' @param M Mapping matrix \code{[n_target x n_source]}
 #' @param beta Effect array in source space
 #' @param var Variance array (diagonal entries) in source space
 #' @param cov_provider Function returning covariance matrix for source indices

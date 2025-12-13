@@ -17,6 +17,12 @@ map_to <- function(x,
   add_op(plan, op_map(target_space, map, uncertainty, combine))
 }
 
+#' Eagerly apply space transformation and compute immediately
+#'
+#' @param x Plan, source, or realized GDS
+#' @param ... Arguments passed to map_to(), then compute()
+#'
+#' @return A realized GDS object
 #' @export
 map_to_eager <- function(x, ...) {
   compute(map_to(x, ...))

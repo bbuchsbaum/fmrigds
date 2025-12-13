@@ -32,10 +32,13 @@ space_voxel <- function(dim,
       storage = storage,
       template_id = template_id
     ),
-    class = c("space_voxel", "gds_space")
+    class = c("Space", "space_voxel", "gds_space")
   )
 }
 
+#' Alias for space_voxel
+#'
+#' @rdname space_voxel
 #' @export
 space_voxels <- space_voxel
 
@@ -61,7 +64,7 @@ space_parcels <- function(labels,
       lookup = lookup,
       membership = membership
     ),
-    class = c("space_parcels", "gds_space")
+    class = c("Space", "space_parcels", "gds_space")
   )
 }
 
@@ -96,7 +99,7 @@ space_surface <- function(vertices,
       hemi = hemi,
       template_id = template_id
     ),
-    class = c("space_surface", "gds_space")
+    class = c("Space", "space_surface", "gds_space")
   )
 }
 
@@ -129,7 +132,7 @@ space_basis <- function(k,
       projector = projector,
       voxel_space = voxel_space
     ),
-    class = c("space_basis", "gds_space")
+    class = c("Space", "space_basis", "gds_space")
   )
 }
 
@@ -157,4 +160,21 @@ space_basis <- function(k,
     }
   }
   invisible(NULL)
+}
+#' Create a simple label space for tabular samples
+#'
+#' @param labels Character vector of sample labels
+#' @return Space object of type "sample_labels"
+#' @export
+space_sample_labels <- function(labels) {
+  if (!is.character(labels) || !length(labels)) {
+    stop("`labels` must be a non-empty character vector", call. = FALSE)
+  }
+  structure(
+    list(
+      type = "sample_labels",
+      labels = labels
+    ),
+    class = c("Space", "space_sample_labels", "gds_space")
+  )
 }

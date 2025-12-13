@@ -2,27 +2,20 @@
 
 # Lazy verbs ---------------------------------------------------------------
 
-#' @export
-align <- function(...) {
-  stop("align() plan verb not yet implemented.")
-}
+## Intentionally left blank: real reduce() is implemented in R/verb-reduce.R
 
+#' Eagerly subset a GDS and compute immediately
+#'
+#' @param ... Arguments passed to subset(), then compute()
+#'
+#' @return A realized GDS object
 #' @export
-mask <- function(...) {
-  stop("mask() plan verb not yet implemented.")
-}
+subset_eager <- function(...) compute(subset(...))
 
+#' Eagerly derive statistics and compute immediately
+#'
+#' @param ... Arguments passed to derive(), then compute()
+#'
+#' @return A realized GDS object
 #' @export
-reduce <- function(...) {
-  stop("reduce() plan verb not yet implemented.")
-}
-
-#' @export
-subset_eager <- function(...) {
-  compute(subset(...))
-}
-
-#' @export
-derive_eager <- function(...) {
-  compute(derive(...))
-}
+derive_eager <- function(...) compute(derive(...))

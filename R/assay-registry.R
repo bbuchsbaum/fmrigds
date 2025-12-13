@@ -41,12 +41,20 @@ register_assay <- function(name,
 }
 
 #' Retrieve assay metadata
+#'
+#' @param name Assay name
+#'
+#' @return Assay metadata list or NULL if not found
 #' @export
 assay_info <- function(name) {
   .assay_registry[[name]]
 }
 
 #' Test whether an assay can be linearly mapped
+#'
+#' @param name Assay name
+#'
+#' @return Logical, TRUE if assay can be linearly mapped
 #' @export
 can_map_linear <- function(name) {
   info <- assay_info(name)

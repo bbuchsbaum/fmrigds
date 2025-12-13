@@ -6,7 +6,7 @@ test_that("execute_derive computes core statistics", {
     df = array(30, c(3, 2, 1))
   )
 
-  arrays <- gdsfmri:::execute_derive(arrays, c("var", "se", "t", "z", "p"))
+  arrays <- fmrigds:::execute_derive(arrays, c("var", "se", "t", "z", "p"))
 
   expect_equal(arrays$var[1], 0.25)
   expect_equal(arrays$se[1], 0.5)
@@ -19,10 +19,10 @@ test_that("execute_derive computes core statistics", {
 
 test_that("derive_z from p requires sign", {
   arrays <- list(p = array(0.05, c(1, 1, 1)))
-  expect_error(gdsfmri:::derive_z(arrays), "sign information")
+  expect_error(fmrigds:::derive_z(arrays), "sign.*beta")
 
   arrays$beta <- array(-1, c(1, 1, 1))
-  z <- gdsfmri:::derive_z(arrays)
+  z <- fmrigds:::derive_z(arrays)
   expect_lt(z[1], 0)
 })
 
@@ -31,7 +31,7 @@ test_that("Satterthwaite aggregation matches formula", {
   var_src <- array(c(0.5, 1.0), c(2, 1, 1))
   df_src <- array(c(20, 40), c(2, 1, 1))
 
-  df_out <- gdsfmri:::aggregate_df_satterthwaite(M, var_src, df_src)
+  df_out <- fmrigds:::aggregate_df_satterthwaite(M, var_src, df_src)
 
   expected <- (sum((M^2) * c(0.5, 1.0)))^2 /
     sum((M^4) * (c(0.5, 1.0)^2) / c(20, 40))

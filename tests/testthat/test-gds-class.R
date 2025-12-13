@@ -26,7 +26,7 @@ test_that("provenance builder appends entries", {
   meta <- add_provenance_node(meta, "subset", list(subject = "s01"))
 
   expect_length(meta$provenance$graph, 1)
-  expect_match(meta$provenance$log[[1]], "subset(")
+  expect_match(meta$provenance$log[[1]], "subset(", fixed = TRUE)
 })
 
 test_that("space constructors validate inputs", {

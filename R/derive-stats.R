@@ -61,6 +61,15 @@ derive_z <- function(arrays) {
     return(stats::qnorm(1 - arrays$p / 2) * sign(arrays$beta))
   }
 
+  # Derive p from F if available, then z if sign information exists
+  if (all(c("F", "df1", "df2") %in% names(arrays))) {
+    pF <- stats::pf(arrays$F, arrays$df1, arrays$df2, lower.tail = FALSE)
+    if (!"beta" %in% names(arrays)) {
+      stop("Cannot derive signed z from F without effect sign (beta); use p or Fisher/Lancaster combiners.", call. = FALSE)
+    }
+    return(stats::qnorm(1 - pF / 2) * sign(arrays$beta))
+  }
+
   stop("Cannot derive z: require {t, df} or {p, beta}", call. = FALSE)
 }
 

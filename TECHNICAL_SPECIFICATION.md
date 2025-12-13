@@ -986,18 +986,19 @@ write_out <- function(x, path, format = c("h5", "nifti", "csv", "parquet"),
 **Parameters:**
 - `path`: Output file path
 - `format`: Output format
-  - `h5`: HDF5 with GDS layout
-  - `nifti`: NIfTI-1 (requires voxel space or mapping)
-  - `csv`: CSV (tabular; good for parcels/ROI)
-  - `parquet`: Parquet (columnar; good for large tables)
-- `options`: Format-specific options
+  - `h5`: HDF5 with GDS layout (`options$overwrite`, etc.)
+  - `nifti`: NIfTI-1 (requires voxel space or mapping; `options$stat` selects assay)
+  - `csv`: CSV (tabular; good for parcels/ROI; `options$stats`, `options$drop_na`)
+  - `parquet`: Parquet (columnar; good for large tables; requires `arrow`)
+- `options`: Format-specific options (examples above)
 
 **Returns:** Modified `gds_plan`
 
 **Execution Behavior:**
 - Does NOT write until `compute()` is called
 - Can be final sink for `compute()` or intermediate output
-- Provenance is written to output metadata
+- Provenance is written to output metadata and persisted in `/gds/provenance` (HDF5)
+- For non-HDF5 formats, exports are derived from the realized `gds` returned by `compute()`
 
 ### 3.9 compute() - Execute Plan
 
@@ -1034,9 +1035,9 @@ compute <- function(plan,
 **Parameters:**
 - `sink`: Where to materialize results
   - `memory`: In-memory R arrays
-  - `HDF5`: On-disk HDF5 with delayed access
+  - `HDF5`: On-disk HDF5 with delayed access (use `write_out()` for CSV/Parquet/NIfTI)
 - `path`: Output path (required for `HDF5` sink)
-- `block`: Block size for streaming (list with axis names)
+- `block`: Block size for streaming (list with axis names); forwarded to adapter `read()` for chunked processing
 - `scheduler`: Parallelization strategy
 - `cache`: Enable plan-level caching
 - `verbose`: Print execution details
@@ -3249,6 +3250,1057 @@ result <- compute(plan)
 ### 11.4 Breaking Changes (None Expected)
 
 No breaking changes for existing `group_data` users. New GDS API is additive.
+
+---
+
+## 12. fmrireg Integration: Plugin Architecture
+
+### 12.1 Design Principles
+
+**The Bridge Pattern: fmrireg.gds as a Mounting Kit**
+
+The purpose of `fmrireg.gds` is **not** to replace or duplicate anything in fmrireg. It exists purely as a **"bridge" layer** that lets two autonomous systems communicate cleanly without either depending on the other:
+
+| Package | Primary Responsibility | Depends On |
+|---------|------------------------|------------|
+| **gdsfmri** | Data orchestration: GDS model, spaces, masks, alignment, lazy pipeline, I/O | — |
+| **fmrireg** | Statistical computation: meta-analysis, evidence combiners, spatial FDR | — |
+| **fmrireg.gds** | Translator/bridge: registers fmrireg's methods inside GDS pipeline | gdsfmri, fmrireg |
+
+**Analogy:**
+- `fmrireg` = high-performance engine (statistical methods)
+- `gdsfmri` = car chassis (data structure, steering, wheels, fuel lines)
+- `fmrireg.gds` = mounting kit that lets the engine bolt cleanly into the chassis
+
+Without it, both are fine on their own. With it, you get a complete, driveable system.
+
+**Clear Separation of Concerns:**
+
+- **gdsfmri** owns:
+  - Data model: `[sample × subject × contrast]` dimensional format
+  - Spaces & maps: voxel/parcel/surface/basis with subject→group alignment
+  - Uncertainty propagation across space maps (beta/var only; stats re-derived)
+  - Lazy pipeline: Plan + block streaming + provenance + I/O adapters
+  - Operator registries: pluggable reducers and post-hoc steps (generic infrastructure)
+
+- **fmrireg** owns:
+  - Meta-analysis & meta-regression engines (FE/REML/PM/DL, moderators, heterogeneity)
+  - Evidence combiners (Stouffer/Lipták, Fisher, Lancaster) for t/z/F/χ² families
+  - Multiple-comparison control (structure-adaptive spatial FDR, cluster-extent)
+  - All statistical algorithms (single source of truth)
+
+- **fmrireg.gds** owns:
+  - **Only registration code** (no algorithms)
+  - `.onLoad()` hook that calls `gdsfmri::register_reducer()` and `gdsfmri::register_posthoc()`
+  - Thin wrappers that call `fmrireg::meta_random_core()`, `fmrireg::spatial_fdr_core()`, etc.
+  - Optional convenience functions (e.g., `fmri_meta()` sugar)
+  - **~100-300 lines of code total**
+
+**Integration Strategy:** Plugin API, not object conversion
+
+- fmrireg exposes stateless kernels that operate on blocks shaped `[subjects × samples_block]`
+- GDS calls these kernels during `compute()` while streaming data
+- fmrireg.gds makes fmrireg **discoverable and callable** inside the GDS execution engine
+- No round-trip conversions between data models
+- No algorithm duplication (all algorithms stay in fmrireg)
+
+**Dependency Structure (one-way, acyclic):**
+
+```
+fmrireg.gds → Imports: fmrireg, gdsfmri
+gdsfmri     → no dependency on either package (optional plugin)
+fmrireg     → no dependency on gdsfmri or fmrireg.gds (autonomous)
+```
+
+**What happens without fmrireg.gds installed:**
+- gdsfmri can read, align, and organize data but has no meta-analysis methods
+- fmrireg can analyze data, but only after you reshape it into `group_data_*` format
+- Both packages work independently
+
+**What happens with fmrireg.gds installed:**
+- When fmrireg.gds loads, it tells gdsfmri: "Here are reducers called `meta:pm`, `meta:reml`, `combine:stouffer`, `fdr:spatial`, etc. When a Plan asks for these, call my functions."
+- Under the hood, those reducers just call `fmrireg::meta_random_core()` or `fmrireg::spatial_fdr_core()` - no data conversion, no copy, just streamed arrays
+- Users write `reduce(method = "meta:pm")` and GDS seamlessly calls fmrireg
+
+**Architectural Benefits:**
+- **No circular dependencies** - clean acyclic graph
+- **Optional integration** - install fmrireg.gds only if you need meta-analysis in GDS pipelines
+- **Maintenance isolation** - statistical updates in fmrireg; data-model changes in gdsfmri
+- **Open plugin system** - later you could have `nilearn.gds`, `afni.gds`, etc., all coexisting
+- **Independent testing** - fmrireg tests pure statistical kernels; fmrireg.gds tests registration
+
+**Visual Summary:**
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         User Code                               │
+│  library(gdsfmri)                                              │
+│  library(fmrireg.gds)  # Loads bridge, registers reducers     │
+│                                                                 │
+│  plan <- gds("data.nii.gz") %>%                                │
+│    reduce(method = "meta:pm") %>%                              │
+│    posthoc(method = "fdr:spatial")                             │
+│  result <- compute(plan)                                       │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                        gdsfmri                                  │
+│  • Data model [sample × subject × contrast]                    │
+│  • Spaces, masks, alignment                                    │
+│  • Lazy Plan + block streaming                                 │
+│  • Reducer/posthoc registries (generic)                        │
+│  • compute() executor                                          │
+│                                                                 │
+│  During compute():                                             │
+│    1. Streams blocks [subjects × samples]                      │
+│    2. Calls get_reducer("meta:pm")                             │
+│    3. Executes registered kernel on block                      │
+│    4. Writes results to sink                                   │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              │ (looks up registered methods)
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                      fmrireg.gds (bridge)                       │
+│  • .onLoad() registers methods:                                │
+│      register_reducer("meta:pm", wrapper_fn)                   │
+│      register_posthoc("fdr:spatial", wrapper_fn)               │
+│  • Wrapper functions immediately call fmrireg::*_core()        │
+│  • Optional sugar: fmri_meta(plan, ...)                        │
+│  • ~100-300 LOC total                                          │
+│  • ZERO statistical algorithms                                 │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              │ (delegates to)
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                         fmrireg                                 │
+│  • meta_fixed_core(beta, var, X, df, opts)                     │
+│  • meta_random_core(beta, var, X, df, opts)                    │
+│    - DL, PM, REML τ² estimators                                │
+│  • combine_stouffer_core(z, w, opts)                           │
+│  • combine_fisher_core(p, opts)                                │
+│  • spatial_fdr_core(z, graph, alpha, opts)                     │
+│  • ALL STATISTICAL ALGORITHMS (single source of truth)         │
+│  • No dependency on gdsfmri                                    │
+└─────────────────────────────────────────────────────────────────┘
+
+WITHOUT fmrireg.gds:
+  gdsfmri: ✓ works (data orchestration)
+  fmrireg: ✓ works (statistical analysis)
+  Interop: ✗ manual reshaping required
+
+WITH fmrireg.gds:
+  gdsfmri: ✓ works (data orchestration)
+  fmrireg: ✓ works (statistical analysis)
+  Interop: ✓ seamless streaming via registered reducers
+```
+
+### 12.2 Reducer API (Per-Sample Meta-Analysis)
+
+Each reducer operates on one contrast at a time over the subject axis.
+
+**Registration Interface:**
+
+```r
+# In gdsfmri (core package)
+.gds_reducers <- new.env(parent = emptyenv())
+
+register_reducer <- function(name, fun, requires, provides,
+                            options_schema = list(),
+                            doc = NULL) {
+  stopifnot(
+    is.character(name), nzchar(name),
+    is.function(fun),
+    is.character(requires),
+    is.character(provides)
+  )
+
+  .gds_reducers[[name]] <- list(
+    name = name,
+    fun = fun,
+    requires = requires,     # c("beta","var") or c("z") or c("t","df")
+    provides = provides,     # c("beta_g","var_g","tau2","Q","I2","p")
+    options_schema = options_schema,
+    doc = doc
+  )
+
+  invisible(name)
+}
+
+get_reducer <- function(name) {
+  reducer <- .gds_reducers[[name]]
+  if (is.null(reducer)) {
+    stop("Reducer not found: ", name, "\n",
+         "Available reducers: ", paste(ls(.gds_reducers), collapse = ", "))
+  }
+  reducer
+}
+
+list_reducers <- function() {
+  names(.gds_reducers)
+}
+```
+
+**Kernel Signature:**
+
+```r
+# Standard reducer kernel signature
+# beta:  [subjects × samples]   (block; NULL if combiner-only)
+# var:   [subjects × samples]   (block; NULL if combiner-only)
+# X:     [subjects × p]          (moderators from col_data + formula)
+# df:    [subjects × samples]    (degrees of freedom; NULL if not needed)
+# opts:  named list              (method-specific options)
+# return: named list of matrices [1 × samples] for each output assay
+
+reducer_kernel <- function(beta, var, X = NULL, df = NULL, opts = list()) {
+  # Returns: list(beta_g = ..., var_g = ..., tau2 = ..., Q = ..., I2 = ..., p = ...)
+}
+```
+
+**Execution Flow:**
+
+GDS's `reduce(method = ...)` resolves to a registered reducer and streams blocks:
+1. Slices the current contrast
+2. Passes a sample block (e.g., 100k voxels) across all subjects to the kernel
+3. The kernel returns group summaries per sample; GDS writes them to the sink
+
+No conversions. Pure functions. Easy to test and parallelize.
+
+### 12.3 Post-Hoc API (Spatial Multiple Comparisons)
+
+Post-hoc kernels operate on realized group-level maps (per contrast), using a spatial graph supplied by GDS from the active Space.
+
+**Registration Interface:**
+
+```r
+# In gdsfmri (core package)
+.gds_posthoc <- new.env(parent = emptyenv())
+
+register_posthoc <- function(name, fun, requires = "z",
+                            provides = c("q", "reject", "thresh"),
+                            options_schema = list(),
+                            doc = NULL) {
+  stopifnot(
+    is.character(name), nzchar(name),
+    is.function(fun)
+  )
+
+  .gds_posthoc[[name]] <- list(
+    name = name,
+    fun = fun,
+    requires = requires,
+    provides = provides,
+    options_schema = options_schema,
+    doc = doc
+  )
+
+  invisible(name)
+}
+
+get_posthoc <- function(name) {
+  ph <- .gds_posthoc[[name]]
+  if (is.null(ph)) {
+    stop("Post-hoc method not found: ", name)
+  }
+  ph
+}
+```
+
+**Kernel Signature:**
+
+```r
+# Standard post-hoc kernel signature
+# z:      [samples]           (group-level test statistic)
+# graph:  adjacency object    (from space: vox26, mesh, parcel borders)
+# alpha:  numeric             (family-wise error rate)
+# opts:   named list          (method-specific options)
+# return: named list with q-values, rejection mask, threshold
+
+posthoc_kernel <- function(z, graph, alpha = 0.05, opts = list()) {
+  # Returns: list(q = ..., reject = ..., thresh = ...)
+}
+```
+
+**Adjacency Extraction:**
+
+GDS provides spatial structure based on the active space:
+
+```r
+adjacency <- function(space, kind = c("auto", "vox6", "vox18", "vox26",
+                                      "mesh", "parcel")) {
+  kind <- match.arg(kind)
+
+  if (kind == "auto") {
+    kind <- switch(space$type,
+      voxel = "vox26",
+      surface = "mesh",
+      parcels = "parcel",
+      stop("No default adjacency for space type: ", space$type)
+    )
+  }
+
+  switch(kind,
+    vox6 = build_voxel_adjacency(space, connectivity = 6),
+    vox18 = build_voxel_adjacency(space, connectivity = 18),
+    vox26 = build_voxel_adjacency(space, connectivity = 26),
+    mesh = build_mesh_adjacency(space),
+    parcel = build_parcel_adjacency(space)
+  )
+}
+```
+
+### 12.4 fmrireg Kernel Implementations
+
+In `fmrireg` package (no GDS dependency), expose stateless kernels:
+
+**Meta-Analysis Kernels:**
+
+```r
+#' Fixed-effects meta-analysis kernel
+#'
+#' @param beta [subjects × samples] effect estimates
+#' @param var [subjects × samples] variances
+#' @param X [subjects × p] design matrix for moderators (NULL for intercept-only)
+#' @param df [subjects × samples] degrees of freedom (NULL if not available)
+#' @param opts named list (reserved for future options)
+#' @return named list with beta_g, var_g, Q, I2, p
+#' @export
+meta_fixed_core <- function(beta, var, X = NULL, df = NULL, opts = list()) {
+  n_subjects <- nrow(beta)
+  n_samples <- ncol(beta)
+
+  # Inverse-variance weights
+  w <- 1 / var
+  W <- colSums(w, na.rm = TRUE)
+
+  # Weighted mean
+  beta_g <- colSums(beta * w, na.rm = TRUE) / W
+
+  # Pooled variance
+  var_g <- 1 / W
+
+  # Cochran's Q statistic
+  Q <- colSums(w * (beta - rep(beta_g, each = n_subjects))^2, na.rm = TRUE)
+
+  # I² heterogeneity
+  df_Q <- n_subjects - 1
+  I2 <- pmax(0, (Q - df_Q) / Q)
+
+  # Two-tailed p-value
+  se_g <- sqrt(var_g)
+  z_g <- beta_g / se_g
+  p <- 2 * pnorm(-abs(z_g))
+
+  list(
+    beta_g = matrix(beta_g, nrow = 1),
+    var_g = matrix(var_g, nrow = 1),
+    Q = matrix(Q, nrow = 1),
+    I2 = matrix(I2, nrow = 1),
+    p = matrix(p, nrow = 1)
+  )
+}
+
+#' Random-effects meta-analysis kernel (DerSimonian-Laird, Paule-Mandel, REML)
+#'
+#' @param beta [subjects × samples] effect estimates
+#' @param var [subjects × samples] variances
+#' @param X [subjects × p] design matrix (NULL for intercept-only)
+#' @param df [subjects × samples] degrees of freedom (NULL if not available)
+#' @param opts named list; opts$tau2 = c("DL", "PM", "REML")
+#' @return named list with beta_g, var_g, tau2, Q, I2, p
+#' @export
+meta_random_core <- function(beta, var, X = NULL, df = NULL,
+                             opts = list(tau2 = "PM")) {
+  tau2_method <- opts$tau2 %||% "PM"
+  n_subjects <- nrow(beta)
+  n_samples <- ncol(beta)
+
+  # Compute τ² per sample
+  tau2 <- numeric(n_samples)
+
+  if (tau2_method == "DL") {
+    # DerSimonian-Laird estimator (fast)
+    w <- 1 / var
+    W <- colSums(w, na.rm = TRUE)
+    beta_fe <- colSums(beta * w, na.rm = TRUE) / W
+    Q <- colSums(w * (beta - rep(beta_fe, each = n_subjects))^2, na.rm = TRUE)
+    C <- W - colSums(w^2, na.rm = TRUE) / W
+    tau2 <- pmax(0, (Q - (n_subjects - 1)) / C)
+
+  } else if (tau2_method == "PM") {
+    # Paule-Mandel estimator (bisection root-finding)
+    for (i in seq_len(n_samples)) {
+      tau2[i] <- estimate_tau2_pm(beta[, i], var[, i])
+    }
+
+  } else if (tau2_method == "REML") {
+    # REML estimator (optimization)
+    for (i in seq_len(n_samples)) {
+      tau2[i] <- estimate_tau2_reml(beta[, i], var[, i])
+    }
+  }
+
+  # Random-effects weights
+  w_re <- 1 / (var + rep(tau2, each = n_subjects))
+  W_re <- colSums(w_re, na.rm = TRUE)
+
+  # Weighted mean
+  beta_g <- colSums(beta * w_re, na.rm = TRUE) / W_re
+
+  # Pooled variance
+  var_g <- 1 / W_re
+
+  # Heterogeneity statistics
+  w_fe <- 1 / var
+  W_fe <- colSums(w_fe, na.rm = TRUE)
+  Q <- colSums(w_fe * (beta - rep(beta_g, each = n_subjects))^2, na.rm = TRUE)
+  df_Q <- n_subjects - 1
+  I2 <- pmax(0, (Q - df_Q) / Q)
+
+  # Two-tailed p-value
+  se_g <- sqrt(var_g)
+  z_g <- beta_g / se_g
+  p <- 2 * pnorm(-abs(z_g))
+
+  list(
+    beta_g = matrix(beta_g, nrow = 1),
+    var_g = matrix(var_g, nrow = 1),
+    tau2 = matrix(tau2, nrow = 1),
+    Q = matrix(Q, nrow = 1),
+    I2 = matrix(I2, nrow = 1),
+    p = matrix(p, nrow = 1)
+  )
+}
+```
+
+**Evidence Combiner Kernels:**
+
+```r
+#' Stouffer's method (z-score combination)
+#'
+#' @param z [subjects × samples] z-scores
+#' @param w [subjects × samples] weights (NULL for equal weights)
+#' @param opts named list (reserved)
+#' @return named list with z_g
+#' @export
+combine_stouffer_core <- function(z, w = NULL, opts = list()) {
+  n_subjects <- nrow(z)
+  n_samples <- ncol(z)
+
+  if (is.null(w)) {
+    # Equal weights
+    z_g <- colSums(z, na.rm = TRUE) / sqrt(n_subjects)
+  } else {
+    # Weighted
+    numerator <- colSums(z * w, na.rm = TRUE)
+    denominator <- sqrt(colSums(w^2, na.rm = TRUE))
+    z_g <- numerator / denominator
+  }
+
+  list(z_g = matrix(z_g, nrow = 1))
+}
+
+#' Fisher's method (p-value combination)
+#'
+#' @param p [subjects × samples] p-values
+#' @param opts named list (reserved)
+#' @return named list with chi2, df, p_g
+#' @export
+combine_fisher_core <- function(p, opts = list()) {
+  n_subjects <- nrow(p)
+
+  # Chi-square statistic
+  chi2 <- -2 * colSums(log(p), na.rm = TRUE)
+  df <- 2 * n_subjects
+
+  # Combined p-value
+  p_g <- pchisq(chi2, df, lower.tail = FALSE)
+
+  list(
+    chi2 = matrix(chi2, nrow = 1),
+    df = matrix(df, nrow = 1),
+    p_g = matrix(p_g, nrow = 1)
+  )
+}
+
+#' Lancaster's method (weighted Fisher)
+#'
+#' @param p [subjects × samples] p-values
+#' @param w [subjects × samples] weights
+#' @param opts named list (reserved)
+#' @return named list with chi2, df, p_g
+#' @export
+combine_lancaster_core <- function(p, w, opts = list()) {
+  # Weighted log-sum
+  chi2 <- -2 * colSums(w * log(p), na.rm = TRUE)
+
+  # Effective degrees of freedom
+  df <- 2 * colSums(w, na.rm = TRUE)^2 / colSums(w^2, na.rm = TRUE)
+
+  # Combined p-value
+  p_g <- pchisq(chi2, df, lower.tail = FALSE)
+
+  list(
+    chi2 = matrix(chi2, nrow = 1),
+    df = matrix(df, nrow = 1),
+    p_g = matrix(p_g, nrow = 1)
+  )
+}
+```
+
+**Spatial FDR Kernel:**
+
+```r
+#' Structure-adaptive spatial FDR
+#'
+#' @param z [samples] group-level z-scores
+#' @param graph adjacency object from GDS
+#' @param alpha numeric FDR level
+#' @param opts named list; opts$method = c("BH", "BY", "adaptive")
+#' @return named list with q-values, rejection mask, threshold
+#' @export
+spatial_fdr_core <- function(z, graph, alpha = 0.05,
+                             opts = list(method = "adaptive")) {
+  method <- opts$method %||% "adaptive"
+  n_samples <- length(z)
+
+  # Convert z to two-tailed p-values
+  p <- 2 * pnorm(-abs(z))
+
+  if (method == "adaptive") {
+    # Structure-adaptive weighting based on local spatial autocorrelation
+    weights <- compute_spatial_weights(z, graph)
+    q <- weighted_bh(p, weights)
+  } else if (method == "BH") {
+    # Standard Benjamini-Hochberg
+    q <- p.adjust(p, method = "BH")
+  } else if (method == "BY") {
+    # Benjamini-Yekutieli (dependency control)
+    q <- p.adjust(p, method = "BY")
+  }
+
+  # Rejection mask
+  reject <- q <= alpha
+
+  # Discovery threshold (largest p among rejected)
+  if (any(reject)) {
+    thresh <- max(p[reject])
+  } else {
+    thresh <- NA_real_
+  }
+
+  list(
+    q = q,
+    reject = reject,
+    thresh = thresh
+  )
+}
+
+# Helper: compute spatial weights based on local autocorrelation
+compute_spatial_weights <- function(z, graph) {
+  # ... implementation of structure-adaptive weighting ...
+  # Uses graph to compute local Moran's I or similar statistic
+}
+```
+
+### 12.5 fmrireg.gds Bridge Package
+
+**CRITICAL: This package contains ZERO statistical algorithms.**
+
+The bridge package's sole purpose is to:
+1. Call `gdsfmri::register_reducer()` and `gdsfmri::register_posthoc()` on load
+2. Provide thin wrapper functions that immediately delegate to `fmrireg::*_core()` functions
+3. Optionally provide convenience sugar (e.g., `fmri_meta()` that builds a Plan)
+
+All statistical computation happens in `fmrireg`. All data orchestration happens in `gdsfmri`. This package is **only the wiring** between them.
+
+**Package Structure:**
+
+```
+fmrireg.gds/
+  DESCRIPTION        (Imports: fmrireg, gdsfmri)
+  NAMESPACE
+  R/
+    zzz.R            (registration via .onLoad)
+    sugar.R          (optional convenience functions)
+  man/
+  tests/
+```
+
+**DESCRIPTION:**
+
+```
+Package: fmrireg.gds
+Title: Bridge Between fmrireg and gdsfmri
+Version: 0.1.0
+Authors@R: ...
+Description: Registers fmrireg's meta-analytic and inferential kernels
+    with gdsfmri's reducer and post-hoc APIs. Enables seamless streaming
+    meta-analysis without object conversion.
+Depends: R (>= 4.0.0)
+Imports:
+    fmrireg (>= 1.0.0),
+    gdsfmri (>= 0.1.0)
+Suggests:
+    testthat
+License: MIT + file LICENSE
+```
+
+**R/zzz.R (Registration):**
+
+```r
+.onLoad <- function(libname, pkgname) {
+  # Version guards
+  if (!requireNamespace("gdsfmri", quietly = TRUE) ||
+      !requireNamespace("fmrireg", quietly = TRUE)) {
+    return(invisible())
+  }
+
+  # Optional: check minimum versions
+  if (utils::packageVersion("fmrireg") < "1.0.0") {
+    warning("fmrireg.gds requires fmrireg >= 1.0.0")
+    return(invisible())
+  }
+
+  # Register meta-analysis reducers
+  try(gdsfmri::register_reducer(
+    name = "meta:fixed",
+    fun = function(beta, var, X, df, opts) {
+      fmrireg::meta_fixed_core(beta, var, X, df, opts)
+    },
+    requires = c("beta", "var"),
+    provides = c("beta_g", "var_g", "Q", "I2", "p"),
+    doc = "Fixed-effects inverse-variance weighted meta-analysis"
+  ), silent = TRUE)
+
+  try(gdsfmri::register_reducer(
+    name = "meta:dl",
+    fun = function(beta, var, X, df, opts) {
+      fmrireg::meta_random_core(beta, var, X, df,
+                                opts = c(opts, list(tau2 = "DL")))
+    },
+    requires = c("beta", "var"),
+    provides = c("beta_g", "var_g", "tau2", "Q", "I2", "p"),
+    doc = "Random-effects meta-analysis (DerSimonian-Laird τ²)"
+  ), silent = TRUE)
+
+  try(gdsfmri::register_reducer(
+    name = "meta:pm",
+    fun = function(beta, var, X, df, opts) {
+      fmrireg::meta_random_core(beta, var, X, df,
+                                opts = c(opts, list(tau2 = "PM")))
+    },
+    requires = c("beta", "var"),
+    provides = c("beta_g", "var_g", "tau2", "Q", "I2", "p"),
+    doc = "Random-effects meta-analysis (Paule-Mandel τ²)"
+  ), silent = TRUE)
+
+  try(gdsfmri::register_reducer(
+    name = "meta:reml",
+    fun = function(beta, var, X, df, opts) {
+      fmrireg::meta_random_core(beta, var, X, df,
+                                opts = c(opts, list(tau2 = "REML")))
+    },
+    requires = c("beta", "var"),
+    provides = c("beta_g", "var_g", "tau2", "Q", "I2", "p"),
+    doc = "Random-effects meta-analysis (REML τ²)"
+  ), silent = TRUE)
+
+  # Register evidence combiners
+  try(gdsfmri::register_reducer(
+    name = "combine:stouffer",
+    fun = function(beta, var, X, df, opts) {
+      # GDS passes z in opts$z_block when requires = "z"
+      z_block <- opts$z_block
+      weights <- opts$weights
+      fmrireg::combine_stouffer_core(z_block, weights, opts)
+    },
+    requires = "z",
+    provides = "z_g",
+    doc = "Stouffer's method for z-score combination"
+  ), silent = TRUE)
+
+  try(gdsfmri::register_reducer(
+    name = "combine:fisher",
+    fun = function(beta, var, X, df, opts) {
+      p_block <- opts$p_block
+      fmrireg::combine_fisher_core(p_block, opts)
+    },
+    requires = "p",
+    provides = c("chi2", "df", "p_g"),
+    doc = "Fisher's method for p-value combination"
+  ), silent = TRUE)
+
+  try(gdsfmri::register_reducer(
+    name = "combine:lancaster",
+    fun = function(beta, var, X, df, opts) {
+      p_block <- opts$p_block
+      weights <- opts$weights
+      fmrireg::combine_lancaster_core(p_block, weights, opts)
+    },
+    requires = "p",
+    provides = c("chi2", "df", "p_g"),
+    doc = "Lancaster's weighted Fisher method"
+  ), silent = TRUE)
+
+  # Register post-hoc methods
+  try(gdsfmri::register_posthoc(
+    name = "fdr:spatial",
+    fun = function(z, graph, alpha, opts) {
+      fmrireg::spatial_fdr_core(z, graph, alpha, opts)
+    },
+    requires = "z",
+    provides = c("q", "reject", "thresh"),
+    doc = "Structure-adaptive spatial FDR"
+  ), silent = TRUE)
+
+  invisible()
+}
+```
+
+**R/sugar.R (Optional Convenience):**
+
+```r
+#' Convenience wrapper for fmri_meta on GDS plans
+#'
+#' @param plan gds_plan object
+#' @param method meta-analysis method ("meta:pm", "meta:reml", "meta:fixed")
+#' @param formula model formula for moderators (default: ~ 1)
+#' @param alpha FDR level for spatial post-hoc (NULL to skip)
+#' @param ... additional options passed to reducer
+#' @return gds_plan with reduce() and optionally posthoc() added
+#' @export
+fmri_meta <- function(plan, method = "meta:pm", formula = ~ 1,
+                     alpha = NULL, ...) {
+  stopifnot(inherits(plan, "gds_plan"))
+
+  # Add reduce operation
+  plan <- gdsfmri::reduce(plan, method = method, formula = formula,
+                         options = list(...))
+
+  # Optionally add spatial FDR
+  if (!is.null(alpha)) {
+    plan <- gdsfmri::posthoc(plan, method = "fdr:spatial",
+                            options = list(alpha = alpha))
+  }
+
+  plan
+}
+```
+
+### 12.6 GDS Execution: Calling Registered Reducers
+
+Inside `gdsfmri`, the `compute()` function calls registered reducers during block streaming:
+
+**Reducer Execution Hook:**
+
+```r
+# Inside gdsfmri/R/compute.R
+
+execute_reduce_node <- function(node, assays_block, col_data, space) {
+  # node: op_reduce(method, formula, options)
+  # assays_block: current block [samples × subjects × contrasts]
+  # col_data: data.frame with subject-level covariates
+
+  method <- node$method
+  formula <- as.formula(node$formula)
+  options <- node$options
+
+  # Get reducer
+  reducer <- get_reducer(method)
+
+  # Build design matrix from formula + col_data
+  if (identical(formula, ~ 1)) {
+    X <- NULL
+  } else {
+    X <- model.matrix(formula, data = col_data)
+  }
+
+  # Extract required assays
+  beta <- if ("beta" %in% reducer$requires) assays_block$beta else NULL
+  var <- if ("var" %in% reducer$requires) assays_block$var else NULL
+  df <- if ("df" %in% reducer$requires) assays_block$df else NULL
+
+  # For evidence combiners (z/p-only), pass via options
+  if ("z" %in% reducer$requires) {
+    options$z_block <- assays_block$z
+  }
+  if ("p" %in% reducer$requires) {
+    options$p_block <- assays_block$p
+  }
+
+  # Process each contrast separately
+  n_contrasts <- dim(assays_block$beta)[3]
+  results <- vector("list", n_contrasts)
+
+  for (k in seq_len(n_contrasts)) {
+    # Extract contrast slice: [samples × subjects]
+    beta_k <- if (!is.null(beta)) t(beta[, , k]) else NULL  # [subjects × samples]
+    var_k <- if (!is.null(var)) t(var[, , k]) else NULL
+    df_k <- if (!is.null(df)) t(df[, , k]) else NULL
+
+    # Call reducer kernel
+    result_k <- reducer$fun(beta_k, var_k, X, df_k, options)
+
+    # result_k: named list with [1 × samples] matrices
+    results[[k]] <- result_k
+  }
+
+  # Combine results across contrasts: [samples × 1 × contrasts]
+  combined <- list()
+  for (assay_name in reducer$provides) {
+    combined[[assay_name]] <- array(
+      sapply(results, function(r) r[[assay_name]]),
+      dim = c(nrow(results[[1]][[assay_name]]), 1, n_contrasts)
+    )
+  }
+
+  combined
+}
+```
+
+**Post-Hoc Execution Hook:**
+
+```r
+# Inside gdsfmri/R/compute.R
+
+execute_posthoc_node <- function(node, assays_realized, space) {
+  # node: op_posthoc(method, options)
+  # assays_realized: realized GDS after reduce
+  # space: gds_space object
+
+  method <- node$method
+  options <- node$options
+  alpha <- options$alpha %||% 0.05
+
+  # Get post-hoc method
+  ph <- get_posthoc(method)
+
+  # Build spatial graph
+  graph <- adjacency(space, kind = options$adjacency %||% "auto")
+
+  # Apply to each contrast
+  n_contrasts <- dim(assays_realized$z)[3]
+  results <- vector("list", n_contrasts)
+
+  for (k in seq_len(n_contrasts)) {
+    z_k <- assays_realized$z[, 1, k]  # [samples]
+
+    # Call post-hoc kernel
+    result_k <- ph$fun(z_k, graph, alpha, options)
+
+    results[[k]] <- result_k
+  }
+
+  # Add post-hoc results as new assays
+  for (assay_name in ph$provides) {
+    assays_realized[[assay_name]] <- array(
+      sapply(results, function(r) r[[assay_name]]),
+      dim = c(length(results[[1]][[assay_name]]), 1, n_contrasts)
+    )
+  }
+
+  assays_realized
+}
+```
+
+### 12.7 User-Facing Workflow
+
+**Example 1: Fixed-effects meta-analysis with spatial FDR**
+
+```r
+library(gdsfmri)
+library(fmrireg.gds)  # Loads and registers reducers
+
+plan <- gds(Sys.glob("sub-*/beta.nii.gz")) %>%
+  subset(subject = paste0("sub-", sprintf("%02d", 1:30))) %>%
+  derive(c("var", "t")) %>%
+  align(map = mni_warp_family) %>%
+  mask(MaskPolicy(scope = "group", rule = "threshold", threshold = 0.95)) %>%
+  reduce(method = "meta:fixed") %>%
+  posthoc(method = "fdr:spatial", options = list(alpha = 0.05)) %>%
+  write_out("group_fixed_fdr.h5", format = "h5")
+
+result <- compute(plan, sink = "memory")
+
+# Access results
+beta_group <- assay(result, "beta_g")  # [samples × 1 × contrasts]
+q_values <- assay(result, "q")         # FDR q-values
+reject_mask <- assay(result, "reject") # Significant voxels
+```
+
+**Example 2: Random-effects with Paule-Mandel estimator**
+
+```r
+plan <- gds("roi_stats.csv") %>%
+  subset(contrast = c("A_main", "B_main", "A:B")) %>%
+  derive(c("var", "t")) %>%
+  reduce(method = "meta:pm") %>%  # Paule-Mandel τ²
+  write_out("roi_meta_pm.csv", format = "csv")
+
+result <- compute(plan)
+
+# Access heterogeneity statistics
+tau2 <- assay(result, "tau2")  # Between-study variance
+I2 <- assay(result, "I2")      # Heterogeneity proportion
+Q <- assay(result, "Q")        # Cochran's Q
+```
+
+**Example 3: Evidence combination (Stouffer) for z-scores only**
+
+```r
+# When you only have t/z statistics (no effect scale)
+plan <- gds("sub-*/t_stat.nii.gz") %>%
+  derive("z") %>%  # Convert t to z
+  reduce(method = "combine:stouffer",
+         options = list(weights = "equal")) %>%
+  write_out("stouffer_combined.h5", format = "h5")
+
+result <- compute(plan)
+z_combined <- assay(result, "z_g")
+```
+
+**Example 4: Meta-regression with moderators**
+
+```r
+# col_data has subject-level covariates: age, group
+plan <- gds(source) %>%
+  derive(c("var", "t")) %>%
+  align(map = mni_warp_family) %>%
+  reduce(method = "meta:reml", formula = ~ group + age) %>%
+  write_out("meta_regression.h5", format = "h5")
+
+result <- compute(plan)
+
+# Extract moderator effects
+beta_intercept <- assay(result, "beta_g")[, 1, , 1]  # Intercept
+beta_group <- assay(result, "beta_g")[, 1, , 2]      # Group effect
+beta_age <- assay(result, "beta_g")[, 1, , 3]        # Age effect
+```
+
+### 12.8 Migration Checklist
+
+**Phase A: Kernel Extraction (fmrireg) – 1-2 weeks**
+
+- [ ] Extract `meta_fixed_core()` from existing `fmri_meta()` code
+- [ ] Extract `meta_random_core(tau2 = "DL|PM|REML")` with consistent signature
+- [ ] Implement `combine_stouffer_core()`, `combine_fisher_core()`, `combine_lancaster_core()`
+- [ ] Extract `spatial_fdr_core()` from existing spatial FDR code
+- [ ] Export kernels with roxygen2 documentation
+- [ ] Add unit tests for kernels (pure function tests, no GDS dependency)
+
+**Phase B: Bridge Package (fmrireg.gds) – 1 week**
+
+- [ ] Create package skeleton with DESCRIPTION (Imports: fmrireg, gdsfmri)
+- [ ] Implement `.onLoad()` registration in R/zzz.R
+- [ ] Add optional sugar: `fmri_meta(plan, method, formula, alpha)`
+- [ ] Add tests: verify registration succeeds, call reducers via GDS
+- [ ] Document usage examples
+
+**Phase C: GDS Registry & Executor (gdsfmri) – 1-2 weeks**
+
+- [ ] Implement `register_reducer()`, `get_reducer()`, `list_reducers()`
+- [ ] Implement `register_posthoc()`, `get_posthoc()`
+- [ ] Add `execute_reduce_node()` hook in compute pipeline
+- [ ] Add `execute_posthoc_node()` hook
+- [ ] Implement `adjacency()` function for spatial graphs
+- [ ] Add provenance tracking: record reducer name + package versions
+
+**Phase D: Validation & Documentation – 2-3 weeks**
+
+- [ ] Round-trip statistical parity tests on known datasets
+- [ ] Benchmark streaming reducers vs legacy pipelines (speed & memory)
+- [ ] Add vignette: "Using fmrireg with GDS"
+- [ ] Add vignette: "Writing custom reducers"
+- [ ] Document reducer/post-hoc API in gdsfmri
+- [ ] CI matrix: test gdsfmri alone, with fmrireg, with fmrireg.gds
+
+**Total Estimated Effort: 5-8 weeks**
+
+### 12.9 Extension: F-Statistics and Future Test Families
+
+**Supporting F-statistics (multi-parameter tests):**
+
+F-statistics don't have an effect scale. Two approaches:
+
+1. **If you have beta/var (preferred):**
+   - Run meta-analysis on beta/var (effect scale preserved)
+   - Derive F from pooled beta/var at group level
+
+2. **If you only have F, df1, df2 (no effect scale):**
+   - Use evidence combiners:
+     - Convert F → p: `p = pf(F, df1, df2, lower.tail = FALSE)`
+     - Apply `combine:fisher` or `combine:lancaster` on p
+   - Or convert F → z and use `combine:stouffer`
+
+**Reducer for F-to-p combiner:**
+
+```r
+# In fmrireg
+combine_f_to_fisher_core <- function(F_stat, df1, df2, opts = list()) {
+  # Convert F to p-values
+  p <- pf(F_stat, df1, df2, lower.tail = FALSE)
+
+  # Apply Fisher's method
+  combine_fisher_core(p, opts)
+}
+
+# Register in fmrireg.gds
+try(gdsfmri::register_reducer(
+  name = "combine:f_fisher",
+  fun = function(beta, var, X, df, opts) {
+    F_block <- opts$F_block
+    df1_block <- opts$df1_block
+    df2_block <- opts$df2_block
+    fmrireg::combine_f_to_fisher_core(F_block, df1_block, df2_block, opts)
+  },
+  requires = c("F", "df1", "df2"),
+  provides = c("chi2", "df", "p_g"),
+  doc = "Fisher's method for F-statistic combination"
+), silent = TRUE)
+```
+
+**Future test families (Bayes factors, Wald/score tests):**
+
+Add new reducers by:
+1. Implementing kernel in fmrireg (or any package)
+2. Registering via `register_reducer()` (declaring `requires` and `provides`)
+3. GDS handles data movement; kernel handles statistics
+
+### 12.10 Advantages of This Architecture
+
+**1. No impedance mismatch:**
+   - Data never bounces between `group_data` and `gds` formats
+   - Streaming blocks go directly to statistical kernels
+
+**2. Single source of truth:**
+   - All algorithms live in fmrireg
+   - No drift, no duplication
+   - fmrireg can evolve independently
+
+**3. Composability:**
+   - Same reducers work on voxels, parcels, surfaces, basis
+   - GDS handles alignment/masks/mapping; fmrireg handles statistics
+
+**4. Testability:**
+   - Kernels are pure functions: easy to unit test
+   - No GDS dependency in fmrireg tests
+   - Integration tests in fmrireg.gds
+
+**5. Extensibility:**
+   - Any package can register reducers/post-hoc methods
+   - No need to modify gdsfmri core
+
+**6. Performance:**
+   - Block streaming with fused operations
+   - No intermediate object creation
+   - Parallelizable across contrasts and blocks
+
+**7. Provenance:**
+   - GDS records reducer name + fmrireg version
+   - Reproducible pipelines with version locking
 
 ---
 

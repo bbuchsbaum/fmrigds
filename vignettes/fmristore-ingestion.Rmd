@@ -1,0 +1,254 @@
+---
+title: "Using fmristore as a GDS Source"
+output:
+  rmarkdown::html_vignette:
+    toc: true
+    toc_depth: 2
+vignette: >
+  %\VignetteIndexEntry{Using fmristore as a GDS Source}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>", eval = FALSE)
+```
+
+# Overview
+
+This vignette shows how to read fMRI first-level results stored in fmristore
+HDF5 files. The fmrigds package includes a built-in fmristore adapter that
+automatically detects and reads multiple layout types.
+
+## Two paths for reading data
+
+**Path B (recommended)**: Native `/gds` group format
+- Files written by `fmrigds::write_out(..., format = "h5")`
+- Perfect round-trip: all metadata, provenance, and structure preserved
+- Use the standard HDF5 adapter (no special options needed)
+
+**Path A (legacy)**: Original fmristore layouts
+- Files written by fmristore package functions
+- Three layout types: LabeledVolumeSet, Parcellated, LatentNeuroVec
+- fmrigds auto-detects the layout and converts to GDS
+
+**Quick answer**: If you control the file creation, use Path B. If you're
+reading existing fmristore files, Path A works automatically.
+
+## Setup
+
+All examples use `eval = FALSE` to avoid build-time dependencies. To run
+locally, install:
+
+```r
+install.packages(c("hdf5r", "fmristore"))
+```
+
+# Native `/gds` layout (Path B)
+
+The simplest case: files with a `/gds` group are read directly with full
+fidelity - no conversion needed.
+
+```r
+library(fmrigds)
+
+# File written by write_out() or containing /gds group
+plan <- gds("group_store.h5")
+g <- compute(plan)
+
+# Everything is preserved exactly as written
+assays(g)              # All assays with original names
+space(g)               # Original space (voxel/parcel/basis)
+g$metadata$provenance  # Full computation history
+```
+
+**When to use**: This is the preferred format for fmrigds workflows. If you're
+creating new files, use `write_out(..., format = "h5")` to write in this format.
+
+# Labeled volumes (Path A: LabeledVolumeSet)
+
+This is the simplest fmristore layout - it stores statistical maps in voxel
+space with one dataset per contrast.
+
+Structure:
+- `/mask`: 3D binary mask defining which voxels have data
+- `/data/<contrast_name>`: Packed vectors of values for masked voxels
+- `/labels`: List of contrast names
+
+```r
+# File written by fmristore::write_labeled_vec()
+plan <- gds("subject01_lvs.h5")  # auto-detected as labeled volume
+g <- compute(plan)
+
+space(g)$type          # "voxel"
+assays(g)              # list: "beta", "var", etc.
+contrasts(g)           # e.g., c("cope1", "cope2")
+dim(assay(g, "beta"))  # [n_voxels × n_subjects × n_contrasts]
+```
+
+**What you get**: Standard voxel-wise statistical maps, ready for group analysis.
+
+**Use case**: Most common format for first-level outputs - one value per voxel
+per contrast (e.g., beta coefficients, t-statistics).
+
+**Note**: Contrast names with special characters are sanitized (e.g., "cope-1" → "cope_1").
+
+# Parcellated (Path A: H5ParcellatedScan/MultiScan)
+
+Parcellated layouts store timeseries data for brain parcels (ROIs/clusters).
+Each file contains:
+
+- `/cluster_map`: 3D integer array mapping voxels to parcel IDs
+- `/scans/<id>`: matrices of parcel × timepoints for each scan
+
+**The challenge**: fmristore stores *timeseries*, but GDS needs *contrasts*.
+
+## Temporal policies
+
+You must tell fmrigds how to convert timepoints into contrasts:
+
+**1. `as_is` (default)** - Treat each timepoint as a separate contrast
+```r
+plan <- gds("parcellated.h5")  # timepoint 1 → contrast 1, etc.
+g <- compute(plan)
+contrasts(g)  # c("t_001", "t_002", "t_003", ...)
+```
+Use when: You want to analyze the full timecourse.
+
+**2. `mean`** - Average all timepoints into one contrast
+```r
+plan <- gds("parcellated.h5", temporal_policy = "mean")
+g <- compute(plan)
+contrasts(g)  # "mean"
+```
+Use when: You just want overall activation (loses temporal info).
+Note: Only `beta` is averaged; `var`/`se` become NA (no uncertainty fabrication).
+
+**3. `design`** - Apply a contrast matrix to extract specific effects
+```r
+# Extract two contrasts from 3 timepoints
+# Column A = timepoint 1, Column B = timepoint 2
+C <- cbind(A = c(1, 0, 0), B = c(0, 1, 0))
+
+plan <- gds(
+  "parcellated.h5",
+  temporal_policy = "design",
+  contrast_matrix = C,
+  contrast_names = c("early", "late")
+)
+
+g <- compute(plan)
+contrasts(g)  # c("early", "late")
+assay(g, "beta")  # [parcel × subject × 2 contrasts]
+```
+Use when: You have a design matrix and want specific linear combinations.
+Variance propagation: If `/var` exists, fmrigds applies `Var(C^T y) = (C^2)^T Var(y)`.
+
+## Space type
+
+After reading, the GDS has `space(g)$type == "parcels"` where each sample
+is a parcel/ROI rather than a voxel.
+
+```r
+plan <- gds("parcellated.h5")
+g <- compute(plan)
+
+space(g)$type          # "parcels"
+dim(assay(g, "beta"))  # [n_parcels × n_subjects × n_contrasts]
+```
+
+# Latent bases (Path A: LatentNeuroVec)
+
+Latent layouts store dimensionality-reduced data where brain activity is
+represented by a small number of spatial components (like PCA/ICA).
+
+Structure:
+- `/basis`: Matrix of spatial components (components × voxels)
+- Per-scan embeddings: How much each component is expressed over time
+
+```r
+plan <- gds("latent_small.h5")
+g <- compute(plan)
+
+space(g)$type      # "basis" (not voxels or parcels)
+dim(assay(g, "beta"))  # [k components × n_subjects × n_contrasts]
+```
+
+**What you get**: Activity patterns in component space rather than voxel space.
+Each "sample" is now a spatial component (e.g., a brain network).
+
+**Use case**: When you've pre-computed a low-dimensional representation
+(e.g., after ICA decomposition) and want to analyze network-level effects.
+
+Note: If the original data had no uncertainty estimates, `var`/`se` will be NA.
+
+# Reading subsets efficiently
+
+Instead of loading entire datasets into memory, you can read specific slices
+using the `block` parameter:
+
+```r
+# Read only first 10 samples (voxels/parcels) and first contrast
+raw <- compute(
+  plan,
+  assays = "beta",
+  block = list(sample = 1:10, contrast = 1)
+)
+dim(raw$beta)  # [10 × n_subjects × 1]
+
+# Read specific subjects
+raw <- compute(
+  plan,
+  assays = c("beta", "var"),
+  block = list(subject = c("sub-01", "sub-03"))
+)
+```
+
+**Use case**: Processing large datasets in chunks, or extracting specific
+regions/conditions without loading everything.
+
+# Provenance tracking
+
+Every `compute()` operation records what was done, enabling reproducible
+analyses:
+
+```r
+# Build a pipeline and execute
+plan <- gds("data.h5")
+plan_reduced <- reduce(plan, method = "fixed")
+g <- compute(plan_reduced)
+
+# Inspect what was done
+g$metadata$provenance$log
+# [1] "[2025-10-29] reduce(method=fixed, weights=1/var, by=contrast)"
+
+g$metadata$provenance$graph  # Structured computation history
+```
+
+For Path B (native `/gds` files), provenance and map metadata are preserved
+when writing and automatically restored when reading.
+
+# Learning more
+
+## Test fixtures
+
+The package includes synthetic test files for all layout types. See:
+- `tests/testthat/helpers-generate-test-fixtures.R` - Fixture generators
+- `tests/testthat/test-adapter-fmristore.R` - Full adapter test suite
+
+Run tests locally to see working examples:
+```r
+devtools::test(filter = "adapter-fmristore")
+```
+
+## Summary
+
+**Path to use**:
+- Creating new files? → Use `write_out(..., format = "h5")` (Path B)
+- Reading existing fmristore files? → Just `gds(path)` (auto-detects layout)
+
+**Key parameters**:
+- Parcellated data? → Set `temporal_policy` ("as_is", "mean", or "design")
+- Large files? → Use `block = list(...)` to read subsets
+- Need provenance? → Automatically tracked in `g$metadata$provenance`
+

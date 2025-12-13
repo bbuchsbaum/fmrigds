@@ -5,7 +5,7 @@
 #' Register a storage adapter
 #'
 #' @param name Adapter name
-#' @param detect Function (source) -> score in [0,1] or FALSE
+#' @param detect Function (source) -> score in \code{[0,1]} or FALSE
 #' @param open Function (source, ...) -> handle
 #' @param probe Function (handle, ...) -> list(metadata)
 #' @param read Function (handle, assays, block = NULL, ...) -> named list of arrays
@@ -34,6 +34,10 @@ register_adapter <- function(name,
 }
 
 #' Retrieve a registered adapter
+#'
+#' @param name Adapter name
+#'
+#' @return Adapter list
 #' @export
 get_adapter <- function(name) {
   adapter <- .adapter_registry[[name]]

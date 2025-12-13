@@ -9,6 +9,7 @@
 #' @param metadata Optional list merged with [`gds_metadata()`]
 #'
 #' @return An object of class `c("gds", "group_data")`
+#' @name gds
 #' @export
 new_gds <- function(assays,
                     space,
@@ -47,18 +48,20 @@ new_gds <- function(assays,
 
 #' Construct default metadata for a GDS object
 #'
-#' @inheritParams new_gds
 #' @param schema_version Schema version string
 #' @param units Named list of assay units
 #' @param provenance Provenance structure (`graph`, `log`, `digest`)
 #' @param software Software metadata (package name, version, R version)
 #' @param alignment Optional alignment metadata
+#' @param map_families Named list of registered map families
 #' @param mask_info Optional mask metadata
 #' @param contrast_info Optional contrast metadata
 #' @param design_mats Optional design matrices metadata
 #' @param notes Optional user notes
+#' @param created Timestamp for when the metadata was created
 #'
 #' @return Metadata list
+#' @name gds_metadata
 #' @export
 gds_metadata <- function(schema_version = "0.1.0",
                          units = list(),
@@ -69,6 +72,7 @@ gds_metadata <- function(schema_version = "0.1.0",
                            R_version = getRversion()
                          ),
                          alignment = NULL,
+                         map_families = list(),
                          mask_info = NULL,
                          contrast_info = NULL,
                          design_mats = NULL,
@@ -80,6 +84,7 @@ gds_metadata <- function(schema_version = "0.1.0",
     provenance = provenance,
     software = software,
     alignment = alignment,
+    map_families = map_families,
     mask_info = mask_info,
     contrast_info = contrast_info,
     design_mats = design_mats,
@@ -156,25 +161,46 @@ add_provenance_node <- function(metadata,
 # -------------------------------------------------------------------------
 # Accessors ----------------------------------------------------------------
 
-#' @export
+#' Extract assays from a GDS object
+#'
+#' @param x A GDS object
+#'
+#' @return Named list of 3D arrays
 #' @export
 assays <- function(x) UseMethod("assays")
 
 #' @export
 assays.gds <- function(x) x$assays
 
+#' Extract a single assay from a GDS object
+#'
+#' @param x A GDS object
+#' @param name Assay name (default: "beta")
+#' @param ... Additional arguments
+#'
+#' @return A 3D array
 #' @export
 assay <- function(x, name = "beta", ...) UseMethod("assay")
 
 #' @export
 assay.gds <- function(x, name = "beta", ...) x$assays[[name]]
 
+#' Extract space descriptor from a GDS object
+#'
+#' @param x A GDS object
+#'
+#' @return A space object
 #' @export
 space <- function(x) UseMethod("space")
 
 #' @export
 space.gds <- function(x) x$space
 
+#' Extract subject identifiers from a GDS object
+#'
+#' @param x A GDS object
+#'
+#' @return Character vector of subject IDs
 #' @export
 subjects <- function(x) UseMethod("subjects")
 
@@ -182,23 +208,54 @@ subjects <- function(x) UseMethod("subjects")
 subjects.gds <- function(x) x$subjects
 
 #' @export
+subjects.gds_plan <- function(x) {
+  # Prefer subjects from the bound source probe, fall back to plan meta
+  x$source$probe$subjects %||% x$meta$subjects
+}
+
+#' Extract contrast identifiers from a GDS object
+#'
+#' @param x A GDS object
+#'
+#' @return Character vector of contrast names
+#' @export
 contrasts <- function(x) UseMethod("contrasts")
 
 #' @export
 contrasts.gds <- function(x) x$contrasts
 
 #' @export
+contrasts.gds_plan <- function(x) {
+  x$source$probe$contrasts %||% (x$meta$contrasts %||% character())
+}
+
+#' Extract column (subject) metadata from a GDS object
+#'
+#' @param x A GDS object
+#'
+#' @return Data frame with subject-level metadata
+#' @export
 col_data <- function(x) UseMethod("col_data")
 
 #' @export
 col_data.gds <- function(x) x$col_data
 
+#' Extract row (sample) metadata from a GDS object
+#'
+#' @param x A GDS object
+#'
+#' @return Data frame with sample-level metadata
 #' @export
 row_data <- function(x) UseMethod("row_data")
 
 #' @export
 row_data.gds <- function(x) x$row_data
 
+#' Extract metadata from a GDS object
+#'
+#' @param x A GDS object
+#'
+#' @return Metadata list
 #' @export
 metadata <- function(x) UseMethod("metadata")
 
@@ -222,10 +279,14 @@ metadata.gds <- function(x) x$metadata
     stop("`assays` must be a named list", call. = FALSE)
   }
 
+  # Upcast any 2-D arrays to 3-D along contrast dimension
+  assays <- lapply(assays, function(a) {
+    if (is.array(a) && length(dim(a)) == 2L) {
+      a <- array(a, dim = c(nrow(a), ncol(a), 1L))
+    }
+    a
+  })
   dims <- lapply(assays, dim)
-  if (!all(vapply(dims, length, integer(1L)) == 3L)) {
-    stop("Each assay must be a 3-D array [sample × subject × contrast]", call. = FALSE)
-  }
   first_dim <- dims[[1L]]
   if (!all(vapply(dims, identical, logical(1L), first_dim))) {
     stop("All assays must share identical dimensions", call. = FALSE)

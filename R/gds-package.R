@@ -15,10 +15,16 @@
 #' technical specification.
 "_PACKAGE"
 
-#' @keywords internal
-".gdsfmri"
-
 .onLoad <- function(libname, pkgname) {
   .register_default_assays()
   register_builtin_adapters()
+  if (exists("register_core_reducers", mode = "function")) {
+    register_core_reducers()
+  }
+  if (exists(".register_builtin_posthoc", mode = "function")) {
+    .register_builtin_posthoc()
+  }
+  if (exists(".set_threads_from_option", mode = "function")) {
+    .set_threads_from_option()
+  }
 }

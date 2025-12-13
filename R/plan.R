@@ -5,6 +5,7 @@
 #' @param meta Metadata list (planner bookkeeping)
 #'
 #' @return A plan object (`gds_plan`)
+#' @name gds_plan
 #' @export
 gds_plan <- function(source, nodes = list(), meta = list()) {
   if (!inherits(source, "gds_source")) {
@@ -20,6 +21,7 @@ gds_plan <- function(source, nodes = list(), meta = list()) {
 #' @param probe_result Optional probe metadata
 #'
 #' @return Source descriptor
+#' @name gds_source
 #' @export
 gds_source <- function(adapter, source_spec, probe_result = NULL) {
   if (!is.character(adapter) || length(adapter) != 1L) {
@@ -38,36 +40,87 @@ gds_source <- function(adapter, source_spec, probe_result = NULL) {
 
 # Operation node constructors ----------------------------------------------
 
+#' Create a subset operation node
+#'
+#' @param sample Sample indices or labels
+#' @param subject Subject indices or IDs
+#' @param contrast Contrast indices or names
+#'
+#' @return Operation node list
 #' @export
 op_subset_axis <- function(sample = NULL, subject = NULL, contrast = NULL) {
   list(op = "subset_axis", sample = sample, subject = subject, contrast = contrast)
 }
 
+#' Create a derive operation node
+#'
+#' @param what Character vector of statistics to derive (e.g., "t", "z", "p")
+#' @param options Optional list of derivation options
+#'
+#' @return Operation node list
 #' @export
 op_derive <- function(what, options = list()) {
   list(op = "derive", what = as.character(what), options = options)
 }
 
+#' Create an align-to-group operation node
+#'
+#' @param family MapFamily object for alignment
+#' @param family_name Name of registered map family
+#'
+#' @return Operation node list
 #' @export
-op_align_to_group <- function(family) {
-  list(op = "align_to_group", family = family)
+op_align_to_group <- function(family = NULL, family_name = NULL) {
+  if (!is.null(family) && is.null(family_name)) {
+    family_name <- family$name %||% NULL
+  }
+  list(op = "align_to_group", family = family, family_name = family_name)
 }
 
+#' Create a mask policy operation node
+#'
+#' @param policy MaskPolicy object
+#'
+#' @return Operation node list
 #' @export
 op_mask_policy <- function(policy) {
   list(op = "mask_policy", policy = policy)
 }
 
+#' Create a map operation node
+#'
+#' @param target_space Target space descriptor
+#' @param map Mapping operator (matrix or function)
+#' @param uncertainty UncertaintyRule for variance propagation
+#' @param combine Optional combine method
+#'
+#' @return Operation node list
 #' @export
 op_map <- function(target_space, map, uncertainty, combine = NULL) {
   list(op = "map", target_space = target_space, map = map, uncertainty = uncertainty, combine = combine)
 }
 
+#' Create a reduce operation node
+#'
+#' @param method Reduction method (e.g., "fixed", "random")
+#' @param weights Optional weight vector or method
+#' @param by Optional grouping variable
+#' @param options Optional reduction options
+#' @param formula Optional model formula for meta-regression
+#'
+#' @return Operation node list
 #' @export
-op_reduce <- function(method, weights, by) {
-  list(op = "reduce", method = method, weights = weights, by = by)
+op_reduce <- function(method, weights, by, options = list(), formula = NULL) {
+  list(op = "reduce", method = method, weights = weights, by = by, options = options, formula = formula)
 }
 
+#' Create a write operation node
+#'
+#' @param path Output file path
+#' @param format Output format (e.g., "h5", "csv", "parquet")
+#' @param options Optional format-specific options
+#'
+#' @return Operation node list
 #' @export
 op_write <- function(path, format, options = list()) {
   list(op = "write", path = path, format = format, options = options)
@@ -80,11 +133,47 @@ op_write <- function(path, format, options = list()) {
 #' @param x Plan, source, or realized GDS
 #'
 #' @return A plan object
+#' @name as_plan
 #' @export
-as_plan <- function(x) {
-  if (inherits(x, "gds_plan")) return(x)
-  if (inherits(x, "gds_source")) return(gds_plan(x))
+as_plan <- function(x) UseMethod("as_plan")
+
+#' @export
+as_plan.gds_plan <- function(x) x
+
+#' @export
+as_plan.gds_source <- function(x) gds_plan(x)
+
+#' @export
+as_plan.default <- function(x) {
   stop("Cannot convert object to plan", call. = FALSE)
+}
+
+#' @export
+as_plan.gds <- function(x) {
+  stopifnot(inherits(x, "gds"))
+  # Build probe_result directly from realized GDS
+  arrs <- assays(x)
+  dims <- dim(arrs[[1L]])
+  probe_result <- list(
+    assays = names(arrs),
+    dims = gds_dims(sample = dims[1L], subject = dims[2L], contrast = dims[3L]),
+    subjects = x$subjects,
+    contrasts = x$contrasts,
+    space = x$space,
+    maps = x$metadata$map_families %||% list(),
+    metadata = x$metadata,
+    columns = list(),
+    col_data = x$col_data
+  )
+  src <- gds_source("memory", x, probe_result)
+  plan <- gds_plan(source = src)
+  plan$meta$adapter_columns <- list()
+  plan$meta$map_families <- probe_result$maps %||% list()
+  plan$meta$subjects <- probe_result$subjects
+  if (!is.null(x$col_data)) plan$meta$col_data <- x$col_data
+  # Legacy-friendly alias for tests expecting plan$metadata$dims
+  plan$metadata <- list(dims = probe_result$dims)
+  plan
 }
 
 #' Append an operation to a plan

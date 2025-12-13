@@ -47,6 +47,7 @@ map_linear <- function(from_space,
 #' @param uncertainty [`UncertaintyRule`]
 #'
 #' @return Object of class `c("gds_map_family", "gds_map")`
+#' @name MapFamily
 #' @export
 MapFamily <- function(name,
                       from_space,
@@ -75,6 +76,14 @@ MapFamily <- function(name,
 }
 
 #' Orthogonal map family helper
+#'
+#' @param name Family name
+#' @param from_space Source space
+#' @param to_space Target space
+#' @param matrices_by_subject Named list of per-subject orthogonal matrices
+#' @param uncertainty Uncertainty rule (default: independent)
+#'
+#' @return A MapFamily object with orthogonal traits
 #' @export
 OrthogonalFamily <- function(name,
                              from_space,
@@ -93,6 +102,14 @@ OrthogonalFamily <- function(name,
 }
 
 #' Optimal transport family helper
+#'
+#' @param name Family name
+#' @param from_space Source space
+#' @param to_space Target space
+#' @param plans_by_subject Named list of per-subject optimal transport plans
+#' @param uncertainty Uncertainty rule (default: independent)
+#'
+#' @return A MapFamily object with mass-preserving traits
 #' @export
 OTFamily <- function(name,
                      from_space,
@@ -111,6 +128,14 @@ OTFamily <- function(name,
 }
 
 #' Deformable warp family helper
+#'
+#' @param name Family name
+#' @param from_space Source space
+#' @param to_space Target space
+#' @param warps_by_subject Named list of per-subject deformation fields
+#' @param uncertainty Uncertainty rule (default: independent)
+#'
+#' @return A MapFamily object for deformable warps
 #' @export
 WarpFamily <- function(name,
                        from_space,
@@ -136,6 +161,7 @@ WarpFamily <- function(name,
 #' @param kernel Optional kernel function
 #'
 #' @return Uncertainty rule descriptor
+#' @name UncertaintyRule
 #' @export
 UncertaintyRule <- function(mode = c("independent", "cov_provider", "kernel", "none"),
                             df_rule = c("satterthwaite", "none"),

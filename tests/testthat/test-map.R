@@ -18,7 +18,7 @@ test_that("apply_map_to maps beta/var with independent uncertainty", {
     combine = NULL
   )
 
-  res <- gdsfmri:::apply_map_to(node, arrays)
+  res <- fmrigds:::apply_map_to(node, arrays)
   arr <- res$arrays
 
   expect_equal(arr$beta[1, 1, 1], sum(M * beta[, 1, 1]))
@@ -26,7 +26,7 @@ test_that("apply_map_to maps beta/var with independent uncertainty", {
   expect_equal(arr$se[1, 1, 1], sqrt(arr$var[1, 1, 1]))
   expect_equal(arr$t[1, 1, 1], arr$beta[1, 1, 1] / arr$se[1, 1, 1])
 
-  df_expected <- gdsfmri:::aggregate_df_satterthwaite(M, var, df)
+  df_expected <- fmrigds:::aggregate_df_satterthwaite(M, var, df)
   expect_equal(arr$df[1, 1, 1], df_expected[1, 1, 1])
 })
 
@@ -41,8 +41,8 @@ test_that("apply_map_to combines z via Stouffer", {
     combine = "stouffer"
   )
 
-  res <- gdsfmri:::apply_map_to(node, arrays)
-  expect_equal(res$arrays$z[1, 1, 1], sum(M * z) / sqrt(sum(M^2)))
+  res <- fmrigds:::apply_map_to(node, arrays)
+  expect_equal(res$arrays$z[1, 1, 1], sum(M * z[, 1, 1]) / sqrt(sum(M^2)))
   expect_equal(res$arrays$p[1, 1, 1], 2 * pnorm(-abs(res$arrays$z[1, 1, 1])))
 })
 
@@ -54,5 +54,5 @@ test_that("apply_map_to requires combine when beta missing", {
     uncertainty = UncertaintyRule("independent"),
     combine = NULL
   )
-  expect_error(gdsfmri:::apply_map_to(node, arrays), "combiner")
+  expect_error(fmrigds:::apply_map_to(node, arrays), "combiner")
 })
