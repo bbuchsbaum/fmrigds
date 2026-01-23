@@ -119,6 +119,20 @@ export(assert_compatible_spaces)
 export(find_maps)
 export(gds_from_nifti_maps)
 
+# neuroim2 interop - import
+S3method(as_gds,NeuroVol)
+S3method(as_gds,DenseNeuroVol)
+S3method(as_gds,NeuroVec)
+S3method(as_gds,DenseNeuroVec)
+export(gds_from_neurovols)
+export(gds_from_neurovol_nested)
+
+# neuroim2 interop - export
+export(as_neurovol_list)
+export(as_neurovec)
+export(extract_group)
+S3method(split,gds)
+
 # Image catalog
 export(image_catalog)
 export(new_image_catalog)
@@ -145,3 +159,7 @@ export(canonicalize_node)
 # Rcpp
 useDynLib(fmrigds, .registration = TRUE)
 importFrom(Rcpp, sourceCpp)
+
+# Base R imports
+importFrom(stats, pchisq, pnorm, setNames)
+importFrom(utils, head)

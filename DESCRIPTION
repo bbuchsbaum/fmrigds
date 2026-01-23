@@ -27,6 +27,7 @@ Suggests:
     testthat (>= 3.0.0),
     arrow,
     RNifti,
+    neuroim2,
     knitr,
     rmarkdown,
     covr
