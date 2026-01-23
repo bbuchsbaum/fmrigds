@@ -39,7 +39,7 @@ NeuroVec inputs; inferred from inner list names otherwise.}
 \item{...}{Additional arguments passed to \code{\link[=new_gds]{new_gds()}}.}
 }
 \value{
-A \code{gds} object with dimensions \link{samples x subjects x contrasts}.
+A \code{gds} object with dimensions \verb{samples x subjects x contrasts}.
 }
 \description{
 The most flexible import function for creating GDS objects from neuroim2

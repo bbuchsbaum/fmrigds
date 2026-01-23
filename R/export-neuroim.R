@@ -418,7 +418,7 @@ gds_from_neurovols <- function(beta,
 #' @param metadata Optional list of additional metadata to attach.
 #' @param ... Additional arguments passed to [new_gds()].
 #'
-#' @return A `gds` object with dimensions [samples x subjects x contrasts].
+#' @return A `gds` object with dimensions `samples x subjects x contrasts`.
 #'
 #' @export
 #'
