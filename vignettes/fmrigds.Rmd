@@ -1,0 +1,274 @@
+---
+title: "Getting started with fmrigds"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Getting started with fmrigds}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+library(fmrigds)
+set.seed(42)
+```
+
+## Why fmrigds?
+
+Group-level fMRI analysis follows a predictable pattern: load first-level
+results (betas, variances) for each subject, derive any missing statistics,
+run a group model, and correct for multiple comparisons. The statistical
+operations are well-understood, but the code ends up different every time
+because the input format varies---CSV, NIfTI, HDF5---and the bookkeeping is
+tedious.
+
+fmrigds gives you a single pipeline interface that works regardless of input
+format. You describe *what* you want (derive t-statistics, run a fixed-effects
+model, apply FDR correction) and fmrigds handles the rest.
+
+The design centres on **lazy evaluation**: you build a plan describing your
+analysis, then execute it with `compute()`. This lets you inspect and modify the
+pipeline before any data is loaded.
+
+## Quick example
+
+```{r quick-example}
+# A small CSV with ROI-level betas and variances for 3 subjects
+tmp <- tempfile(fileext = ".csv")
+writeLines(c(
+  "sample,subject,contrast,beta,var",
+  "ROI_1,sub-01,faces,0.5,0.04",
+  "ROI_2,sub-01,faces,0.8,0.09",
+  "ROI_1,sub-02,faces,1.0,0.04",
+  "ROI_2,sub-02,faces,1.2,0.09",
+  "ROI_1,sub-03,faces,0.7,0.04",
+  "ROI_2,sub-03,faces,0.9,0.09"
+), tmp)
+
+# Build a plan, reduce across subjects, compute
+result <- gds(tmp) |>
+  reduce(method = "fixed") |>
+  compute()
+
+# Group-level effect estimates
+assay(result, "beta")
+```
+
+Three lines of analysis turn a CSV into a group-level GDS with effect
+estimates, variances, z-scores, p-values, and heterogeneity diagnostics.
+
+## Building a plan
+
+Point `gds()` at your data file. The format is auto-detected:
+
+```{r build-plan}
+plan <- gds(tmp)
+explain(plan)
+```
+
+Nothing is loaded into memory yet. Chain verbs to describe your pipeline:
+
+```{r chain-verbs}
+plan <- gds(tmp) |>
+  derive("t") |>
+  reduce(method = "fixed") |>
+  posthoc("fdr:bh")
+
+explain(plan)
+```
+
+When you're ready, `compute()` executes the full pipeline:
+
+```{r compute-plan}
+g <- compute(plan)
+explain(g)
+```
+
+## Exploring a GDS object
+
+After `compute()`, you have a realized GDS. Use the accessor functions to
+inspect it:
+
+```{r explore-gds}
+g0 <- compute(gds(tmp))
+
+# What assays are available?
+names(assays(g0))
+
+# The beta array: samples x subjects x contrasts
+dim(assay(g0, "beta"))
+
+# Subject and contrast identifiers
+subjects(g0)
+contrasts(g0)
+
+# Spatial layout
+space(g0)
+```
+
+For a tidy long-form data frame (useful for plotting or export), use
+`gds_to_tibble()`:
+
+```{r tidy-export}
+head(gds_to_tibble(g0))
+```
+
+## Deriving statistics
+
+`derive()` computes new assays from existing ones. fmrigds knows the standard
+relationships:
+
+```{r derive-stats}
+g_derived <- gds(tmp) |>
+  derive("t") |>
+  compute()
+
+names(assays(g_derived))
+```
+
+Dependencies are resolved automatically. Available derivations:
+
+| Target | Requirements    | Description    |
+|--------|-----------------|----------------|
+| `t`    | beta, var       | t-statistic    |
+| `z`    | t (or beta+var) | z-score        |
+| `p`    | z (or t)        | p-value        |
+| `se`   | var             | Standard error |
+| `var`  | se              | Variance       |
+
+## Group-level analysis
+
+The `reduce()` verb combines data across subjects into group-level summaries.
+
+### Fixed-effects meta-analysis
+
+Assumes a common true effect, weighted by precision (1/variance):
+
+```{r reduce-fe}
+g_fe <- gds(tmp) |>
+  reduce(method = "fixed") |>
+  compute()
+
+names(assays(g_fe))
+subjects(g_fe)
+```
+
+### Random-effects meta-analysis
+
+Accounts for between-subject heterogeneity using the DerSimonian--Laird
+estimator:
+
+```{r reduce-re}
+g_re <- gds(tmp) |>
+  reduce(method = "random") |>
+  compute()
+
+names(assays(g_re))
+```
+
+The additional `tau2` assay estimates between-subject variance at each sample
+location.
+
+### Meta-regression
+
+Include subject-level covariates with `with_col_data()` and a model formula:
+
+```{r reduce-reg}
+covariates <- data.frame(
+  age = c(25, 32, 28),
+  row.names = c("sub-01", "sub-02", "sub-03")
+)
+
+g_reg <- gds(tmp) |>
+  with_col_data(covariates) |>
+  reduce(method = "meta:fe_reg", formula = ~ age) |>
+  compute()
+
+names(assays(g_reg))
+```
+
+Each model coefficient and its standard error becomes a separate assay.
+
+## Post-hoc corrections
+
+Apply multiple comparison corrections after group analysis:
+
+```{r posthoc-fdr}
+g_fdr <- gds(tmp) |>
+  reduce(method = "fixed") |>
+  posthoc("fdr:bh") |>
+  compute()
+
+# FDR-adjusted q-values
+assay(g_fdr, "q")
+```
+
+Available methods: `"fdr:bh"` (Benjamini--Hochberg), `"fdr:by"`
+(Benjamini--Yekutieli), and `"fdr:spatial"` for spatially-aware correction.
+See `vignette("as-plan-and-spatial-fdr")` for the spatial approach.
+
+## Writing results
+
+`write_out()` saves results to disk as part of the pipeline:
+
+```{r write-csv}
+out_csv <- tempfile(fileext = ".csv")
+
+gds(tmp) |>
+  reduce(method = "fixed") |>
+  write_out(out_csv, format = "csv") |>
+  compute()
+
+head(read.csv(out_csv))
+```
+
+Supported formats: CSV (`"csv"`), HDF5 (`"h5"`), Parquet (`"parquet"`), and
+NIfTI (`"nifti"`). For archiving with full metadata and provenance, use HDF5:
+
+```{r write-h5, eval = FALSE}
+gds(tmp) |>
+  reduce(method = "fixed") |>
+  write_out("group_results.h5", format = "h5") |>
+  compute()
+```
+
+## Working with NIfTI files
+
+For voxelwise analyses, `image_catalog()` discovers and organizes NIfTI files
+across subjects:
+
+```{r nifti-catalog, eval = FALSE}
+catalog <- image_catalog(
+  root = "study_dir",
+  pattern = "sub-*/stats/*.nii.gz",
+  path_regex = "sub-(?<subject>[^/]+)"
+)
+
+catalog <- catalog |>
+  map_assays(
+    beta = "cope[0-9]+\\.nii",
+    se   = "varcope[0-9]+\\.nii"
+  )
+
+plan <- as_gds(catalog, mask = "group_mask.nii.gz")
+result <- plan |> reduce(method = "fixed") |> compute()
+```
+
+See `?image_catalog` for file discovery and `?map_assays` for mapping files to
+assay types.
+
+## Next steps
+
+- `vignette("as-plan-and-spatial-fdr")` --- chaining operations on realized GDS
+  objects and spatially-aware FDR correction
+- `vignette("fmristore-ingestion")` --- reading fmristore HDF5 files (labeled
+  volumes, parcellated data, latent bases)
+- `?reduce` for the full list of reduction methods including OLS, Stouffer,
+  Fisher, and Lancaster
+
+```{r cleanup, include = FALSE}
+unlink(c(tmp, out_csv))
+```

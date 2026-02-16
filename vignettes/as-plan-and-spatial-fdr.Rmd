@@ -1,74 +1,137 @@
 ---
-title: "Working with realized GDS and spatial FDR"
+title: "Post-hoc corrections and spatial FDR"
 output:
   rmarkdown::html_vignette:
     toc: true
     toc_depth: 2
 vignette: >
-  %\VignetteIndexEntry{Working with realized GDS and spatial FDR}
+  %\VignetteIndexEntry{Post-hoc corrections and spatial FDR}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
 
-```{r setup, include=FALSE}
+```{r setup, include = FALSE}
 knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
 library(fmrigds)
 set.seed(1)
 ```
 
-# Verbs on realized GDS via as_plan()
+## When do you need this?
 
-All verbs accept realized `gds` objects. Internally, fmrigds converts a realized
-GDS to a lazy plan using `as_plan(gds)` and uses an in-memory adapter, so you
-can chain operations without going back to disk.
+After running a group-level analysis, you typically have one p-value per
+spatial unit (voxel, parcel, or ROI). Testing thousands of locations
+simultaneously inflates false positives, so you need a multiple comparison
+correction. Standard FDR (Benjamini--Hochberg) treats every test
+independently. **Spatial FDR** goes further by grouping spatially related
+tests---for instance, voxels within the same parcel---and adjusting within
+and across groups to better control the false discovery rate in structured
+neuroimaging data.
 
-```{r}
-# Build a tiny ROI CSV
+This vignette shows how to apply both standard and spatial FDR corrections in
+fmrigds, including how to chain operations on realized GDS objects.
+
+## Sample data
+
+We'll use a small dataset with 6 ROIs, 4 subjects, and 1 contrast. ROIs 1--3
+represent a "frontal" region with a genuine effect; ROIs 4--6 represent an
+"occipital" region with little activation.
+
+```{r sample-data}
 tmp <- tempfile(fileext = ".csv")
-writeLines(c(
-  "sample,subject,contrast,beta,var",
-  "ROI_1,s1,c1,0.5,0.04",
-  "ROI_1,s2,c1,0.9,0.04",
-  "ROI_2,s1,c1,0.7,0.09",
-  "ROI_2,s2,c1,1.2,0.09"
-), tmp)
+lines <- "sample,subject,contrast,beta,var"
+rois <- paste0("ROI_", 1:6)
+subs <- paste0("s", 1:4)
 
-# Plan -> realized GDS
+for (s in subs) {
+  for (r in seq_along(rois)) {
+    mu <- if (r <= 3) 2.0 else 0.1
+    b <- round(mu + rnorm(1, 0, 0.3), 3)
+    lines <- c(lines, paste(rois[r], s, "c1", b, 0.04, sep = ","))
+  }
+}
+
+writeLines(lines, tmp)
 g0 <- compute(gds(tmp))
-
-# Reduce directly on realized object
-g_fe <- reduce(g0, method = "meta:fe") |> compute()
-
-# Post-hoc on realized object (apply after a reduce so p-values exist)
-g_bh <- reduce(g0, method = "meta:fe") |> posthoc(method = "fdr:bh") |> compute()
-
-names(assays(g_fe))  # group-level assays
-names(assays(g_bh))  # includes q
+explain(g0)
 ```
 
-# Spatial FDR (fdr:spatial)
+## Chaining operations on realized objects
 
-`fdr:spatial` performs a group-wise adjustment by:
+All fmrigds verbs accept realized GDS objects, not just plans. Internally,
+`as_plan()` wraps the in-memory data so you can keep chaining without going
+back to disk:
 
-- Aggregating p-values within groups via Simes’ method
-- Applying a weighted BH across groups (weights ~ group size, normalized)
-- Broadcasting group q-values back to samples
+```{r realized-verbs}
+# Reduce directly on a realized GDS
+g_fe <- reduce(g0, method = "fixed") |> compute()
+names(assays(g_fe))
 
-Requirements:
+# Chain reduce and post-hoc in one pipeline
+g_bh <- reduce(g0, method = "fixed") |>
+  posthoc("fdr:bh") |>
+  compute()
 
-- Provide `p` (or `z` / `t` + `df`) so p-values can be computed/derived
-- Provide `options$group`, a vector of length equal to the number of samples
-  (first dimension), defining group membership (e.g., ROI/parcel IDs). `NA`
-  entries are ignored. Groups can be numeric, character, or factors.
+names(assays(g_bh))
+```
 
-```{r}
-# Create a realized GDS from p-values
-gp <- compute(gds(tmp, effect_cols = list(p = "var")))  # reusing column for demo
+The group result now includes FDR-adjusted q-values alongside the standard
+meta-analytic outputs.
 
-# Two groups, one sample per group (matches 2 samples in tmp)
-grp <- c(1, 2)
+## Standard FDR correction
 
-# Apply spatial FDR
-gq <- posthoc(gp, method = "fdr:spatial", options = list(group = grp)) |> compute()
-assay(gq, "q")
+Benjamini--Hochberg (`"fdr:bh"`) controls the expected proportion of false
+discoveries. It treats each sample location independently:
+```{r standard-fdr}
+assay(g_bh, "p")
+assay(g_bh, "q")
+```
+
+ROIs with strong effects (low p-values) retain significance after correction,
+while weak effects are penalised.
+
+## Spatial FDR
+
+When your samples have spatial structure---parcels belonging to brain regions,
+or voxels within an atlas---`"fdr:spatial"` can exploit that grouping for a
+more powerful correction. The algorithm:
+
+1. **Aggregates** p-values within each group using Simes' method
+2. **Applies** weighted Benjamini--Hochberg across groups (weights proportional
+   to group size)
+3. **Broadcasts** the group-level q-values back to individual samples
+
+You supply the grouping via `options$group`, a vector with one entry per
+sample. Here we assign ROIs 1--3 to region 1 ("frontal") and ROIs 4--6 to
+region 2 ("occipital"):
+
+```{r spatial-fdr}
+region <- c(1, 1, 1, 2, 2, 2)
+
+g_sfdr <- posthoc(g_fe, method = "fdr:spatial",
+                  options = list(group = region)) |>
+  compute()
+
+assay(g_sfdr, "q")
+```
+
+Samples within the same region share a group-level q-value. This is useful
+when you expect effects to cluster spatially---as they typically do in
+neuroimaging.
+
+### Requirements for spatial FDR
+
+- The GDS must contain `p` values (or `z`/`t` from which p can be derived).
+  Running `reduce()` first produces these automatically.
+- `options$group` must be a vector of length equal to the number of samples
+  (the first dimension of the assay arrays). Values can be numeric, character,
+  or factor. `NA` entries are excluded from grouping.
+
+## Next steps
+
+- `vignette("fmrigds")` --- getting started with the core pipeline
+- `vignette("fmristore-ingestion")` --- reading fmristore HDF5 files
+- `?posthoc` for the full list of correction methods
+
+```{r cleanup, include = FALSE}
+unlink(tmp)
 ```

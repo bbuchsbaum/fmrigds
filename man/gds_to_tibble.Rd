@@ -4,17 +4,13 @@
 \alias{gds_to_tibble}
 \title{Tidy long-form export for GDS}
 \usage{
-gds_to_tibble(
-  gds,
-  assays = names(assays(gds)),
-  drop_na = FALSE,
-  include_col_data = FALSE
-)
+gds_to_tibble(gds, assays = NULL, drop_na = FALSE, include_col_data = FALSE)
 }
 \arguments{
 \item{gds}{A realised GDS object}
 
-\item{assays}{Character vector of assay names to include (default: all)}
+\item{assays}{Character vector of assay names to include (default: all
+assays in the GDS)}
 
 \item{drop_na}{If TRUE, drop rows with all-NA assays}
 
