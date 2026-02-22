@@ -134,6 +134,7 @@ compute <- function(x,
       mask_policy = list(scope = node$policy$scope, rule = node$policy$rule, threshold = node$policy$threshold),
       map = list(combine = node$combine, uncertainty = node$uncertainty$mode),
       reduce = list(method = node$method, weights = node$weights, by = node$by),
+      posthoc = list(method = node$method),
       write = list(path = node$path, format = node$format),
       list()
     )
@@ -193,6 +194,7 @@ canonicalize_node <- function(node) {
   subset_info <- list(samples = NULL, subjects = NULL, contrasts = NULL)
   current_space <- space
   current_subjects <- subjects
+  current_contrasts <- plan$source$probe$contrasts
   writes <- list()
   designs <- list()
   attachments <- list()
@@ -208,6 +210,12 @@ canonicalize_node <- function(node) {
       res <- .apply_subset_node(arrays, plan, node)
       arrays <- res$arrays
       subset_info <- res$subset
+      if (!is.null(subset_info$subjects)) {
+        current_subjects <- current_subjects[subset_info$subjects]
+      }
+      if (!is.null(subset_info$contrasts)) {
+        current_contrasts <- current_contrasts[subset_info$contrasts]
+      }
     } else if (op == "derive") {
       arrays <- execute_derive(arrays, node$what, node$options)
     } else if (op == "align_to_group") {
@@ -245,8 +253,15 @@ canonicalize_node <- function(node) {
       }
       subset_info <- list(samples = NULL, subjects = NULL, contrasts = NULL)
     } else if (op == "posthoc") {
-      res <- apply_posthoc(node, arrays)
+      res <- apply_posthoc(
+        node,
+        arrays,
+        context = list(space = current_space, subjects = current_subjects, contrasts = current_contrasts)
+      )
       arrays <- res$arrays
+      if (!is.null(res$attachments) && length(res$attachments)) {
+        attachments <- c(attachments, res$attachments)
+      }
       subset_info <- list(samples = NULL, subjects = NULL, contrasts = NULL)
     } else if (op == "write") {
       writes <- c(writes, list(node))

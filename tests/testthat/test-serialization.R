@@ -19,3 +19,35 @@ test_that("plan serialization roundtrip", {
 
   expect_equal(vapply(loaded$nodes, `[[`, character(1), "op"), c("subset_axis", "derive", "align_to_group", "mask_policy", "map", "reduce", "posthoc"))
 })
+
+test_that("plan serialization preserves posthoc options", {
+  plan <- gds_plan(gds_source("tabular", list(path = "dummy"), list()))
+  plan$nodes <- list(
+    list(
+      op = "posthoc",
+      method = "nt:cluster_fdr_perm",
+      options = list(
+        n_perm = 64L,
+        q = 0.05,
+        cluster_thresh = 2.7,
+        tail = "two",
+        two_sided_policy = "BH_all"
+      )
+    )
+  )
+
+  path <- tempfile(fileext = ".json")
+  on.exit(unlink(path), add = TRUE)
+
+  save_plan(plan, path)
+  loaded <- load_plan(path)
+
+  expect_equal(length(loaded$nodes), 1L)
+  expect_equal(loaded$nodes[[1]]$op, "posthoc")
+  expect_equal(loaded$nodes[[1]]$method, "nt:cluster_fdr_perm")
+  expect_equal(loaded$nodes[[1]]$options$n_perm, 64L)
+  expect_equal(loaded$nodes[[1]]$options$q, 0.05)
+  expect_equal(loaded$nodes[[1]]$options$cluster_thresh, 2.7)
+  expect_equal(loaded$nodes[[1]]$options$tail, "two")
+  expect_equal(loaded$nodes[[1]]$options$two_sided_policy, "BH_all")
+})

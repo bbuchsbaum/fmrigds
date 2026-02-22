@@ -29,6 +29,7 @@ S3method(summary,image_catalog)
 S3method(subset,image_catalog)
 S3method(unique,image_catalog)
 S3method(as_gds,image_catalog)
+S3method("[",gds_dims)
 
 # Generics
 export(assay)

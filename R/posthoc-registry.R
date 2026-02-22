@@ -7,7 +7,7 @@
 #' Register or replace a post-hoc handler identified by `name`.
 #'
 #' The handler `fun` is called as `fun(arrays, opts)` where `arrays` is a
-#' named list of assays shaped `sample × subject × contrast`. It should return
+#' named list of assays shaped `sample x subject x contrast`. It should return
 #' either (a) a named list of new/updated assays to merge (e.g., `list(q = ...)`),
 #' or (b) the full `arrays` list with modifications. Implementations must
 #' preserve the input array dimensions.
@@ -93,6 +93,22 @@ unregister_posthoc <- function(name) {
   # Register spatial FDR if available
   if (exists(".posthoc_spatial_fdr", mode = "function")) {
     register_posthoc("fdr:spatial", .posthoc_spatial_fdr(), requires = c("p"), provides = c("q"))
+  }
+  # Register neurothresh-backed TFCE if optional dependency is available
+  if (exists(".posthoc_neurothresh_tfce_fwer", mode = "function") &&
+      requireNamespace("neurothresh", quietly = TRUE)) {
+    register_posthoc(
+      "nt:tfce_fwer",
+      .posthoc_neurothresh_tfce_fwer(),
+      requires = c("z"),
+      provides = c("q", "sig_mask", "tfce")
+    )
+    register_posthoc(
+      "nt:cluster_fdr_perm",
+      .posthoc_neurothresh_cluster_fdr_perm(),
+      requires = c("z"),
+      provides = c("q", "sig_mask")
+    )
   }
 }
 

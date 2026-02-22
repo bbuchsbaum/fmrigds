@@ -28,6 +28,7 @@ Suggests:
     arrow,
     RNifti,
     neuroim2,
+    neurothresh,
     knitr,
     rmarkdown,
     covr

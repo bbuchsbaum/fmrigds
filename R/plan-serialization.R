@@ -55,7 +55,7 @@ load_plan <- function(file) {
     return(list(op = op, method = node$method, weights = node$weights, by = node$by))
   }
   if (op == "posthoc") {
-    return(list(op = op, method = node$method))
+    return(list(op = op, method = node$method, options = node$options %||% list()))
   }
   node
 }
@@ -72,6 +72,6 @@ load_plan <- function(file) {
   if (op == "reduce") return(op_reduce(node$method, node$weights, node$by, list()))
   if (op == "mask_policy") return(op_mask_policy(MaskPolicy(scope = node$scope %||% "group", rule = node$rule %||% "intersection", threshold = node$threshold %||% 0.95)))
   if (op == "align_to_group") return(op_align_to_group(family = NULL, family_name = node$family_name))
-  if (op == "posthoc") return(list(op = "posthoc", method = node$method))
+  if (op == "posthoc") return(list(op = "posthoc", method = node$method, options = node$options %||% list()))
   stop("Cannot deserialize node of type ", op, call. = FALSE)
 }
