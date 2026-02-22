@@ -7,9 +7,9 @@
 space_surface(vertices, faces, hemi, template_id = NULL)
 }
 \arguments{
-\item{vertices}{Matrix (n × 3) of vertex coordinates}
+\item{vertices}{Matrix (n x 3) of vertex coordinates}
 
-\item{faces}{Integer matrix (m × 3) of triangle indices (1-based)}
+\item{faces}{Integer matrix (m x 3) of triangle indices (1-based)}
 
 \item{hemi}{Hemisphere identifier ("L", "R", "LR")}
 

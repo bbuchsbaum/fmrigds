@@ -69,7 +69,7 @@ apply_reduce <- function(node, arrays, weights, subjects, col_data = NULL) {
     )
   }
   for (k in seq_len(n_contrast)) {
-    # slice and transpose to [subjects × samples]
+    # slice and transpose to [subjects x samples]
     beta_mat <- if (!is.null(beta)) .slice_subjects_samples(beta, k) else NULL
     var_mat  <- if (!is.null(var))  .slice_subjects_samples(var, k)  else NULL
     z_mat    <- if (!is.null(z))    .slice_subjects_samples(z, k)    else NULL
@@ -140,7 +140,7 @@ apply_reduce <- function(node, arrays, weights, subjects, col_data = NULL) {
       c_name <- as.character(k)
       key <- paste0("reduce/", reducer$name, "/contrast=", c_name)
       par_names <- colnames(X) %||% paste0("X", seq_len(ncol(X)))
-      # Promote to assays: cov:<term_i>:<term_j> with [samples × 1 × contrasts]
+      # Promote to assays: cov:<term_i>:<term_j> with [samples x 1 x contrasts]
       t_idx <- 1L
       p_len <- length(par_names)
       for (pi in seq_len(p_len)) {

@@ -20,12 +20,7 @@ A list suitable for \verb{gds(source = <returned>, format = "nifti")}
 Build an explicit NIfTI source list for use with \code{gds(..., format = "nifti")}.
 }
 \examples{
-
-# Explicitly specify beta and se sets
 src <- nifti_source(beta = c("sub-01_beta.nii.gz", "sub-02_beta.nii.gz"),
                     se   = c("sub-01_se.nii.gz",   "sub-02_se.nii.gz"))
-plan <- gds(src, format = "nifti")
-
-# Or point to directories (classification happens in the adapter)
-# plan <- gds(nifti_source(beta = "betas_dir", se = "ses_dir"), format = "nifti")
+str(src)
 }

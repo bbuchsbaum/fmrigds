@@ -72,7 +72,7 @@ as_gds.array <- function(x,
   if (length(dim(x)) == 2L) {
     x <- array(x, dim = c(nrow(x), ncol(x), 1L))
   } else if (length(dim(x)) != 3L) {
-    stop("Array input must be 2-D or 3-D; canonical is [sample × subject × contrast]", call. = FALSE)
+    stop("Array input must be 2-D or 3-D; canonical is [sample x subject x contrast]", call. = FALSE)
   }
   lst <- setNames(list(x), assay_name)
   as_gds.list(lst,

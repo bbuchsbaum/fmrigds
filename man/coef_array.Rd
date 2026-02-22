@@ -12,9 +12,9 @@ coef_array(gds, prefix = "coef:")
 \item{prefix}{Assay name prefix to stack (default: "coef:")}
 }
 \value{
-A 3D numeric array \verb{samples × terms × contrasts}
+A 3D numeric array \verb{samples x terms x contrasts}
 }
 \description{
-Returns a samples × terms × contrasts array by stacking per-term coefficient
+Returns a samples x terms x contrasts array by stacking per-term coefficient
 assays (e.g., coef:(Intercept), coef:age, ...) along a new terms dimension.
 }

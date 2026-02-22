@@ -151,7 +151,7 @@ register_fmristore_adapter <- function() {
         ds <- h5$open("/data"); on.exit(ds$close(), add = TRUE)
         return(as.integer(ds$dims))
       }
-      stop("Parcellated: no 2D cluster×time matrix found under /scans or /data", call. = FALSE)
+      stop("Parcellated: no 2D cluster x time matrix found under /scans or /data", call. = FALSE)
     }
     dm <- tryCatch(get_first_mat_dim(), error = function(e) NULL)
     # Infer orientation: prefer rows=clusters; if not found, fallback to 1 contrast
@@ -436,7 +436,7 @@ register_fmristore_adapter <- function() {
       return(NA_character_)
     }
 
-    # Read subject matrix and orient as [parcels × time]
+    # Read subject matrix and orient as [parcels x time]
     read_subject_matrix <- function(h5file, subj = NULL, assay = "beta") {
       path <- assay_path_for(h5file, subj, assay)
       if (is.na(path)) return(NULL)

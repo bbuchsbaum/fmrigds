@@ -93,15 +93,15 @@ gds_from_nifti_maps <- function(maps, mask = NULL, ...) {
   # Optional relabelling using hooks output, if provided
   if (!is.null(maps$subject)) {
     subj <- as.character(maps$subject)
-    if (length(subj) == length(subjects(g))) {
-      subjects(g) <- subj
+    if (length(subj) == length(g$subjects)) {
+      g$subjects <- subj
     }
   }
   if (!is.null(maps$contrast)) {
     contr <- as.character(maps$contrast)
     # Only relabel if we have a single-contrast-per-file layout
-    if (length(unique(contr)) == length(contr) && length(contrasts(g)) == 1L) {
-      contrasts(g) <- contr
+    if (length(unique(contr)) == length(contr) && length(g$contrasts) == 1L) {
+      g$contrasts <- contr
     }
   }
   g

@@ -7,7 +7,7 @@
 execute_derive(arrays, what, options = list())
 }
 \arguments{
-\item{arrays}{Named list of arrays (sample × subject × contrast)}
+\item{arrays}{Named list of arrays (sample x subject x contrast)}
 
 \item{what}{Character vector of assay names to derive}
 

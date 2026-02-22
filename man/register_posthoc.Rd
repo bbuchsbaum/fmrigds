@@ -22,7 +22,7 @@ Register or replace a post-hoc handler identified by \code{name}.
 }
 \details{
 The handler \code{fun} is called as \code{fun(arrays, opts)} where \code{arrays} is a
-named list of assays shaped \verb{sample × subject × contrast}. It should return
+named list of assays shaped \verb{sample x subject x contrast}. It should return
 either (a) a named list of new/updated assays to merge (e.g., \code{list(q = ...)}),
 or (b) the full \code{arrays} list with modifications. Implementations must
 preserve the input array dimensions.

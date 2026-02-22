@@ -28,10 +28,10 @@ explain <- function(x) UseMethod("explain")
 explain.gds <- function(x) {
   dims <- dim(assays(x)[[1]])
   cat("GDS\n")
-  cat("  dims: ", paste(dims, collapse = " × "), " [sample × subject × contrast]", "\n", sep = "")
+  cat("  dims: ", paste(dims, collapse = " x "), " [sample x subject x contrast]", "\n", sep = "")
   cat("  space: ", .space_brief(x$space), "\n", sep = "")
-  cat("  subjects: ", length(x$subjects), if (length(x$subjects)) paste0(" (", paste(head(x$subjects, 3), collapse = ", "), if (length(x$subjects) > 3) ", …" else "", ")") else "", "\n", sep = "")
-  cat("  contrasts: ", length(x$contrasts), if (length(x$contrasts)) paste0(" (", paste(head(x$contrasts, 3), collapse = ", "), if (length(x$contrasts) > 3) ", …" else "", ")") else "", "\n", sep = "")
+  cat("  subjects: ", length(x$subjects), if (length(x$subjects)) paste0(" (", paste(head(x$subjects, 3), collapse = ", "), if (length(x$subjects) > 3) ", ..." else "", ")") else "", "\n", sep = "")
+  cat("  contrasts: ", length(x$contrasts), if (length(x$contrasts)) paste0(" (", paste(head(x$contrasts, 3), collapse = ", "), if (length(x$contrasts) > 3) ", ..." else "", ")") else "", "\n", sep = "")
   ai <- lapply(names(assays(x)), assay_info)
   roles <- vapply(ai, function(a) a$role %||% "?", character(1))
   cat("  assays: ", paste(paste0(names(assays(x)), "[", roles, "]"), collapse = ", "), "\n", sep = "")
@@ -54,7 +54,7 @@ explain.gds_plan <- function(x) {
   cat("  adapter: ", x$source$adapter, "\n", sep = "")
   if (!is.null(probe)) {
     dims <- probe$dims
-    cat("  source dims: ", paste(as.integer(dims), collapse = " × "), " [sample × subject × contrast]", "\n", sep = "")
+    cat("  source dims: ", paste(as.integer(dims), collapse = " x "), " [sample x subject x contrast]", "\n", sep = "")
     cat("  space: ", .space_brief(probe$space), "\n", sep = "")
     cat("  assays: ", paste(probe$assays, collapse = ", "), "\n", sep = "")
   }
@@ -86,7 +86,7 @@ explain.gds_plan <- function(x) {
 validate <- function(x, ...) UseMethod("validate")
 
 #' @export
-validate.gds <- function(x) {
+validate.gds <- function(x, ...) {
   assays <- assays(x)
   .validate_gds_assays(assays)
   .validate_gds_dims(assays, x$subjects, x$contrasts)
@@ -101,7 +101,7 @@ validate.gds <- function(x) {
 }
 
 #' @export
-validate.gds_plan <- function(x) {
+validate.gds_plan <- function(x, ...) {
   # Basic adapter + probe availability
   if (is.null(get_adapter(x$source$adapter))) stop("Unknown adapter: ", x$source$adapter, call. = FALSE)
   if (is.null(x$source$probe)) stop("Plan is missing probe metadata", call. = FALSE)

@@ -1,7 +1,7 @@
 #' Create a voxel space descriptor
 #'
 #' @param dim Integer vector of length 3 (x, y, z)
-#' @param affine 4 × 4 affine matrix
+#' @param affine 4x4 affine matrix
 #' @param mask_bitmap Optional logical array matching `dim`
 #' @param mask_idx Optional integer vector of active voxel indices (mask order)
 #' @param storage Either "dense" or "packed"
@@ -70,8 +70,8 @@ space_parcels <- function(labels,
 
 #' Create a surface space descriptor
 #'
-#' @param vertices Matrix (n × 3) of vertex coordinates
-#' @param faces Integer matrix (m × 3) of triangle indices (1-based)
+#' @param vertices Matrix (n x 3) of vertex coordinates
+#' @param faces Integer matrix (m x 3) of triangle indices (1-based)
 #' @param hemi Hemisphere identifier ("L", "R", "LR")
 #' @param template_id Optional template identifier
 #'
@@ -141,7 +141,7 @@ space_basis <- function(k,
     stop("`dim` must be numeric of length 3", call. = FALSE)
   }
   if (!is.matrix(affine) || !all(dim(affine) == c(4L, 4L))) {
-    stop("`affine` must be a 4×4 matrix", call. = FALSE)
+    stop("`affine` must be a 4x4 matrix", call. = FALSE)
   }
   if (!is.null(mask_bitmap)) {
     if (!is.logical(mask_bitmap)) {

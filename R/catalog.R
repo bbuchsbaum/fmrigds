@@ -517,9 +517,10 @@ map_assays <- function(catalog, ...) {
 #' Check that the catalog has consistent file coverage across subjects
 #' and report any missing or extra files.
 #'
-#' @param catalog An image_catalog object.
+#' @param x An image_catalog object.
 #' @param by Column name to group by for consistency check. Default `"subject"`.
 #' @param expect Optional character vector of expected file basenames per subject.
+#' @param ... Additional arguments (ignored).
 #'
 #' @return A `catalog_validation_report` object.
 #' @export
@@ -529,12 +530,13 @@ map_assays <- function(catalog, ...) {
 #' report <- validate(catalog)
 #' print(report)
 #'
-#' # Check for specific expected files
 #' report <- validate(catalog, expect = c("cope1.nii.gz", "varcope1.nii.gz"))
 #' }
-validate.image_catalog <- function(catalog,
+validate.image_catalog <- function(x,
                                    by = "subject",
-                                   expect = NULL) {
+                                   expect = NULL,
+                                   ...) {
+  catalog <- x
   stopifnot(inherits(catalog, "image_catalog"))
 
   meta <- catalog$metadata

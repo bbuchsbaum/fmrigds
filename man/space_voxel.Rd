@@ -26,7 +26,7 @@ space_voxels(
 \arguments{
 \item{dim}{Integer vector of length 3 (x, y, z)}
 
-\item{affine}{4 × 4 affine matrix}
+\item{affine}{4x4 affine matrix}
 
 \item{mask_bitmap}{Optional logical array matching \code{dim}}
 

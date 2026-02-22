@@ -5,7 +5,8 @@
 #'
 #' @details
 #' The NIfTI adapter supports:
-#' - 3D and 4D NIfTI files (.nii, .nii.gz)
+#' - 3D, 4D, and 5D+ NIfTI files (.nii, .nii.gz)
+#'   - For 5D+, non-spatial axes (dims 4+) are flattened into the GDS contrast axis
 #' - Optional mask specification (separate NIfTI file with 1=included, 0=excluded)
 #' - Automatic spatial information extraction (affine transformation)
 #' - BIDS-compatible file naming
@@ -93,27 +94,15 @@ register_nifti_adapter <- function() {
   meta <- neuroim2::read_header(files1[1])
 
   # Get dimensions from metadata
-  dim_all <- meta@dims
-
-  if (length(dim_all) == 3L) {
-    spatial_dim <- dim_all
-    n_contrasts <- 1L
-  } else if (length(dim_all) == 4L) {
-    spatial_dim <- dim_all[1:3]
-    n_contrasts <- dim_all[4]
-  } else {
-    stop("Unsupported NIfTI dimensionality: ", length(dim_all), call. = FALSE)
+  dim_all <- as.integer(meta@dims)
+  if (length(dim_all) < 3L) {
+    stop("NIfTI dimensionality must be at least 3, got ", length(dim_all), call. = FALSE)
   }
+  spatial_dim <- dim_all[1:3]
+  n_contrasts <- .nifti_contrast_count(dim_all)
 
-  # Load the first volume to get spatial information
-  # For 3D files, read directly; for 4D, extract first volume
-  first_vol <- if (n_contrasts == 1L) {
-    neuroim2::read_vol(files1[1], index = 1)
-  } else {
-    # For 4D files, use sub_vector to extract first volume
-    vec <- neuroim2::read_vec(files1[1])
-    neuroim2::sub_vector(vec, 1)
-  }
+  # Read image object (NeuroVol/NeuroVec/NeuroHyperVec depending on source ndim)
+  first_img <- .nifti_read_image(files1[1], dim_all = dim_all)
 
   # Load mask from separate file if provided via ... arguments
   # Otherwise create a full mask (all voxels included)
@@ -147,7 +136,7 @@ register_nifti_adapter <- function() {
   }
 
   # Extract affine transformation from neuroim2 NeuroSpace
-  nspace <- neuroim2::space(first_vol)
+  nspace <- neuroim2::space(first_img)
   affine <- neuroim2::trans(nspace)
 
   space <- space_voxel(
@@ -167,11 +156,15 @@ register_nifti_adapter <- function() {
     contrasts = contrasts,
     space = space,
     maps = list(),
-    metadata = list(schema_version = "0.1.0", source_files = handle$files),
+    metadata = list(
+      schema_version = "0.1.0",
+      source_files = c(handle$files_beta %||% character(), handle$files_se %||% character())
+    ),
     columns = list(effect_cols = NULL, subject_col = NULL, sample_col = NULL, contrast_col = NULL),
     mask_idx = mask_idx,
     spatial_dim = spatial_dim,
-    n_contrasts = n_contrasts
+    n_contrasts = n_contrasts,
+    source_ndim = length(dim_all)
   )
 }
 
@@ -199,13 +192,8 @@ register_nifti_adapter <- function() {
   read_stack <- function(file_vec) {
     arr <- array(NA_real_, dim = c(length(sample_idx), n_subjects, n_contrasts))
     for (j in seq_along(file_vec)) {
-      if (n_contrasts == 1L) {
-        img <- neuroim2::read_vol(file_vec[j])
-        vec <- .nifti_extract(img, mask_idx, n_contrasts)
-      } else {
-        img <- neuroim2::read_vec(file_vec[j])
-        vec <- .nifti_extract(img, mask_idx, n_contrasts)
-      }
+      img <- .nifti_read_image(file_vec[j])
+      vec <- .nifti_extract(img, mask_idx, n_contrasts)
       arr[, j, ] <- vec[sample_idx, , drop = FALSE]
     }
     arr
@@ -218,27 +206,89 @@ register_nifti_adapter <- function() {
 }
 
 .nifti_extract <- function(img, mask_idx, n_contrasts) {
-  # Convert neuroim2 object to array
-  # neuroim2::read_vol returns NeuroVol, neuroim2::read_vec returns NeuroVec
-  arr <- as.array(img)
-
-  # Get spatial dimensions (first 3 dims)
-  dims <- dim(arr)
-  spatial_dims <- if (length(dims) == 3L) dims else dims[1:3]
-  n_voxels <- prod(spatial_dims)
-
-  # Reshape to [voxels × contrasts] matrix
-  vals <- if (n_contrasts == 1L) {
-    # 3D volume: flatten to column vector
-    matrix(as.vector(arr), nrow = n_voxels, ncol = 1L)
-  } else {
-    # 4D volume: flatten spatial dims, keep 4th dim as columns
-    # Array is [x, y, z, contrasts], we want [voxels, contrasts]
+  # Prefer direct dense conversion; some NeuroHyperVec variants do not implement
+  # base as.array() and require explicit voxel-slice reconstruction.
+  arr <- tryCatch(as.array(img), error = function(e) NULL)
+  vals <- if (!is.null(arr)) {
+    dims <- dim(arr)
+    if (length(dims) < 3L) {
+      stop("NIfTI image must have at least 3 dimensions", call. = FALSE)
+    }
+    n_voxels <- prod(dims[1:3])
+    contrast_count <- .nifti_contrast_count(dims)
+    if (!identical(as.integer(contrast_count), as.integer(n_contrasts))) {
+      stop(
+        "Inconsistent contrast count for NIfTI image. Expected ", n_contrasts,
+        " but found ", contrast_count, ".", call. = FALSE
+      )
+    }
     matrix(as.vector(arr), nrow = n_voxels, ncol = n_contrasts)
+  } else if (inherits(img, "NeuroHyperVec")) {
+    .nifti_hyper_to_matrix(img, n_contrasts)
+  } else {
+    stop("Unable to coerce NIfTI image object to an array", call. = FALSE)
   }
 
-  # Extract only the masked voxels
   vals[mask_idx, , drop = FALSE]
+}
+
+.nifti_contrast_count <- function(dims) {
+  dims <- as.integer(dims)
+  if (length(dims) <= 3L) return(1L)
+  as.integer(prod(dims[-(1:3)]))
+}
+
+.nifti_read_image <- function(file, dim_all = NULL) {
+  dim_all <- if (is.null(dim_all)) as.integer(neuroim2::read_header(file)@dims) else as.integer(dim_all)
+  ndim <- length(dim_all)
+
+  if (ndim == 3L) {
+    return(neuroim2::read_vol(file))
+  }
+  if (ndim == 4L) {
+    return(neuroim2::read_vec(file))
+  }
+  if (ndim >= 5L) {
+    ns <- asNamespace("neuroim2")
+    if (exists("read_hyper_vec", envir = ns, mode = "function", inherits = FALSE)) {
+      return(get("read_hyper_vec", envir = ns, inherits = FALSE)(file))
+    }
+    stop(
+      "Reading 5D+ NIfTI requires neuroim2::read_hyper_vec(). ",
+      "Please update the neuroim2 package.", call. = FALSE
+    )
+  }
+
+  stop("Unsupported NIfTI dimensionality: ", ndim, call. = FALSE)
+}
+
+.nifti_hyper_to_matrix <- function(img, n_contrasts) {
+  dims <- as.integer(dim(img))
+  if (length(dims) < 4L) {
+    stop("NeuroHyperVec must have at least 4 dimensions", call. = FALSE)
+  }
+
+  n_voxels <- prod(dims[1:3])
+  contrast_dims <- dims[-(1:3)]
+  contrast_count <- as.integer(prod(contrast_dims))
+  if (!identical(as.integer(contrast_count), as.integer(n_contrasts))) {
+    stop(
+      "Inconsistent contrast count for NeuroHyperVec. Expected ", n_contrasts,
+      " but found ", contrast_count, ".", call. = FALSE
+    )
+  }
+
+  idx_grid <- expand.grid(lapply(contrast_dims, seq_len), KEEP.OUT.ATTRS = FALSE, stringsAsFactors = FALSE)
+  vals <- matrix(NA_real_, nrow = n_voxels, ncol = nrow(idx_grid))
+  for (i in seq_len(nrow(idx_grid))) {
+    tail_idx <- lapply(idx_grid[i, , drop = TRUE], as.integer)
+    # Programmatic equivalent of img[,,,i4,i5,..., drop = TRUE]
+    idx_txt <- paste(unlist(tail_idx, use.names = FALSE), collapse = ",")
+    slice_expr <- parse(text = paste0("img[,,,", idx_txt, ", drop = TRUE]"))[[1]]
+    slice <- eval(slice_expr, envir = list(img = img), enclos = baseenv())
+    vals[, i] <- as.vector(slice)
+  }
+  vals
 }
 
 .nifti_close <- function(handle) {
@@ -257,14 +307,9 @@ register_nifti_adapter <- function() {
 #' @return A list suitable for `gds(source = <returned>, format = "nifti")`
 #' @export
 #' @examples
-#' 
-#' # Explicitly specify beta and se sets
 #' src <- nifti_source(beta = c("sub-01_beta.nii.gz", "sub-02_beta.nii.gz"),
 #'                     se   = c("sub-01_se.nii.gz",   "sub-02_se.nii.gz"))
-#' plan <- gds(src, format = "nifti")
-#'
-#' # Or point to directories (classification happens in the adapter)
-#' # plan <- gds(nifti_source(beta = "betas_dir", se = "ses_dir"), format = "nifti")
+#' str(src)
 nifti_source <- function(beta = NULL, se = NULL) {
   if (is.null(beta) && is.null(se)) {
     stop("Provide at least one of `beta` or `se`", call. = FALSE)

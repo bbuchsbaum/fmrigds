@@ -5,7 +5,7 @@
 #' contrast. It accepts a model formula via `reduce(..., formula = ~ 1 + cov)`
 #' (design is built from `with_col_data()` or `gds(..., col_data=...)`).
 #'
-#' Outputs are expanded into per‑term assays to preserve the 3‑axis invariant:
+#' Outputs are expanded into per-term assays to preserve the 3-axis invariant:
 #' - `coef:<term>` and `se_coef:<term>` (one assay per model term)
 #' - `t_coef:<term>` and `p_coef:<term>` convenience statistics
 #' - `sigma2` (residual variance) and `df_res` (residual degrees of freedom)

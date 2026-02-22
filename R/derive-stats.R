@@ -2,7 +2,7 @@
 
 #' Execute derivation operations on assay arrays
 #'
-#' @param arrays Named list of arrays (sample × subject × contrast)
+#' @param arrays Named list of arrays (sample x subject x contrast)
 #' @param what Character vector of assay names to derive
 #' @param options List of options (e.g., overwrite = TRUE)
 #'

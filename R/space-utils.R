@@ -15,16 +15,28 @@ space_from_nifti <- function(path, mask = NULL) {
   }
   if (!file.exists(path)) stop("NIfTI file does not exist: ", path, call. = FALSE)
   hdr <- neuroim2::read_header(path)
-  dim_all <- hdr@dims
+  dim_all <- as.integer(hdr@dims)
+  if (length(dim_all) < 3L) {
+    stop("NIfTI dimensionality must be at least 3", call. = FALSE)
+  }
   spatial_dim <- if (length(dim_all) >= 3L) dim_all[1:3] else dim_all
 
-  first_vol <- if (length(dim_all) == 4L) {
-    vec <- neuroim2::read_vec(path)
-    neuroim2::sub_vector(vec, 1)
-  } else {
+  img <- if (length(dim_all) == 3L) {
     neuroim2::read_vol(path)
+  } else if (length(dim_all) == 4L) {
+    neuroim2::read_vec(path)
+  } else {
+    ns <- asNamespace("neuroim2")
+    if (exists("read_hyper_vec", envir = ns, mode = "function", inherits = FALSE)) {
+      get("read_hyper_vec", envir = ns, inherits = FALSE)(path)
+    } else {
+      stop(
+        "Reading 5D+ NIfTI requires neuroim2::read_hyper_vec(). ",
+        "Please update neuroim2.", call. = FALSE
+      )
+    }
   }
-  nspace <- neuroim2::space(first_vol)
+  nspace <- neuroim2::space(img)
   affine <- neuroim2::trans(nspace)
 
   mask_bitmap <- NULL
@@ -85,8 +97,12 @@ space_subset <- function(space, idx, pack = FALSE) {
 #' @return A list with integer indices `idx1` and `idx2` for subsetting each
 #' @export
 #' @examples
-#' sp1 <- space_voxel(c(2,2,1), diag(4), mask_bitmap = array(c(TRUE,FALSE,TRUE,TRUE), c(2,2,1)), storage = "packed")
-#' sp2 <- space_voxel(c(2,2,1), diag(4), mask_bitmap = array(c(TRUE,TRUE,FALSE,TRUE), c(2,2,1)), storage = "packed")
+#' m1 <- array(c(TRUE, FALSE, TRUE, TRUE), c(2, 2, 1))
+#' m2 <- array(c(TRUE, TRUE, FALSE, TRUE), c(2, 2, 1))
+#' sp1 <- space_voxel(c(2,2,1), diag(4), mask_bitmap = m1,
+#'   storage = "packed")
+#' sp2 <- space_voxel(c(2,2,1), diag(4), mask_bitmap = m2,
+#'   storage = "packed")
 #' common_mask(sp1, sp2, rule = "intersection")
 common_mask <- function(g1, g2, rule = c("intersection", "union")) {
   rule <- match.arg(rule)

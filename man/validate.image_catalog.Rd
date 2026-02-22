@@ -4,14 +4,16 @@
 \alias{validate.image_catalog}
 \title{Validate catalog consistency}
 \usage{
-\method{validate}{image_catalog}(catalog, by = "subject", expect = NULL)
+\method{validate}{image_catalog}(x, by = "subject", expect = NULL, ...)
 }
 \arguments{
-\item{catalog}{An image_catalog object.}
+\item{x}{An image_catalog object.}
 
 \item{by}{Column name to group by for consistency check. Default \code{"subject"}.}
 
 \item{expect}{Optional character vector of expected file basenames per subject.}
+
+\item{...}{Additional arguments (ignored).}
 }
 \value{
 A \code{catalog_validation_report} object.
@@ -25,7 +27,6 @@ and report any missing or extra files.
 report <- validate(catalog)
 print(report)
 
-# Check for specific expected files
 report <- validate(catalog, expect = c("cope1.nii.gz", "varcope1.nii.gz"))
 }
 }

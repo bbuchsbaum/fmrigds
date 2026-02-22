@@ -21,7 +21,7 @@ as_neurovec(
 \itemize{
 \item \code{"subject"}: Stack subjects (collapses contrasts if multiple).
 \item \code{"contrast"}: Stack contrasts (collapses subjects if multiple).
-\item \code{"both"}: Stack all subject × contrast combinations.
+\item \code{"both"}: Stack all subject x contrast combinations.
 }}
 
 \item{subset_subjects}{Optional character vector of subject IDs to include.}

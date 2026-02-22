@@ -10,7 +10,7 @@ contrast. It accepts a model formula via \code{reduce(..., formula = ~ 1 + cov)}
 (design is built from \code{with_col_data()} or \code{gds(..., col_data=...)}).
 }
 \details{
-Outputs are expanded into per‑term assays to preserve the 3‑axis invariant:
+Outputs are expanded into per-term assays to preserve the 3-axis invariant:
 \itemize{
 \item \verb{coef:<term>} and \verb{se_coef:<term>} (one assay per model term)
 \item \verb{t_coef:<term>} and \verb{p_coef:<term>} convenience statistics

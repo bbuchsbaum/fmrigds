@@ -20,7 +20,11 @@ A list with integer indices \code{idx1} and \code{idx2} for subsetting each
 Compute a common mask between two spaces
 }
 \examples{
-sp1 <- space_voxel(c(2,2,1), diag(4), mask_bitmap = array(c(TRUE,FALSE,TRUE,TRUE), c(2,2,1)), storage = "packed")
-sp2 <- space_voxel(c(2,2,1), diag(4), mask_bitmap = array(c(TRUE,TRUE,FALSE,TRUE), c(2,2,1)), storage = "packed")
+m1 <- array(c(TRUE, FALSE, TRUE, TRUE), c(2, 2, 1))
+m2 <- array(c(TRUE, TRUE, FALSE, TRUE), c(2, 2, 1))
+sp1 <- space_voxel(c(2,2,1), diag(4), mask_bitmap = m1,
+  storage = "packed")
+sp2 <- space_voxel(c(2,2,1), diag(4), mask_bitmap = m2,
+  storage = "packed")
 common_mask(sp1, sp2, rule = "intersection")
 }

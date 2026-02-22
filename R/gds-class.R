@@ -1,6 +1,6 @@
 #' Create a Group Data Set (GDS)
 #'
-#' @param assays Named list of 3-D arrays (sample × subject × contrast)
+#' @param assays Named list of 3-D arrays (sample x subject x contrast)
 #' @param space A space object describing the sample axis
 #' @param subjects Character vector of subject identifiers
 #' @param contrasts Character vector of contrast identifiers

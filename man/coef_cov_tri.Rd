@@ -14,7 +14,7 @@ coef_cov_tri(gds, method = "ols:voxelwise", contrast)
 \item{contrast}{Contrast name to retrieve}
 }
 \value{
-A list with fields \code{type}, \code{terms}, \code{pack}, and \code{cov_tri} (L × samples)
+A list with fields \code{type}, \code{terms}, \code{pack}, and \code{cov_tri} (L x samples)
 }
 \description{
 Retrieve packed covariance triangles for OLS coefficients

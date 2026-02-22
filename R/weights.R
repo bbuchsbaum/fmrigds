@@ -2,7 +2,7 @@
 #'
 #' @param g A realised GDS
 #' @param name Assay-like name for the weights (e.g., "n_eff" or "w_custom")
-#' @param array Numeric 3D array matching `sample × subject × contrast`
+#' @param array Numeric 3D array matching `sample x subject x contrast`
 #'
 #' @return Updated GDS with weights stored in assays
 #' @export

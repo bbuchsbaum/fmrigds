@@ -1,12 +1,12 @@
 #' Stack coefficient assays into an array
 #'
-#' Returns a samples × terms × contrasts array by stacking per-term coefficient
+#' Returns a samples x terms x contrasts array by stacking per-term coefficient
 #' assays (e.g., coef:(Intercept), coef:age, ...) along a new terms dimension.
 #'
 #' @param gds A realised GDS
 #' @param prefix Assay name prefix to stack (default: "coef:")
 #'
-#' @return A 3D numeric array `samples × terms × contrasts`
+#' @return A 3D numeric array `samples x terms x contrasts`
 #' @export
 coef_array <- function(gds, prefix = "coef:") {
   stopifnot(inherits(gds, "gds"))
@@ -33,7 +33,7 @@ coef_array <- function(gds, prefix = "coef:") {
 #' @param method Reducer method key (default: "ols:voxelwise")
 #' @param contrast Contrast name to retrieve
 #'
-#' @return A list with fields `type`, `terms`, `pack`, and `cov_tri` (L × samples)
+#' @return A list with fields `type`, `terms`, `pack`, and `cov_tri` (L x samples)
 #' @export
 coef_cov_tri <- function(gds, method = "ols:voxelwise", contrast) {
   stopifnot(inherits(gds, "gds"))

@@ -11,7 +11,7 @@ attach_weight(g, name, array)
 
 \item{name}{Assay-like name for the weights (e.g., "n_eff" or "w_custom")}
 
-\item{array}{Numeric 3D array matching \verb{sample × subject × contrast}}
+\item{array}{Numeric 3D array matching \verb{sample x subject x contrast}}
 }
 \value{
 Updated GDS with weights stored in assays

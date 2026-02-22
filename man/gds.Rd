@@ -18,7 +18,7 @@ new_gds(
 gds(source, format = c("auto", ls(.adapter_registry)), prefer = NULL, ...)
 }
 \arguments{
-\item{assays}{Named list of 3-D arrays (sample × subject × contrast)}
+\item{assays}{Named list of 3-D arrays (sample x subject x contrast)}
 
 \item{space}{A space object describing the sample axis}
 

@@ -811,7 +811,7 @@ as_neurovol_list <- function(x,
 #' @param along Which dimension to stack along the 4th dimension. One of:
 #'   - `"subject"`: Stack subjects (collapses contrasts if multiple).
 #'   - `"contrast"`: Stack contrasts (collapses subjects if multiple).
-#'   - `"both"`: Stack all subject × contrast combinations.
+#'   - `"both"`: Stack all subject x contrast combinations.
 #'
 #' @param subset_subjects Optional character vector of subject IDs to include.
 #' @param subset_contrasts Optional character vector of contrast names to include
@@ -912,7 +912,7 @@ as_neurovec <- function(x,
     vec_data <- arr[, 1, , drop = FALSE]  # [samples, 1, contrasts]
     dim(vec_data) <- c(dims[1], n_con)
   } else {
-    # along == "both": flatten subject × contrast
+    # along == "both": flatten subject x contrast
     n_vols <- n_subj * n_con
     vol_labels <- as.vector(outer(subj_ids, con_ids, paste, sep = "_"))
     vec_data <- matrix(arr, nrow = dims[1], ncol = n_vols)
