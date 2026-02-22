@@ -22,6 +22,8 @@ Imports:
     hdf5r,
     Rcpp
 LinkingTo: Rcpp, RcppArmadillo
+URL: https://bbuchsbaum.github.io/fmrigds/, https://github.com/bbuchsbaum/fmrigds
+BugReports: https://github.com/bbuchsbaum/fmrigds/issues
 Suggests:
     testthat (>= 3.0.0),
     arrow,
@@ -30,6 +32,7 @@ Suggests:
     neurothresh,
     knitr,
     rmarkdown,
-    covr
+    covr,
+    pkgdown
 VignetteBuilder: knitr
 Config/testthat/edition: 3

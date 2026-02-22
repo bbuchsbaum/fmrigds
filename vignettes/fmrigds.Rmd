@@ -18,25 +18,59 @@ set.seed(42)
 
 ## Why fmrigds?
 
-Group-level fMRI analysis follows a predictable pattern: load first-level
-results (betas, variances) for each subject, derive any missing statistics,
-run a group model, and correct for multiple comparisons. The statistical
-operations are well-understood, but the code ends up different every time
-because the input format varies---CSV, NIfTI, HDF5---and the bookkeeping is
-tedious.
+Group-level fMRI analysis follows a predictable pattern: you load first-level
+results (effect estimates, variances) for each subject, compute any missing
+statistics, run a group model, and correct for multiple comparisons. The
+statistical operations are well-understood, but the code ends up different
+every time because the input format varies---CSV, NIfTI, HDF5---and the
+bookkeeping around subjects, contrasts, and spatial locations is tedious.
 
 fmrigds gives you a single pipeline interface that works regardless of input
 format. You describe *what* you want (derive t-statistics, run a fixed-effects
 model, apply FDR correction) and fmrigds handles the rest.
 
-The design centres on **lazy evaluation**: you build a plan describing your
-analysis, then execute it with `compute()`. This lets you inspect and modify the
-pipeline before any data is loaded.
+## What is a GDS?
+
+A GDS (Group Data Set) is fmrigds's core data structure. It organises
+first-level fMRI outputs along three axes:
+
+- **Samples** (rows): the spatial units you measured---voxels, parcels, ROIs,
+  or latent components.
+- **Subjects** (columns): the participants in your study.
+- **Contrasts** (slices): the experimental conditions or comparisons
+  (e.g., "faces > places").
+
+Each combination of these three axes can hold one or more **assays**---named
+numeric arrays that store the actual data. Common assays include `beta`
+(effect estimates), `var` (variance), `t` (t-statistics), `z` (z-scores),
+and `p` (p-values). You can think of a GDS as a structured container that
+keeps all of these arrays aligned along the same axes.
+
+A GDS also carries a **space** descriptor that records what the sample axis
+represents (voxel coordinates, parcel labels, etc.), so spatial information
+is never lost.
+
+## Plan first, compute later
+
+fmrigds uses **lazy evaluation**: when you call functions like `gds()`,
+`derive()`, or `reduce()`, nothing is computed immediately. Instead, you
+build up a *plan*---a description of the analysis you want to run. You can
+inspect the plan, modify it, or add more steps. When you are satisfied,
+calling `compute()` executes the entire pipeline in one pass.
+
+This design has two advantages:
+
+1. You can review the full analysis before any data is loaded.
+2. fmrigds can optimise the execution (e.g., only reading the assays it
+   needs from disk).
 
 ## Quick example
 
-```{r quick-example}
-# A small CSV with ROI-level betas and variances for 3 subjects
+Let's walk through a minimal analysis. First, we create a small CSV file
+with ROI-level effect estimates (`beta`) and variances (`var`) for three
+subjects:
+
+```{r make-csv}
 tmp <- tempfile(fileext = ".csv")
 writeLines(c(
   "sample,subject,contrast,beta,var",
@@ -47,79 +81,128 @@ writeLines(c(
   "ROI_1,sub-03,faces,0.7,0.04",
   "ROI_2,sub-03,faces,0.9,0.09"
 ), tmp)
+```
 
-# Build a plan, reduce across subjects, compute
-result <- gds(tmp) |>
-  reduce(method = "fixed") |>
-  compute()
+Each row records the effect estimate and variance for one ROI, one subject,
+and one contrast. In a real study, this file might have thousands of rows
+covering many ROIs and contrasts.
 
-# Group-level effect estimates
+Now we can run a group-level fixed-effects analysis in three steps:
+
+```{r quick-example}
+result <- gds(tmp) |>       # 1. point to the data (creates a plan)
+  reduce(method = "fixed") |> # 2. add a group-level reduction step
+  compute()                   # 3. execute the plan
+
 assay(result, "beta")
 ```
 
-Three lines of analysis turn a CSV into a group-level GDS with effect
-estimates, variances, z-scores, p-values, and heterogeneity diagnostics.
+The `|>` operator (called the "pipe") passes the output of one step as the
+input to the next, so you can read the pipeline left to right: load the
+data, reduce across subjects, then compute.
 
-## Building a plan
+The result is a group-level GDS containing a single "meta" subject. The
+`assay()` function extracts a specific assay by name. Here, `beta` holds
+the group-level effect estimates: one value per ROI, pooled across all three
+subjects.
 
-Point `gds()` at your data file. The format is auto-detected:
+## Building and inspecting a plan
+
+Let's look at the plan step by step. Calling `gds()` with a file path
+creates a plan that knows *where* the data is, but has not loaded it yet:
 
 ```{r build-plan}
 plan <- gds(tmp)
 explain(plan)
 ```
 
-Nothing is loaded into memory yet. Chain verbs to describe your pipeline:
+The `explain()` function prints a human-readable summary of any plan or
+realised GDS. At this stage, the plan only has a source node.
+
+You can chain additional verbs to describe your analysis. Each verb adds
+a step to the plan without running anything:
 
 ```{r chain-verbs}
 plan <- gds(tmp) |>
-  derive("t") |>
-  reduce(method = "fixed") |>
-  posthoc("fdr:bh")
+  derive("t") |>              # compute t-statistics from beta and var
+  reduce(method = "fixed") |> # pool across subjects
+  posthoc("fdr:bh")           # apply FDR correction
 
 explain(plan)
 ```
 
-When you're ready, `compute()` executes the full pipeline:
+The plan now has four steps. When you are ready, `compute()` runs them all:
 
 ```{r compute-plan}
 g <- compute(plan)
 explain(g)
 ```
 
-## Exploring a GDS object
+After `compute()`, you have a **realised GDS**---a concrete object holding
+arrays of numbers rather than a plan of future operations.
 
-After `compute()`, you have a realized GDS. Use the accessor functions to
-inspect it:
+## Exploring a realised GDS
+
+A realised GDS has several accessor functions for inspecting its contents.
+Let's start with a simple GDS that has not been reduced yet, so we can see
+the full three-dimensional structure:
 
 ```{r explore-gds}
 g0 <- compute(gds(tmp))
+```
 
+**Assays** are the named numeric arrays inside a GDS. You can list them and
+extract individual ones:
+
+```{r explore-assays}
 # What assays are available?
 names(assays(g0))
 
-# The beta array: samples x subjects x contrasts
-dim(assay(g0, "beta"))
+# Extract the beta array
+assay(g0, "beta")
+```
 
-# Subject and contrast identifiers
+The beta array has dimensions **samples x subjects x contrasts**: 2 ROIs,
+3 subjects, 1 contrast.
+
+```{r explore-dims}
+dim(assay(g0, "beta"))
+```
+
+You can also query the axis labels directly:
+
+```{r explore-axes}
 subjects(g0)
 contrasts(g0)
+```
 
-# Spatial layout
+The **space** descriptor tells you what the sample axis represents:
+
+```{r explore-space}
 space(g0)
 ```
 
-For a tidy long-form data frame (useful for plotting or export), use
-`gds_to_tibble()`:
+In this case, the samples are labelled ROIs (ROI_1 and ROI_2). For
+voxelwise data, the space would instead describe a 3D grid with an affine
+matrix.
+
+### Tidy export
+
+If you want a long-form data frame (useful for plotting with ggplot2 or
+exporting to other tools), use `gds_to_tibble()`:
 
 ```{r tidy-export}
 head(gds_to_tibble(g0))
 ```
 
+Each row is one observation: one sample, one subject, one contrast, with
+columns for each assay.
+
 ## Deriving statistics
 
-`derive()` computes new assays from existing ones. fmrigds knows the standard
-relationships:
+First-level outputs often include only some statistics. For example, you
+might have betas and variances but not t-statistics. The `derive()` verb
+fills in the gaps automatically.
 
 ```{r derive-stats}
 g_derived <- gds(tmp) |>
@@ -129,23 +212,33 @@ g_derived <- gds(tmp) |>
 names(assays(g_derived))
 ```
 
-Dependencies are resolved automatically. Available derivations:
+Asking for `"t"` produced the t-statistic from the existing `beta` and
+`var` assays using the formula `t = beta / sqrt(var)`. fmrigds knows the
+standard relationships between statistics and resolves dependencies
+automatically---if you ask for `"z"` but only have `beta` and `var`, it
+will first derive `t`, then convert to `z`.
 
-| Target | Requirements    | Description    |
-|--------|-----------------|----------------|
-| `t`    | beta, var       | t-statistic    |
-| `z`    | t (or beta+var) | z-score        |
-| `p`    | z (or t)        | p-value        |
-| `se`   | var             | Standard error |
-| `var`  | se              | Variance       |
+Here are the available derivations:
 
-## Group-level analysis
+| Target | Requirements    | What it computes                 |
+|--------|-----------------|----------------------------------|
+| `t`    | beta, var       | `beta / sqrt(var)`               |
+| `z`    | t (or beta+var) | z-score (normal approximation)   |
+| `p`    | z (or t)        | two-sided p-value                |
+| `se`   | var             | `sqrt(var)` (standard error)     |
+| `var`  | se              | `se^2` (variance)                |
 
-The `reduce()` verb combines data across subjects into group-level summaries.
+## Group-level analysis with reduce()
 
-### Fixed-effects meta-analysis
+The `reduce()` verb is where the group-level analysis happens. It combines
+data across subjects into a single summary, much like a meta-analysis
+combines results across studies.
 
-Assumes a common true effect, weighted by precision (1/variance):
+### Fixed-effects
+
+A fixed-effects model assumes that every subject shares the same true
+effect. It pools estimates using inverse-variance weighting---subjects with
+more precise estimates (smaller variance) get more weight:
 
 ```{r reduce-fe}
 g_fe <- gds(tmp) |>
@@ -153,13 +246,22 @@ g_fe <- gds(tmp) |>
   compute()
 
 names(assays(g_fe))
+```
+
+The result contains the pooled `beta`, its `var`, derived `z` and `p`
+values, and diagnostic assays like `cochran_q` (a test of whether the
+effect really is the same across subjects). Notice that `subjects()` now
+returns `"meta"` instead of individual subject names:
+
+```{r reduce-fe-subjects}
 subjects(g_fe)
 ```
 
-### Random-effects meta-analysis
+### Random-effects
 
-Accounts for between-subject heterogeneity using the DerSimonian--Laird
-estimator:
+If you expect the true effect to vary across subjects (which is common in
+fMRI), a random-effects model is more appropriate. It estimates both the
+average effect and the between-subject variability:
 
 ```{r reduce-re}
 g_re <- gds(tmp) |>
@@ -169,12 +271,15 @@ g_re <- gds(tmp) |>
 names(assays(g_re))
 ```
 
-The additional `tau2` assay estimates between-subject variance at each sample
-location.
+The additional `tau2` assay estimates between-subject variance at each
+sample location. When `tau2` is large, subjects disagree about the
+effect size at that location.
 
 ### Meta-regression
 
-Include subject-level covariates with `with_col_data()` and a model formula:
+You can include subject-level covariates (e.g., age, group membership) in
+the group model. First attach the covariates with `with_col_data()`, then
+specify a formula:
 
 ```{r reduce-reg}
 covariates <- data.frame(
@@ -191,10 +296,16 @@ names(assays(g_reg))
 ```
 
 Each model coefficient and its standard error becomes a separate assay.
+Here, `coef:age` tells you how the effect changes per year of age at each
+ROI.
 
 ## Post-hoc corrections
 
-Apply multiple comparison corrections after group analysis:
+When you test many spatial locations simultaneously (hundreds of ROIs,
+thousands of voxels), some will appear significant by chance. Post-hoc
+corrections control the false discovery rate.
+
+Add a correction step with `posthoc()`:
 
 ```{r posthoc-fdr}
 g_fdr <- gds(tmp) |>
@@ -202,17 +313,28 @@ g_fdr <- gds(tmp) |>
   posthoc("fdr:bh") |>
   compute()
 
+# The original p-values
+assay(g_fdr, "p")
+
 # FDR-adjusted q-values
 assay(g_fdr, "q")
 ```
 
-Available methods: `"fdr:bh"` (Benjamini--Hochberg), `"fdr:by"`
-(Benjamini--Yekutieli), and `"fdr:spatial"` for spatially-aware correction.
-See `vignette("as-plan-and-spatial-fdr")` for the spatial approach.
+A q-value of 0.05 means that among all locations with q-values at or below
+0.05, you expect no more than 5% to be false discoveries. Available
+correction methods:
 
-## Writing results
+- `"fdr:bh"` --- Benjamini--Hochberg (standard FDR; the default choice)
+- `"fdr:by"` --- Benjamini--Yekutieli (valid under arbitrary dependence,
+  but more conservative)
+- `"fdr:spatial"` --- spatially-aware FDR that groups nearby tests; see
+  `vignette("as-plan-and-spatial-fdr")`
 
-`write_out()` saves results to disk as part of the pipeline:
+## Writing results to disk
+
+The `write_out()` verb saves results as part of the pipeline. It runs
+transparently---the data passes through to the next step, and a copy is
+written to the path you specify:
 
 ```{r write-csv}
 out_csv <- tempfile(fileext = ".csv")
@@ -225,48 +347,72 @@ gds(tmp) |>
 head(read.csv(out_csv))
 ```
 
-Supported formats: CSV (`"csv"`), HDF5 (`"h5"`), Parquet (`"parquet"`), and
-NIfTI (`"nifti"`). For archiving with full metadata and provenance, use HDF5:
+Supported formats:
+
+| Format      | Extension | Best for                          |
+|-------------|-----------|-----------------------------------|
+| `"csv"`     | .csv      | Sharing, inspection in Excel      |
+| `"parquet"` | .parquet  | Fast columnar storage             |
+| `"h5"`      | .h5       | Archiving with full metadata      |
+| `"nifti"`   | .nii.gz   | Voxelwise maps for neuroimaging tools |
+
+For archiving with full provenance, use HDF5. These files round-trip
+perfectly---reading them back with `gds()` recovers all metadata:
 
 ```{r write-h5, eval = FALSE}
 gds(tmp) |>
   reduce(method = "fixed") |>
   write_out("group_results.h5", format = "h5") |>
   compute()
+
+# Later: read back with full fidelity
+plan <- gds("group_results.h5")
 ```
 
 ## Working with NIfTI files
 
-For voxelwise analyses, `image_catalog()` discovers and organizes NIfTI files
-across subjects:
+For voxelwise analyses, you typically have one NIfTI file per subject per
+contrast, spread across a directory tree. The `image_catalog()` function
+discovers and organises these files automatically:
 
 ```{r nifti-catalog, eval = FALSE}
+# Discover all NIfTI files under a study directory
 catalog <- image_catalog(
   root = "study_dir",
   pattern = "sub-*/stats/*.nii.gz",
   path_regex = "sub-(?<subject>[^/]+)"
 )
 
+# Tell fmrigds which files are betas and which are standard errors
 catalog <- catalog |>
   map_assays(
     beta = "cope[0-9]+\\.nii",
     se   = "varcope[0-9]+\\.nii"
   )
 
+# Convert to a GDS plan, applying a group mask
 plan <- as_gds(catalog, mask = "group_mask.nii.gz")
+
+# Run the group analysis
 result <- plan |> reduce(method = "fixed") |> compute()
 ```
 
-See `?image_catalog` for file discovery and `?map_assays` for mapping files to
-assay types.
+The code above cannot run here because it needs real NIfTI files on disk.
+See `?image_catalog` for file discovery and `?map_assays` for mapping
+filenames to assay types.
 
 ## Next steps
 
-- `vignette("as-plan-and-spatial-fdr")` --- chaining operations on realized GDS
-  objects and spatially-aware FDR correction
-- `vignette("fmristore-ingestion")` --- reading fmristore HDF5 files (labeled
-  volumes, parcellated data, latent bases)
-- `?reduce` for the full list of reduction methods including OLS, Stouffer,
+Now that you understand the core pipeline, you might want to explore:
+
+- `vignette("spatial-operations")` --- masking missing data, aligning
+  subjects in latent spaces, and transforming between spatial
+  representations
+- `vignette("as-plan-and-spatial-fdr")` --- chaining operations on realised
+  GDS objects and spatially-aware FDR correction
+- `vignette("fmristore-ingestion")` --- reading fmristore HDF5 files
+  (labeled volumes, parcellated data, latent bases)
+- `?reduce` for the full list of reduction methods, including OLS, Stouffer,
   Fisher, and Lancaster
 
 ```{r cleanup, include = FALSE}

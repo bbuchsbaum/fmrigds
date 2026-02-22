@@ -1,5 +1,10 @@
 # fmrigds
 
+<!-- badges: start -->
+[![R-CMD-check](https://github.com/bbuchsbaum/fmrigds/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/bbuchsbaum/fmrigds/actions/workflows/R-CMD-check.yaml)
+[![pkgdown](https://github.com/bbuchsbaum/fmrigds/actions/workflows/pkgdown.yaml/badge.svg)](https://bbuchsbaum.github.io/fmrigds/)
+<!-- badges: end -->
+
 **Format-agnostic group-level analysis for fMRI**
 
 `fmrigds` provides a unified framework for working with first-level fMRI statistical maps across multiple data formats and spatial representations. The package implements a lazy evaluation model that enables efficient, reproducible group and meta-analyses without requiring data format conversions or space transformations upfront.
@@ -57,6 +62,21 @@ result <- compute(plan)
 assays(result)         # Statistical maps
 subjects(result)       # "meta" (group-level)
 space(result)          # Spatial representation
+```
+
+## Command-line interface (experimental)
+
+This package bundles a small `fmrigds` command wrapper under `inst/bin/`. After
+installing `fmrigds`, you can run it by resolving its installed path via
+`system.file()`:
+
+```bash
+# Show help
+"$(Rscript -e 'cat(system.file(\"bin\", \"fmrigds\", package = \"fmrigds\"))')" --help
+
+# Run a fixed-effects analysis from a CSV and write an HDF5 GDS
+"$(Rscript -e 'cat(system.file(\"bin\", \"fmrigds\", package = \"fmrigds\"))')" run \
+  --input group.csv --reduce fixed --out results.h5
 ```
 
 ## Interop Surface (for external packages)
@@ -174,11 +194,14 @@ make coverage
 
 ## Documentation
 
-- **Getting Started**: See `vignette("intro-gdsfmri")` for a complete tutorial
-- **Working with realized GDS and spatial FDR**: See `vignette("as-plan-and-spatial-fdr")`
-- **fmristore Integration**: See `vignette("fmristore-ingestion")` for reading fmristore files
+Full documentation and vignettes: <https://bbuchsbaum.github.io/fmrigds/>
+
+- **Getting Started**: `vignette("fmrigds")` --- core pipeline tutorial
+- **Spatial Operations**: `vignette("spatial-operations")` --- masking, alignment, and space mapping
+- **Post-hoc Corrections**: `vignette("as-plan-and-spatial-fdr")` --- standard and spatial FDR
+- **fmristore Integration**: `vignette("fmristore-ingestion")` --- reading fmristore HDF5 files
 - **Technical Details**: See `TECHNICAL_SPECIFICATION.md` for the full design specification
-- **Package Documentation**: `?gds`, `?compute`, `?reduce` for function references
+- **Function Reference**: `?gds`, `?compute`, `?reduce`, `?align`, `?mask`, `?map_to`
 
 ## Development Status
 
@@ -189,7 +212,6 @@ Core APIs are stabilizing for the 0.1.0 release.
 - Enhanced visualization tools for provenance graphs
 - Additional storage backends (TileDB, Arrow IPC)
 - Optimized spatial mapping kernels
-- pkgdown documentation site
 
 ## Contributing
 
