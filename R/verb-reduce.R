@@ -1,6 +1,6 @@
 #' Reduce across subjects (meta-analysis)
 #'
-#' @param x Plan, source, or realised GDS
+#' @param x A [`gds_plan`], [`gds_source`], or realised [`gds`]
 #' @param method Reduction method. Built-ins include `"fixed"`, `"random"`,
 #'   `"stouffer"`, and `"fisher"`. Registry-backed reducers include
 #'   meta-analytic regression reducers such as `"meta:fe_reg"` and the
@@ -14,6 +14,26 @@
 #'   subject-by-repeat level and must not contain `lmer`-style random-effects
 #'   syntax.
 #' @param data Optional data frame for building `X` when `x` is not a realised GDS.
+#'
+#' @details
+#' `reduce()` always works on a lazy plan internally, so `x` is whichever stage
+#' of the fmrigds workflow you already have:
+#'
+#' - Start from files or another external source with [gds()]. That returns a
+#'   [`gds_plan`] you can pipe directly into `reduce()`.
+#' - Start from an in-memory result with a realised [`gds`] returned by
+#'   [compute()] or created directly with [new_gds()]. `reduce()` will convert
+#'   it with [as_plan()] for you.
+#' - You can also pass a low-level [`gds_source`] created by [gds_source()], but
+#'   most users do not need this because [gds()] creates the source binding
+#'   automatically.
+#'
+#' If you want that conversion to be explicit, use [as_plan()] or its alias
+#' [plan()] before calling `reduce()`.
+#'
+#' For worked examples, see `vignette("fmrigds")` for the basic source -> plan
+#' -> compute workflow and `vignette("as-plan-and-spatial-fdr")` for chaining
+#' verbs on realised GDS objects.
 #' @param options Additional reducer options. Common examples include
 #'   `tau2 = NULL`, `custom_weights`, or for restricted LMM reducers
 #'   `list(fit = "REML", theta_mode = "pooled")` plus
@@ -32,6 +52,7 @@
 #' - The supported family is intentionally narrow: one grouping factor only,
 #'   Gaussian responses only, and no general random-effects formula grammar.
 #' @return Updated plan
+#' @seealso [gds()], [compute()], [as_plan()], [plan()], [new_gds()], [gds_source()]
 #' @export
 reduce <- function(x,
                    method = c("fixed", "random", "stouffer", "fisher"),
