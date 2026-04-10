@@ -1,7 +1,9 @@
 ^_pkgdown\.yml$
 ^\.claude$
 ^\.github$
+^\.beads$
 ^\.omc$
+^\.covr_result\.rds$
 ^\.rcmdcheck_result\.rds$
 ^.*\.Rcheck$
 ^FMRIGDS_IMPLEMENTATION_STATUS\.md$
@@ -10,12 +12,16 @@
 ^PACKAGE_RESPONSIBILITIES\.md$
 ^QUICK_REFERENCE\.md$
 ^TECHNICAL_SPECIFICATION\.md$
+^LICENSE\.md$
 ^Makefile$
 ^coverage\.html$
 ^coverage\.rds$
 ^docs$
+^figure$
 ^lib$
+^notes$
 ^repomix-output\.txt$
 ^repomix-output\.xml$
+^scripts$
 ^sprint[0-9]+\.md$
 ^sprint_plan\.md$

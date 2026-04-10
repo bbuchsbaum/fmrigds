@@ -6,6 +6,15 @@ test_that("assert_compatible_spaces checks fields", {
   expect_error(assert_compatible_spaces(sp1, sp3), "dim")
 })
 
+test_that("assert_compatible_spaces uses support metadata when present", {
+  sp1 <- space_voxel(dim = c(2,2,2), affine = diag(4), storage = "dense")
+  sp2 <- space_voxel(dim = c(2,2,2), affine = diag(4), storage = "dense")
+  sp1$grid_id <- "grid-a"
+  sp2$grid_id <- "grid-b"
+
+  expect_error(assert_compatible_spaces(sp1, sp2), "grid_id")
+})
+
 test_that("harmonise_contrasts renames contrasts and dimnames", {
   beta <- array(runif(2*2*2), dim = c(2,2,2), dimnames = list(NULL, c("s1","s2"), c("a","b")))
   var <- array(runif(2*2*2), dim = c(2,2,2), dimnames = dimnames(beta))
@@ -40,4 +49,3 @@ test_that("attach_weight and use_weight integrate with reduce", {
   res <- fmrigds:::apply_reduce(list(method = "meta:fe", options = opts$options), arrays = assays(g), weights = opts$weights, subjects = subjects(g))
   expect_true("beta" %in% names(res$arrays))
 })
-

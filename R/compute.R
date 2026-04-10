@@ -71,19 +71,27 @@ compute <- function(x,
     plan,
     plan$source$probe$space,
     plan$source$probe$subjects,
-    col_data = plan$meta$col_data %||% NULL
+    col_data = col_data(plan),
+    row_data = row_data(plan),
+    contrast_data = contrast_data(plan)
   )
   arrays <- node_result$arrays
 
   subjects <- node_result$subjects %||% plan$source$probe$subjects
-  contrasts <- plan$source$probe$contrasts
+  contrasts <- node_result$contrasts %||% plan$source$probe$contrasts
   space <- node_result$space
   subset_info <- node_result$subset
-  if (!is.null(subset_info$subjects)) subjects <- subjects[subset_info$subjects]
-  if (!is.null(subset_info$contrasts)) contrasts <- contrasts[subset_info$contrasts]
   if (!is.null(subset_info$samples)) space <- .subset_space(space, subset_info$samples)
+  row_data_final <- if ("row_data" %in% names(node_result)) {
+    node_result$row_data
+  } else {
+    row_data(plan)
+  }
+  if (!("row_data" %in% names(node_result)) && !is.null(row_data_final) && !is.null(subset_info$samples)) {
+    row_data_final <- row_data_final[subset_info$samples, , drop = FALSE]
+  }
   # Harmonize col_data with current subjects; drop if mismatched (e.g., after reduce to group-level)
-  col_data_final <- plan$meta$col_data %||% NULL
+  col_data_final <- col_data(plan)
   if (!is.null(col_data_final)) {
     rn <- rownames(col_data_final)
     if (length(subjects) == 1L && identical(subjects, "meta")) {
@@ -101,8 +109,23 @@ compute <- function(x,
     subjects = subjects,
     contrasts = contrasts,
     col_data = col_data_final,
+    row_data = row_data_final,
     metadata = plan$source$probe$metadata
   )
+
+  contrast_data_final <- if ("contrast_data" %in% names(node_result)) {
+    node_result$contrast_data
+  } else {
+    contrast_data(plan)
+  }
+  if (!is.null(contrast_data_final)) {
+    if (!is.null(contrasts) && nrow(contrast_data_final) == length(contrasts)) {
+      rownames(contrast_data_final) <- contrasts
+    }
+    info <- gds$metadata$contrast_info %||% list()
+    info$data <- contrast_data_final
+    gds$metadata$contrast_info <- info
+  }
 
   if (length(node_result$designs)) {
     existing_designs <- gds$metadata$design_mats %||% list()
@@ -190,11 +213,13 @@ canonicalize_node <- function(node) {
 # -------------------------------------------------------------------------
 # Helpers ------------------------------------------------------------------
 
-.apply_plan_nodes <- function(arrays, plan, space, subjects, col_data = NULL) {
+.apply_plan_nodes <- function(arrays, plan, space, subjects, col_data = NULL, row_data = NULL, contrast_data = NULL) {
   subset_info <- list(samples = NULL, subjects = NULL, contrasts = NULL)
   current_space <- space
   current_subjects <- subjects
   current_contrasts <- plan$source$probe$contrasts
+  current_row_data <- row_data
+  current_contrast_data <- contrast_data
   writes <- list()
   designs <- list()
   attachments <- list()
@@ -210,11 +235,17 @@ canonicalize_node <- function(node) {
       res <- .apply_subset_node(arrays, plan, node)
       arrays <- res$arrays
       subset_info <- res$subset
+      if (!is.null(subset_info$samples) && !is.null(current_row_data)) {
+        current_row_data <- current_row_data[subset_info$samples, , drop = FALSE]
+      }
       if (!is.null(subset_info$subjects)) {
         current_subjects <- current_subjects[subset_info$subjects]
       }
       if (!is.null(subset_info$contrasts)) {
         current_contrasts <- current_contrasts[subset_info$contrasts]
+        if (!is.null(current_contrast_data)) {
+          current_contrast_data <- current_contrast_data[current_contrasts, , drop = FALSE]
+        }
       }
     } else if (op == "derive") {
       arrays <- execute_derive(arrays, node$what, node$options)
@@ -229,22 +260,28 @@ canonicalize_node <- function(node) {
       res <- apply_align(family, arrays, current_subjects, current_space)
       arrays <- res$arrays
       current_space <- res$space
-      current_subjects <- current_subjects
+      current_row_data <- NULL
       subset_info <- list(samples = NULL, subjects = NULL, contrasts = NULL)
     } else if (op == "mask_policy") {
       res <- apply_mask_policy(node, arrays, current_space)
       arrays <- res$arrays
       current_space <- res$space
       subset_info <- res$subset
+      if (!is.null(subset_info$samples) && !is.null(current_row_data)) {
+        current_row_data <- current_row_data[subset_info$samples, , drop = FALSE]
+      }
     } else if (op == "map") {
       res <- apply_map_to(node, arrays)
       arrays <- res$arrays
       current_space <- res$space
+      current_row_data <- NULL
       subset_info <- list(samples = NULL, subjects = NULL, contrasts = NULL)
     } else if (op == "reduce") {
-      res <- apply_reduce(node, arrays, node$weights, current_subjects, col_data)
+      res <- apply_reduce(node, arrays, node$weights, current_subjects, col_data, current_contrast_data, current_contrasts)
       arrays <- res$arrays
       current_subjects <- res$subjects %||% "meta"
+      current_contrasts <- res$contrasts %||% current_contrasts
+      current_contrast_data <- res$contrast_data %||% current_contrast_data
        if (!is.null(res$design_info)) {
         designs <- c(designs, list(res$design_info))
       }
@@ -256,7 +293,12 @@ canonicalize_node <- function(node) {
       res <- apply_posthoc(
         node,
         arrays,
-        context = list(space = current_space, subjects = current_subjects, contrasts = current_contrasts)
+        context = list(
+          space = current_space,
+          subjects = current_subjects,
+          contrasts = current_contrasts,
+          row_data = current_row_data
+        )
       )
       arrays <- res$arrays
       if (!is.null(res$attachments) && length(res$attachments)) {
@@ -274,6 +316,9 @@ canonicalize_node <- function(node) {
     subset = subset_info,
     space = current_space,
     subjects = current_subjects,
+    contrasts = current_contrasts,
+    row_data = current_row_data,
+    contrast_data = current_contrast_data,
     writes = writes,
     designs = designs,
     attachments = attachments
@@ -287,8 +332,16 @@ canonicalize_node <- function(node) {
 
   dims <- dim(arrays[[1]])
   samples_idx <- if (is.null(sample)) seq_len(dims[1]) else .coerce_index(sample, plan$source$probe$space, dims[1])
-  subjects_idx <- if (is.null(subject)) seq_len(dims[2]) else match(subject, plan$source$probe$subjects)
-  contrasts_idx <- if (is.null(contrast)) seq_len(dims[3]) else match(contrast, plan$source$probe$contrasts)
+  subjects_idx <- if (is.null(subject)) {
+    seq_len(dims[2])
+  } else {
+    .coerce_named_index(subject, plan$source$probe$subjects, axis = "subject")
+  }
+  contrasts_idx <- if (is.null(contrast)) {
+    seq_len(dims[3])
+  } else {
+    .coerce_named_index(contrast, plan$source$probe$contrasts, axis = "contrast")
+  }
 
   if (any(is.na(subjects_idx))) stop("Unknown subject in subset operation", call. = FALSE)
   if (any(is.na(contrasts_idx))) stop("Unknown contrast in subset operation", call. = FALSE)
@@ -306,8 +359,21 @@ canonicalize_node <- function(node) {
   stop("Unsupported index type for samples", call. = FALSE)
 }
 
+.coerce_named_index <- function(idx, values, axis) {
+  if (is.numeric(idx)) return(as.integer(idx))
+  if (is.logical(idx)) return(which(idx))
+  if (is.character(idx)) return(match(idx, values))
+  stop("Unsupported index type for ", axis, call. = FALSE)
+}
+
 .subset_space <- function(space, idx) {
-  if (inherits(space, "space_parcels")) {
+  if (is.null(idx)) {
+    return(space)
+  }
+  if (exists("space_subset", mode = "function")) {
+    return(space_subset(space, idx))
+  }
+  if (inherits(space, "space_parcels") || inherits(space, "space_sample_labels")) {
     space$labels <- space$labels[idx]
   }
   space

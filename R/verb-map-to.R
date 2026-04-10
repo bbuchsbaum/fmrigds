@@ -13,6 +13,12 @@ map_to <- function(x,
                    map,
                    uncertainty = UncertaintyRule("independent"),
                    combine = NULL) {
+  if (!inherits(uncertainty, "gds_uncertainty_rule")) {
+    stop("`uncertainty` must be a gds_uncertainty_rule", call. = FALSE)
+  }
+  if (!is.null(combine)) {
+    combine <- match.arg(combine, c("stouffer", "fisher"))
+  }
   plan <- as_plan(x)
   add_op(plan, op_map(target_space, map, uncertainty, combine))
 }

@@ -64,3 +64,27 @@ test_that("Lancaster infers df weights from df", {
   expect_true(all(res$arrays$df[, 1, 1] >= 2 * sum(round(c(10, 20)))))
   expect_true(is.finite(res$arrays$p[, 1, 1]))
 })
+
+test_that("R fallback Stouffer handles missing values in the denominator", {
+  z <- matrix(c(1, NA, 2, 3), nrow = 2)
+  res <- fmrigds:::.stouffer_fallback(z, weights = c(1, 10))
+  expect_equal(res$z_g[1], 1)
+  expect_equal(res$z_g[2], (2 + 30) / sqrt(101))
+})
+
+test_that("R fallback Lancaster drops missing subjects from df", {
+  p <- matrix(c(0.05, NA, 0.20, 0.10), nrow = 2)
+  res <- fmrigds:::.lancaster_fallback(p, dfw = c(10, 20))
+  expect_equal(res$df, c(20, 60))
+  expect_true(all(is.finite(res$p_g)))
+})
+
+test_that("R fallback meta FE honors one-sided alternatives and min_subjects", {
+  beta <- matrix(c(1, 2, 5, NA), nrow = 2)
+  var <- matrix(1, nrow = 2, ncol = 2)
+  two_sided <- fmrigds:::.colwise_fe(beta, var, alternative = "two.sided", min_subj = 2L)
+  greater <- fmrigds:::.colwise_fe(beta, var, alternative = "greater", min_subj = 2L)
+  expect_lt(greater$p_g[1], two_sided$p_g[1])
+  expect_true(is.na(two_sided$p_g[2]))
+  expect_true(is.na(greater$beta_g[2]))
+})

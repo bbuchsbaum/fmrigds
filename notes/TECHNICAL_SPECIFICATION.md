@@ -1,9 +1,12 @@
 # fmrigds: Complete Technical Specification for R Implementation
 
 **Version:** 0.1.0
-**Package Name:** `gdsfmri`
+**Package Name:** `fmrigds`
 **Target:** Production-ready R implementation
 **Testing Framework:** testthat
+
+> Note: portions of this specification still discuss the earlier working name
+> `gdsfmri`. The implemented package and current public surface are `fmrigds`.
 
 ---
 

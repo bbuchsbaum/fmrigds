@@ -67,7 +67,7 @@ gds_metadata <- function(schema_version = "0.1.0",
                          units = list(),
                          provenance = list(graph = list(), log = character(), digest = NULL),
                          software = list(
-                           package = "gdsfmri",
+                           package = "fmrigds",
                            version = .pkg_version(),
                            R_version = getRversion()
                          ),
@@ -108,7 +108,7 @@ provenance_node <- function(op_name,
                             params,
                             inputs = list(),
                             timestamp = Sys.time(),
-                            software = list(package = "gdsfmri", version = .pkg_version()),
+                            software = list(package = "fmrigds", version = .pkg_version()),
                             hash = NULL) {
   if (is.null(hash)) {
     hash <- digest::digest(list(op_name = op_name, params = params, inputs = inputs))
@@ -196,6 +196,9 @@ space <- function(x) UseMethod("space")
 #' @export
 space.gds <- function(x) x$space
 
+#' @export
+space.gds_plan <- function(x) x$source$probe$space
+
 #' Extract subject identifiers from a GDS object
 #'
 #' @param x A GDS object
@@ -240,6 +243,11 @@ col_data <- function(x) UseMethod("col_data")
 #' @export
 col_data.gds <- function(x) x$col_data
 
+#' @export
+col_data.gds_plan <- function(x) {
+  x$meta$col_data %||% x$source$probe$col_data
+}
+
 #' Extract row (sample) metadata from a GDS object
 #'
 #' @param x A GDS object
@@ -250,6 +258,64 @@ row_data <- function(x) UseMethod("row_data")
 
 #' @export
 row_data.gds <- function(x) x$row_data
+
+#' @export
+row_data.gds_plan <- function(x) {
+  x$meta$row_data %||% x$source$probe$row_data
+}
+
+#' Extract contrast-level metadata from a GDS object
+#'
+#' @param x A GDS object or plan
+#'
+#' @return Data frame with one row per contrast/repeated-measure level
+#' @export
+contrast_data <- function(x) UseMethod("contrast_data")
+
+#' @export
+contrast_data.gds <- function(x) {
+  info <- x$metadata$contrast_info %||% NULL
+  if (is.null(info)) return(NULL)
+  info$data %||% NULL
+}
+
+#' @export
+contrast_data.gds_plan <- function(x) {
+  x$meta$contrast_data %||% x$source$probe$contrast_data
+}
+
+#' Extract sample labels from a GDS object
+#'
+#' @param x A GDS object or plan
+#'
+#' @return Character vector of sample labels
+#' @export
+sample_labels <- function(x) UseMethod("sample_labels")
+
+#' @export
+sample_labels.gds <- function(x) {
+  .sample_labels_from_row_data(row_data(x), space(x))
+}
+
+#' @export
+sample_labels.gds_plan <- sample_labels.gds
+
+#' Extract sample-group metadata from a GDS object
+#'
+#' @param x A GDS object or plan
+#' @param vars Candidate column names searched in `row_data(x)`
+#'
+#' @return A vector of group labels or `NULL` when unavailable
+#' @export
+sample_groups <- function(x, vars = c("feature_group", "spatial_group", "group", "parcel", "parcel_id")) UseMethod("sample_groups")
+
+#' @export
+sample_groups.gds <- function(x, vars = c("feature_group", "spatial_group", "group", "parcel", "parcel_id")) {
+  .sample_groups_from_row_data(row_data(x), vars = vars)
+}
+
+#' @export
+sample_groups.gds_plan <- sample_groups.gds
 
 #' Extract metadata from a GDS object
 #'
@@ -266,7 +332,7 @@ metadata.gds <- function(x) x$metadata
 # Helpers ------------------------------------------------------------------
 
 .pkg_version <- function() {
-  out <- try(utils::packageVersion("gdsfmri"), silent = TRUE)
+  out <- try(utils::packageVersion("fmrigds"), silent = TRUE)
   if (inherits(out, "try-error")) return("0.0.0")
   as.character(out)
 }
@@ -355,4 +421,76 @@ metadata.gds <- function(x) x$metadata
     stop("`row_data` must have one row per sample", call. = FALSE)
   }
   row_data
+}
+
+.normalise_contrast_data <- function(contrast_data, contrasts) {
+  if (is.null(contrast_data)) {
+    return(NULL)
+  }
+  if (!is.data.frame(contrast_data)) {
+    stop("`contrast_data` must be a data.frame", call. = FALSE)
+  }
+  if (!length(contrasts)) {
+    if (nrow(contrast_data)) {
+      stop("`contrast_data` supplied but no contrasts are available", call. = FALSE)
+    }
+    return(contrast_data)
+  }
+  rn <- rownames(contrast_data)
+  if (!is.null(rn) && !anyNA(rn) && !anyDuplicated(rn)) {
+    missing <- setdiff(contrasts, rn)
+    if (length(missing)) {
+      stop("`contrast_data` must contain rownames matching `contrasts`", call. = FALSE)
+    }
+    return(contrast_data[contrasts, , drop = FALSE])
+  }
+  if (nrow(contrast_data) != length(contrasts)) {
+    stop("`contrast_data` must have one row per contrast", call. = FALSE)
+  }
+  rownames(contrast_data) <- contrasts
+  contrast_data
+}
+
+.sample_labels_from_row_data <- function(row_data, space = NULL) {
+  if (!is.null(row_data) && nrow(row_data) > 0L) {
+    for (nm in c("label", "roi", "parcel")) {
+      if (nm %in% names(row_data)) {
+        return(as.character(row_data[[nm]]))
+      }
+    }
+  }
+
+  if (!is.null(space)) {
+    if (!is.null(space$labels)) {
+      return(as.character(space$labels))
+    }
+    if (!is.null(space$mask_idx)) {
+      return(as.character(space$mask_idx))
+    }
+  }
+
+  if (!is.null(row_data) && nrow(row_data) > 0L) {
+    if ("sample" %in% names(row_data)) {
+      return(as.character(row_data[["sample"]]))
+    }
+    rn <- rownames(row_data)
+    if (!is.null(rn) && !anyNA(rn)) {
+      return(as.character(rn))
+    }
+  }
+
+  NULL
+}
+
+.sample_groups_from_row_data <- function(row_data, vars = c("feature_group", "spatial_group", "group", "parcel", "parcel_id")) {
+  if (is.null(row_data) || !nrow(row_data)) {
+    return(NULL)
+  }
+
+  match_name <- intersect(vars, names(row_data))
+  if (!length(match_name)) {
+    return(NULL)
+  }
+
+  row_data[[match_name[[1L]]]]
 }

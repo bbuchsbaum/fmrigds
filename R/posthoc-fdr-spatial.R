@@ -20,8 +20,10 @@
     }
     dims <- dim(p)
 
-    group <- opts$group
-    if (is.null(group)) stop("options$group (length = samples) is required for spatial FDR", call. = FALSE)
+    group <- opts$group %||% .resolve_spatial_fdr_group(opts$row_data %||% NULL)
+    if (is.null(group)) {
+      stop("spatial FDR requires options$group or row_data with a spatial grouping column", call. = FALSE)
+    }
     if (length(group) != dims[1L]) stop("length(options$group) must equal sample dimension", call. = FALSE)
     # Normalize group IDs to consecutive integers; preserve NA groups
     gfac <- suppressWarnings(as.factor(group))
@@ -94,3 +96,6 @@
   }
 }
 
+.resolve_spatial_fdr_group <- function(row_data) {
+  .sample_groups_from_row_data(row_data)
+}

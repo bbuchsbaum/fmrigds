@@ -4,7 +4,14 @@
 \alias{register_reducer}
 \title{Register a reducer kernel}
 \usage{
-register_reducer(name, fun, requires, provides, options_schema = list())
+register_reducer(
+  name,
+  fun,
+  requires,
+  provides,
+  options_schema = list(),
+  input_shape = c("contrastwise", "joint_contrast")
+)
 }
 \arguments{
 \item{name}{String identifier, e.g., "meta:fe"}
@@ -16,6 +23,9 @@ register_reducer(name, fun, requires, provides, options_schema = list())
 \item{provides}{Character vector of outputs to be written}
 
 \item{options_schema}{Optional schema for options}
+
+\item{input_shape}{Reducer execution mode: \code{"contrastwise"} (default) or
+\code{"joint_contrast"} for reducers that consume the full contrast axis jointly}
 }
 \description{
 Register a reducer kernel

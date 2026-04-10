@@ -1,6 +1,6 @@
 # Reducer execution -------------------------------------------------------
 
-apply_reduce <- function(node, arrays, weights, subjects, col_data = NULL) {
+apply_reduce <- function(node, arrays, weights, subjects, col_data = NULL, contrast_data = NULL, contrasts = NULL) {
   name <- .normalize_reducer_name(node$method)
   reducer <- get_reducer(name)
   if (is.null(reducer)) {
@@ -17,6 +17,18 @@ apply_reduce <- function(node, arrays, weights, subjects, col_data = NULL) {
   # Ensure required inputs exist (derive z/p if necessary)
   req <- reducer$requires %||% character(0)
   arrays <- .ensure_required_arrays(arrays, req)
+
+  if (identical(reducer$input_shape %||% "contrastwise", "joint_contrast")) {
+    return(.apply_joint_reducer(
+      node,
+      reducer,
+      arrays,
+      subjects,
+      contrasts = contrasts,
+      col_data = col_data,
+      contrast_data = contrast_data
+    ))
+  }
 
   beta <- arrays$beta
   var  <- arrays$var
@@ -188,6 +200,29 @@ apply_reduce <- function(node, arrays, weights, subjects, col_data = NULL) {
     is.array(a) && length(dim(a)) == 3L && dim(a)[2L] == 1L
   }, arrays)
   list(arrays = arrays, subjects = "meta", design_info = design_info, attachments = attachments)
+}
+
+.apply_joint_reducer <- function(node, reducer, arrays, subjects, contrasts = NULL, col_data = NULL, contrast_data = NULL) {
+  opts_root <- validate_reducer_options(reducer$options_schema %||% list(), node$options %||% list())
+  res <- reducer$fun(
+    arrays = arrays,
+    design = .build_joint_reducer_design(
+      reducer = reducer,
+      formula = node$formula %||% opts_root$formula %||% "~ 1",
+      subjects = subjects,
+      contrasts = contrasts %||% dimnames(arrays$beta)[[3L]] %||% paste0("contrast", seq_len(dim(arrays$beta)[3L])),
+      col_data = col_data,
+      contrast_data = contrast_data,
+      opts = opts_root
+    ),
+    opts = opts_root
+  )
+  if (!is.list(res) || is.null(res$arrays)) {
+    stop("Joint reducer must return a list with an `arrays` element", call. = FALSE)
+  }
+  res$subjects <- res$subjects %||% "meta"
+  res$contrasts <- res$contrasts %||% "model"
+  res
 }
 
 .ensure_required_arrays <- function(arrays, requires) {

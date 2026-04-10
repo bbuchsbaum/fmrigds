@@ -54,6 +54,8 @@ new_image_catalog <- function(files,
 #' @param ... Additional arguments (ignored).
 #'
 #' @return Invisibly returns the catalog.
+#' @method print image_catalog
+#' @rdname print.image_catalog
 #' @export
 print.image_catalog <- function(x, ...) {
   cat("Image Catalog\n")
@@ -97,6 +99,8 @@ if ("subject" %in% names(x$metadata)) {
 #' @param ... Additional arguments (ignored).
 #'
 #' @return Invisibly returns the catalog.
+#' @method summary image_catalog
+#' @rdname summary.image_catalog
 #' @export
 summary.image_catalog <- function(object, ...) {
   meta <- object$metadata
@@ -661,6 +665,8 @@ validate.image_catalog <- function(x,
 #' @param ... Additional arguments (ignored).
 #'
 #' @return Invisibly returns the report.
+#' @method print catalog_validation_report
+#' @rdname print.catalog_validation_report
 #' @export
 print.catalog_validation_report <- function(x, ...) {
   cat("Catalog Validation Report\n")

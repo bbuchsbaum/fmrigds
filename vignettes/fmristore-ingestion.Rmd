@@ -11,10 +11,16 @@ vignette: >
 ---
 
 ```{r setup, include = FALSE}
-knitr::opts_chunk$set(collapse = TRUE, comment = "#>", eval = FALSE)
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  message = FALSE,
+  warning = FALSE,
+  eval = FALSE
+)
 ```
 
-## Why read fmristore files?
+## When do you need this?
 
 Many fMRI analysis pipelines store first-level results in HDF5 files using the
 fmristore format. These files can contain voxelwise statistical maps (labeled
@@ -23,7 +29,7 @@ to run group-level analyses on data already stored in fmristore, fmrigds reads
 it directly---auto-detecting the layout and converting to the GDS structure.
 
 All examples below use `eval = FALSE` because they require HDF5 files that are
-not shipped with the package. To run them locally, install `hdf5r`:
+not shipped with the package. To run them locally, you need `hdf5r`:
 
 ```r
 install.packages("hdf5r")
@@ -31,7 +37,10 @@ install.packages("hdf5r")
 
 ## Two paths for reading data
 
-**Path B (recommended)**: Native `/gds` group format
+fmrigds supports two kinds of HDF5 input. The path you use depends on how the
+file was created:
+
+**Path B (recommended)**: Native `/gds` format
 :   Files written by `write_out(..., format = "h5")` contain a `/gds` group
     with full metadata, provenance, and structure. These round-trip perfectly.
 
@@ -76,9 +85,13 @@ statistical maps in voxel space with one dataset per contrast.
 
 Structure inside the HDF5 file:
 
-- `/mask`: 3D binary mask defining which voxels have data
-- `/data/<contrast_name>`: Packed vectors of values for masked voxels
-- `/labels`: List of contrast names
+```
+/mask         3D binary mask (which voxels have data)
+/data/
+  cope1       Packed vector of values for masked voxels
+  cope2       ...
+/labels       List of contrast names
+```
 
 ```r
 plan <- gds("subject01_lvs.h5")
@@ -98,8 +111,12 @@ Contrast names containing special characters are sanitized
 Parcellated layouts store timeseries data for brain parcels (ROIs). Each file
 contains:
 
-- `/cluster_map`: 3D integer array mapping voxels to parcel IDs
-- `/scans/<id>`: Matrices of parcel x timepoints for each scan
+```
+/cluster_map    3D integer array (voxels -> parcel IDs)
+/scans/
+  001           Matrix: parcels x timepoints
+  002           ...
+```
 
 The challenge: fmristore stores *timeseries*, but GDS needs *contrasts*. You
 must tell fmrigds how to convert timepoints into contrasts using a
@@ -115,7 +132,7 @@ g <- compute(plan)
 contrasts(g)  # c("t_001", "t_002", "t_003", ...)
 ```
 
-Use when you want to analyse the full timecourse.
+Use this when you want to analyse the full timecourse.
 
 **`"mean"`** --- average all timepoints into one contrast:
 
@@ -166,8 +183,12 @@ represented by a small number of spatial components (e.g., from PCA or ICA).
 
 Structure:
 
-- `/basis`: Matrix of spatial components (components x voxels)
-- Per-scan embeddings: How much each component is expressed over time
+```
+/basis          Matrix: components x voxels
+/scans/
+  001           Embeddings: how much each component is expressed over time
+  002           ...
+```
 
 ```r
 plan <- gds("latent_small.h5")
@@ -216,7 +237,7 @@ metadata(g)$provenance$log
 For native `/gds` files (Path B), provenance is preserved across
 write--read cycles.
 
-## Summary
+## Quick reference
 
 | Scenario | What to do |
 |---|---|
@@ -229,6 +250,8 @@ write--read cycles.
 ## Next steps
 
 - `vignette("fmrigds")` --- getting started with the core pipeline
+- `vignette("spatial-operations")` --- masking, alignment, and space
+  transformations
 - `vignette("as-plan-and-spatial-fdr")` --- post-hoc corrections and spatial
   FDR
 - `?gds` for the full list of adapter arguments

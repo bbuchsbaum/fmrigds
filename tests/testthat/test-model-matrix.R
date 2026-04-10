@@ -32,3 +32,21 @@ test_that("model_matrix works with realised GDS", {
   expect_equal(nrow(X), 2)
 })
 
+test_that("model_matrix respects lazy subject subsets on plans", {
+  tmp <- tempfile(fileext = ".csv")
+  on.exit(unlink(tmp))
+  writeLines(c(
+    "sample,subject,contrast,beta,var",
+    "ROI_1,s1,c1,0.5,0.04",
+    "ROI_1,s2,c1,0.6,0.05"
+  ), tmp)
+
+  plan <- gds(tmp)
+  plan <- with_col_data(plan, data.frame(age = c(25, 30), row.names = c("s1", "s2")))
+  plan <- subset(plan, subject = "s2")
+
+  X <- model_matrix(plan, ~ 1 + age)
+  expect_equal(nrow(X), 1)
+  expect_equal(rownames(X), "s2")
+  expect_equal(unname(X[, "age"]), 30)
+})

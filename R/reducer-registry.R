@@ -9,15 +9,24 @@
 #' @param requires Character vector of required inputs, e.g., c("beta","var")
 #' @param provides Character vector of outputs to be written
 #' @param options_schema Optional schema for options
+#' @param input_shape Reducer execution mode: `"contrastwise"` (default) or
+#'   `"joint_contrast"` for reducers that consume the full contrast axis jointly
 #' @export
-register_reducer <- function(name, fun, requires, provides, options_schema = list()) {
+register_reducer <- function(name,
+                             fun,
+                             requires,
+                             provides,
+                             options_schema = list(),
+                             input_shape = c("contrastwise", "joint_contrast")) {
   stopifnot(is.character(name), length(name) == 1L, is.function(fun))
+  input_shape <- match.arg(input_shape)
   .gds_reducers[[name]] <- list(
     name = name,
     fun = fun,
     requires = as.character(requires),
     provides = as.character(provides),
-    options_schema = options_schema
+    options_schema = options_schema,
+    input_shape = input_shape
   )
   invisible(name)
 }
@@ -48,4 +57,3 @@ list_reducers <- function() {
     name
   )
 }
-

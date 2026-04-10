@@ -70,7 +70,12 @@ as_gds.array <- function(x,
                          metadata = list(),
                          ...) {
   if (length(dim(x)) == 2L) {
-    x <- array(x, dim = c(nrow(x), ncol(x), 1L))
+    dn <- dimnames(x)
+    x <- array(
+      x,
+      dim = c(nrow(x), ncol(x), 1L),
+      dimnames = list(dn[[1L]], dn[[2L]], NULL)
+    )
   } else if (length(dim(x)) != 3L) {
     stop("Array input must be 2-D or 3-D; canonical is [sample x subject x contrast]", call. = FALSE)
   }
@@ -87,16 +92,27 @@ as_gds.array <- function(x,
 #' @rdname as_gds
 #' @param mapping Optional list mapping column names for axes and assays.
 #' Default: list(sample="sample", subject="subject", contrast="contrast",
-#' assays=list(beta="beta", var="var"))
+#' assays=list(beta="beta", var="var"), contrast_data=NULL)
 #' @param space Optional space for sample axis; defaults to sample labels from data
+#' @param col_data Optional subject-level covariates
+#' @param row_data Optional sample-level metadata
+#' @param contrast_data Optional contrast-level metadata. When omitted,
+#'   `mapping$contrast_data` can name one or more long-table columns to collapse
+#'   onto the contrast axis.
+#' @param metadata Optional metadata list merged into [`gds_metadata()`]
 #' @export
 as_gds.data.frame <- function(x,
                               mapping = NULL,
                               space = NULL,
+                              col_data = NULL,
+                              row_data = NULL,
+                              contrast_data = NULL,
+                              metadata = list(),
                               ...) {
   mapping <- utils::modifyList(
     list(sample = "sample", subject = "subject", contrast = "contrast",
          assays = list(beta = "beta", var = "var", se = NULL),
+         contrast_data = NULL,
          roi = NULL),
     mapping %||% list()
   )
@@ -112,6 +128,7 @@ as_gds.data.frame <- function(x,
     sample_col = mapping$sample,
     roi_col = mapping$roi,
     contrast_col = mapping$contrast,
+    contrast_data_cols = mapping$contrast_data,
     space = space
   )
   arrs <- .tabular_read(
@@ -123,7 +140,48 @@ as_gds.data.frame <- function(x,
     roi_col = mapping$roi,
     contrast_col = mapping$contrast
   )
-  new_gds(arrs, probe$space, probe$subjects, probe$contrasts)
+  g <- new_gds(
+    arrs,
+    probe$space,
+    probe$subjects,
+    probe$contrasts,
+    col_data = col_data,
+    row_data = row_data,
+    metadata = metadata
+  )
+  contrast_df <- contrast_data %||% probe$contrast_data %||% NULL
+  if (!is.null(contrast_df)) {
+    g <- with_contrast_data(g, contrast_df)
+  }
+  g
+}
+
+#' @rdname as_gds
+#' @param feature Name of the neurotabs feature to use as the primary assay
+#' @export
+as_gds.nftab <- function(x, feature = NULL, ...) {
+  gds(x, feature = feature, ...)
+}
+
+.plan_subjects_for_model_matrix <- function(plan) {
+  subjects <- plan$source$probe$subjects %||% plan$meta$subjects
+  if (is.null(subjects) || !length(subjects) || !length(plan$nodes)) {
+    return(subjects)
+  }
+
+  for (node in plan$nodes) {
+    if (!identical(node$op, "subset_axis") || is.null(node$subject)) next
+    idx <- if (is.numeric(node$subject)) {
+      as.integer(node$subject)
+    } else if (is.logical(node$subject)) {
+      which(node$subject)
+    } else {
+      match(node$subject, subjects)
+    }
+    if (anyNA(idx)) stop("Unknown subject in subset operation", call. = FALSE)
+    subjects <- subjects[idx]
+  }
+  subjects
 }
 
 #' Build a design matrix from attached col_data
@@ -146,8 +204,8 @@ model_matrix <- function(x, formula) {
     cd <- x$col_data
   } else {
     plan <- as_plan(x)
-    subjects <- plan$source$probe$subjects %||% plan$meta$subjects
-    cd <- plan$meta$col_data %||% NULL
+    subjects <- .plan_subjects_for_model_matrix(plan)
+    cd <- col_data(plan)
   }
   if (is.null(subjects) || !length(subjects)) {
     stop("Cannot determine subject identifiers from `x`", call. = FALSE)

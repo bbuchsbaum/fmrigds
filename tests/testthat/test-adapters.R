@@ -5,6 +5,22 @@ test_that("adapter registry detects tabular files", {
   expect_equal(detect_adapter(tmp), "tabular")
 })
 
+test_that("tabular adapter can extract contrast_data from long-table columns", {
+  tmp <- tempfile(fileext = ".csv")
+  on.exit(unlink(tmp), add = TRUE)
+  writeLines(c(
+    "sample,subject,visit,time,beta,var",
+    "ROI_1,sub-01,baseline,0,0.5,0.04",
+    "ROI_1,sub-01,task,1,0.8,0.04",
+    "ROI_1,sub-02,baseline,0,0.4,0.05",
+    "ROI_1,sub-02,task,1,0.9,0.05"
+  ), tmp)
+
+  plan <- gds(tmp, contrast_col = "visit", contrast_data_cols = "time")
+  expect_equal(rownames(contrast_data(plan)), c("baseline", "task"))
+  expect_equal(as.numeric(contrast_data(plan)$time), c(0, 1))
+})
+
 test_that("nifti adapter produces plan", {
   skip_if_not_installed("RNifti")
   tmp_dir <- tempfile()
@@ -71,4 +87,24 @@ test_that("space_from_nifti handles 5D nifti headers", {
   sp <- space_from_nifti(tmp)
   expect_s3_class(sp, "space_voxel")
   expect_equal(as.integer(sp$dim), c(2L, 3L, 4L))
+})
+
+test_that("nifti adapter list detection rejects non-NIfTI files", {
+  tmp <- tempfile(fileext = ".csv")
+  on.exit(unlink(tmp), add = TRUE)
+  writeLines("a,b\n1,2", tmp)
+  expect_false(fmrigds:::.nifti_detect(list(beta = tmp)))
+})
+
+test_that("nifti beta and se file sets are aligned by subject key", {
+  aligned <- fmrigds:::.nifti_align_file_sets(
+    c("sub-02_beta.nii.gz", "sub-01_beta.nii.gz"),
+    c("sub-01_se.nii.gz", "sub-02_se.nii.gz")
+  )
+  expect_equal(basename(aligned$files_beta), c("sub-01_beta.nii.gz", "sub-02_beta.nii.gz"))
+  expect_equal(basename(aligned$files_se), c("sub-01_se.nii.gz", "sub-02_se.nii.gz"))
+  expect_error(
+    fmrigds:::.nifti_align_file_sets("sub-01_beta.nii.gz", c("sub-01_se.nii.gz", "sub-02_se.nii.gz")),
+    "same subjects"
+  )
 })

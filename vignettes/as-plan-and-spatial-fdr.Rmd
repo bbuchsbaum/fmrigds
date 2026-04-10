@@ -11,7 +11,14 @@ vignette: >
 ---
 
 ```{r setup, include = FALSE}
-knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  message = FALSE,
+  warning = FALSE,
+  fig.width = 6,
+  fig.height = 4
+)
 library(fmrigds)
 set.seed(1)
 ```
@@ -36,7 +43,8 @@ We'll use a small dataset with 6 ROIs, 4 subjects, and 1 contrast. ROIs 1--3
 represent a "frontal" region with a genuine effect; ROIs 4--6 represent an
 "occipital" region with little activation.
 
-```{r sample-data}
+```{r sample-data, include = FALSE}
+# Build a small CSV with known signal structure
 tmp <- tempfile(fileext = ".csv")
 lines <- "sample,subject,contrast,beta,var"
 rois <- paste0("ROI_", 1:6)
@@ -51,9 +59,28 @@ for (s in subs) {
 }
 
 writeLines(lines, tmp)
+```
+
+```{r load-data}
 g0 <- compute(gds(tmp))
 explain(g0)
 ```
+
+```{r data-overview, echo = FALSE, fig.cap = "Per-subject betas for 6 ROIs. ROIs 1--3 (frontal) have a true effect around 2; ROIs 4--6 (occipital) are near zero.", fig.height = 3.5}
+mat <- assay(g0, "beta")[, , 1]
+cols <- rep(c("#5B8DBE", "#D4694A"), each = 3)
+par(mar = c(5, 4, 3, 1))
+matplot(t(mat), type = "b", pch = 19, lty = 1, col = cols,
+        xlab = "Subject", ylab = "Beta",
+        main = "Effect estimates by ROI", xaxt = "n")
+axis(1, at = 1:4, labels = paste0("s", 1:4))
+legend("topright", legend = c("Frontal (ROI 1-3)", "Occipital (ROI 4-6)"),
+       col = c("#5B8DBE", "#D4694A"), pch = 19, lty = 1, bty = "n", cex = 0.85)
+```
+
+The frontal ROIs cluster around 2 while the occipital ROIs hover near zero,
+just as we designed. A group model should find the frontal effect significant
+and the occipital effect not.
 
 ## Chaining operations on realized objects
 
@@ -81,13 +108,36 @@ meta-analytic outputs.
 
 Benjamini--Hochberg (`"fdr:bh"`) controls the expected proportion of false
 discoveries. It treats each sample location independently:
+
 ```{r standard-fdr}
 assay(g_bh, "p")
 assay(g_bh, "q")
 ```
 
-ROIs with strong effects (low p-values) retain significance after correction,
-while weak effects are penalised.
+```{r fdr-comparison, echo = FALSE, fig.cap = "Raw p-values (left) and FDR-adjusted q-values (right). The dashed line marks 0.05.", fig.height = 3.5}
+p_vals <- drop(assay(g_bh, "p"))
+q_vals <- drop(assay(g_bh, "q"))
+nms <- rownames(assay(g_bh, "p"))
+if (is.null(nms)) nms <- paste0("ROI_", seq_along(p_vals))
+cols <- ifelse(seq_along(p_vals) <= 3, "#5B8DBE", "#D4694A")
+
+par(mfrow = c(1, 2), mar = c(5, 4, 3, 1))
+
+bp1 <- barplot(-log10(p_vals), names.arg = nms, col = cols, border = NA,
+        ylab = expression(-log[10](p)), main = "Raw p-values", las = 2,
+        cex.names = 0.8)
+abline(h = -log10(0.05), lty = 2, col = "grey40")
+
+bp2 <- barplot(-log10(q_vals), names.arg = nms, col = cols, border = NA,
+        ylab = expression(-log[10](q)), main = "BH-adjusted q-values", las = 2,
+        cex.names = 0.8)
+abline(h = -log10(0.05), lty = 2, col = "grey40")
+```
+
+ROIs with strong effects (frontal, blue bars) remain significant after
+correction---their bars extend well above the 0.05 threshold (dashed line).
+The occipital ROIs (orange) have much weaker evidence and fall below the
+threshold after adjustment.
 
 ## Spatial FDR
 
@@ -118,6 +168,28 @@ Samples within the same region share a group-level q-value. This is useful
 when you expect effects to cluster spatially---as they typically do in
 neuroimaging.
 
+```{r spatial-vs-standard, echo = FALSE, fig.cap = "Standard BH correction (left) versus spatial FDR (right). Spatial FDR assigns a single q-value per region.", fig.height = 3.5}
+q_bh <- drop(assay(g_bh, "q"))
+q_sp <- drop(assay(g_sfdr, "q"))
+
+par(mfrow = c(1, 2), mar = c(5, 4, 3, 1))
+bp1 <- barplot(-log10(q_bh), names.arg = nms, col = cols, border = NA,
+        ylab = expression(-log[10](q)), main = "Standard BH", las = 2,
+        cex.names = 0.8)
+abline(h = -log10(0.05), lty = 2, col = "grey40")
+
+bp2 <- barplot(-log10(q_sp), names.arg = nms, col = cols, border = NA,
+        ylab = expression(-log[10](q)), main = "Spatial FDR", las = 2,
+        cex.names = 0.8)
+abline(h = -log10(0.05), lty = 2, col = "grey40")
+```
+
+Notice that within each region, the spatial FDR q-values are identical---the
+algorithm operates on groups, not individual tests. Spatial FDR can be more
+powerful than standard BH when the spatial grouping reflects real biological
+structure, because combining evidence across neighbouring locations
+strengthens the signal.
+
 ### Requirements for spatial FDR
 
 - The GDS must contain `p` values (or `z`/`t` from which p can be derived).
@@ -129,6 +201,8 @@ neuroimaging.
 ## Next steps
 
 - `vignette("fmrigds")` --- getting started with the core pipeline
+- `vignette("spatial-operations")` --- masking, alignment, and space
+  transformations
 - `vignette("fmristore-ingestion")` --- reading fmristore HDF5 files
 - `?posthoc` for the full list of correction methods
 

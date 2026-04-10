@@ -12,8 +12,17 @@
   sample_labels <- samples
   if (inherits(gds$space, "space_parcels") && !is.null(gds$space$labels)) {
     sample_labels <- gds$space$labels
+  } else if (inherits(gds$space, "space_sample_labels") && !is.null(gds$space$labels)) {
+    sample_labels <- gds$space$labels
   } else if (inherits(gds$space, "space_voxel") && !is.null(gds$space$mask_idx)) {
     sample_labels <- gds$space$mask_idx
+  }
+  if (length(sample_labels) != length(samples)) {
+    if (length(sample_labels) >= length(samples)) {
+      sample_labels <- sample_labels[seq_len(length(samples))]
+    } else {
+      sample_labels <- samples
+    }
   }
 
   grid <- expand.grid(

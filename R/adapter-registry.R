@@ -58,7 +58,7 @@ detect_adapter <- function(source, prefer = NULL) {
 
   scores <- vapply(names, function(name) {
     adapter <- .adapter_registry[[name]]
-    score <- adapter$detect(source)
+    score <- tryCatch(adapter$detect(source), error = function(e) 0)
     if (isFALSE(score) || is.null(score)) 0 else as.numeric(score)
   }, numeric(1))
 

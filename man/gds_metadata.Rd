@@ -8,7 +8,7 @@ gds_metadata(
   schema_version = "0.1.0",
   units = list(),
   provenance = list(graph = list(), log = character(), digest = NULL),
-  software = list(package = "gdsfmri", version = .pkg_version(), R_version =
+  software = list(package = "fmrigds", version = .pkg_version(), R_version =
     getRversion()),
   alignment = NULL,
   map_families = list(),

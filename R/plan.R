@@ -163,7 +163,9 @@ as_plan.gds <- function(x) {
     maps = x$metadata$map_families %||% list(),
     metadata = x$metadata,
     columns = list(),
-    col_data = x$col_data
+    col_data = x$col_data,
+    row_data = x$row_data,
+    contrast_data = contrast_data(x)
   )
   src <- gds_source("memory", x, probe_result)
   plan <- gds_plan(source = src)
@@ -171,6 +173,8 @@ as_plan.gds <- function(x) {
   plan$meta$map_families <- probe_result$maps %||% list()
   plan$meta$subjects <- probe_result$subjects
   if (!is.null(x$col_data)) plan$meta$col_data <- x$col_data
+  if (!is.null(x$row_data)) plan$meta$row_data <- x$row_data
+  if (!is.null(probe_result$contrast_data)) plan$meta$contrast_data <- probe_result$contrast_data
   # Legacy-friendly alias for tests expecting plan$metadata$dims
   plan$metadata <- list(dims = probe_result$dims)
   plan

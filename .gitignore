@@ -1,1 +1,10 @@
 docs/
+.beads/
+.omc/
+.covr_result.rds
+coverage.html
+coverage.rds
+figure/
+lib/
+repomix-output.txt
+repomix-output.xml

@@ -52,6 +52,7 @@ register_tabular_adapter <- function() {
                            subject_col = "subject",
                            sample_col = "sample",
                            contrast_col = "contrast",
+                           contrast_data_cols = NULL,
                            roi_col = NULL,
                            space = NULL,
                            ...) {
@@ -73,6 +74,12 @@ register_tabular_adapter <- function() {
   subjects <- unique(df[[subject_col]])
   samples <- unique(df[[sample_col]])
   contrasts <- unique(df[[contrast_col]])
+  contrast_data <- .tabular_extract_contrast_data(
+    df,
+    contrast_col = contrast_col,
+    contrast_data_cols = contrast_data_cols,
+    contrasts = contrasts
+  )
 
   dims <- gds_dims(sample = length(samples), subject = length(subjects), contrast = length(contrasts))
   space <- space %||% space_sample_labels(labels = samples)
@@ -88,11 +95,13 @@ register_tabular_adapter <- function() {
       schema_version = "0.1.0",
       source_file = handle$path
     ),
+    contrast_data = contrast_data,
     columns = list(
       effect_cols = present_effects,
       subject_col = subject_col,
       sample_col = sample_col,
-      contrast_col = contrast_col
+      contrast_col = contrast_col,
+      contrast_data_cols = contrast_data_cols
     )
   )
   probe_contract(out)
@@ -184,10 +193,65 @@ register_tabular_adapter <- function() {
   invisible(NULL)
 }
 
+.tabular_extract_contrast_data <- function(df,
+                                           contrast_col,
+                                           contrast_data_cols = NULL,
+                                           contrasts = unique(df[[contrast_col]])) {
+  cols <- as.character(contrast_data_cols %||% character())
+  if (!length(cols)) return(NULL)
+
+  missing <- setdiff(cols, names(df))
+  if (length(missing)) {
+    stop("Missing contrast_data columns in tabular data: ", paste(missing, collapse = ", "), call. = FALSE)
+  }
+
+  contrasts_chr <- as.character(contrasts)
+  split_idx <- split(seq_len(nrow(df)), factor(as.character(df[[contrast_col]]), levels = contrasts_chr))
+  out <- setNames(vector("list", length(cols)), cols)
+
+  for (nm in cols) {
+    values <- df[[nm]]
+    if (is.factor(values)) values <- as.character(values)
+    col_out <- lapply(seq_along(contrasts_chr), function(i) {
+      idx <- split_idx[[i]]
+      .tabular_constant_by_group(values[idx], column = nm, group = contrasts_chr[[i]])
+    })
+    if (is.logical(values)) {
+      out[[nm]] <- as.logical(unlist(col_out, use.names = FALSE))
+    } else if (is.integer(values)) {
+      out[[nm]] <- as.integer(unlist(col_out, use.names = FALSE))
+    } else if (is.numeric(values)) {
+      out[[nm]] <- as.numeric(unlist(col_out, use.names = FALSE))
+    } else {
+      out[[nm]] <- as.character(unlist(col_out, use.names = FALSE))
+    }
+  }
+
+  data.frame(out, row.names = contrasts_chr, check.names = FALSE, stringsAsFactors = FALSE)
+}
+
+.tabular_constant_by_group <- function(x, column, group) {
+  if (!length(x)) return(NA)
+  if (all(is.na(x))) return(NA)
+  non_missing <- x[!is.na(x)]
+  ref <- non_missing[[1L]]
+  if (any(is.na(x)) || any(non_missing != ref)) {
+    stop(
+      "contrast_data column '", column, "' must be constant within contrast '", group, "'",
+      call. = FALSE
+    )
+  }
+  ref
+}
+
 register_builtin_adapters <- function() {
   if (!"memory" %in% ls(.adapter_registry)) register_memory_adapter()
   if (!"tabular" %in% ls(.adapter_registry)) register_tabular_adapter()
   if (!"nifti" %in% ls(.adapter_registry)) register_nifti_adapter()
   if (!"h5" %in% ls(.adapter_registry)) register_h5_adapter()
   if (!"fmristore" %in% ls(.adapter_registry)) register_fmristore_adapter()
+  if (!"nftab" %in% ls(.adapter_registry) &&
+      requireNamespace("neurotabs", quietly = TRUE)) {
+    register_nftab_adapter()
+  }
 }

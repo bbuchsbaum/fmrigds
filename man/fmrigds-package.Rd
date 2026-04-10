@@ -4,26 +4,42 @@
 \name{fmrigds-package}
 \alias{fmrigds}
 \alias{fmrigds-package}
-\title{gdsfmri Package}
+\title{fmrigds}
 \description{
-Scaffolding for the Group Data Set (GDS) implementation as specified in
-\code{TECHNICAL_SPECIFICATION.md} and summarised in \code{fmrigds_blueprint.md}.
+Lazy, format-agnostic group analysis for fMRI.
 }
 \details{
-The functions exported from this package will implement:
+\code{fmrigds} provides a common Group Data Set (GDS) abstraction for first-level
+fMRI outputs together with a lazy, plan-based workflow for group analysis.
+The package centers on a compact public grammar:
 \itemize{
-\item Constructors for GDS objects and spaces
-\item Lazy plan verbs (\code{gds()}, \code{subset()}, \code{derive()}, \code{align()}, \code{mask()},
-\code{map_to()}, \code{reduce()}, \code{write_out()}, \code{compute()})
-\item Storage adapters (tabular, NIfTI, HDF5, fmristore)
-\item Statistical derivations and variance propagation helpers
+\item \code{gds()} to open supported sources and create a plan
+\item \code{subset()}, \code{derive()}, \code{align()}, \code{mask()}, \code{map_to()}, \code{reduce()},
+\code{posthoc()}, and \code{write_out()} to describe analysis steps
+\item \code{compute()} to execute the plan and return a realised GDS
 }
 
-The current file provides package-level documentation placeholder so the
-skeleton can be installed. Concrete implementations will follow the
-technical specification.
+Core capabilities include:
+\itemize{
+\item Constructors for GDS objects and spaces
+\item Storage adapters (tabular, NIfTI, HDF5, fmristore)
+\item Statistical derivations and variance propagation helpers
+\item Reducer and post-hoc registries for group and meta-analytic workflows
+\item Provenance-aware export and inspection helpers
+}
+
+See the package reference and vignettes for supported workflows and release
+guidance.
+}
+\seealso{
+Useful links:
+\itemize{
+  \item \url{https://github.com/bbuchsbaum/fmrigds}
+  \item Report bugs at \url{https://github.com/bbuchsbaum/fmrigds/issues}
+}
+
 }
 \author{
-\strong{Maintainer}: GDS Maintainer \email{maintainer@example.com}
+\strong{Maintainer}: Brad Buchsbaum \email{brad.buchsbaum@gmail.com}
 
 }

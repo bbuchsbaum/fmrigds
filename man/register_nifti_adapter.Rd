@@ -16,7 +16,10 @@ Uses the neuroim2 package for reading NIfTI files.
 \details{
 The NIfTI adapter supports:
 \itemize{
-\item 3D and 4D NIfTI files (.nii, .nii.gz)
+\item 3D, 4D, and 5D+ NIfTI files (.nii, .nii.gz)
+\itemize{
+\item For 5D+, non-spatial axes (dims 4+) are flattened into the GDS contrast axis
+}
 \item Optional mask specification (separate NIfTI file with 1=included, 0=excluded)
 \item Automatic spatial information extraction (affine transformation)
 \item BIDS-compatible file naming

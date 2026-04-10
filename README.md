@@ -2,7 +2,7 @@
 
 <!-- badges: start -->
 [![R-CMD-check](https://github.com/bbuchsbaum/fmrigds/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/bbuchsbaum/fmrigds/actions/workflows/R-CMD-check.yaml)
-[![pkgdown](https://github.com/bbuchsbaum/fmrigds/actions/workflows/pkgdown.yaml/badge.svg)](https://bbuchsbaum.github.io/fmrigds/)
+[![pkgdown](https://github.com/bbuchsbaum/fmrigds/actions/workflows/pkgdown.yaml/badge.svg)](https://github.com/bbuchsbaum/fmrigds/actions/workflows/pkgdown.yaml)
 <!-- badges: end -->
 
 **Format-agnostic group-level analysis for fMRI**
@@ -26,6 +26,7 @@ Build analysis pipelines declaratively without loading data into memory:
 - **Derivation engine**: Automatically compute derived statistics (t, z, p-values, effect sizes)
 - **Variance propagation**: Correct uncertainty handling through transformations and mappings
 - **Group-level reducers**: Fixed-effects, random-effects (DerSimonian-Laird), meta-regression
+- **Repeated-measures LMMs**: Fast Gaussian mixed models for shared-design multiresponse data with random intercepts or one random slope
 - **Evidence combiners**: Stouffer's method, Fisher's method, Lancaster's method for combining statistics
 
 ### Data Export
@@ -50,9 +51,9 @@ library(fmrigds)
 plan <- gds("roi_stats.csv")
 
 # Build a lazy analysis pipeline
-plan <- plan %>%
-  subset(contrast = "Faces>Places") %>%
-  derive("t") %>%
+plan <- plan |>
+  subset(contrast = "Faces>Places") |>
+  derive("t") |>
   reduce(method = "fixed")
 
 # Execute and get results
@@ -64,20 +65,52 @@ subjects(result)       # "meta" (group-level)
 space(result)          # Spatial representation
 ```
 
-## Command-line interface (experimental)
+## Command-line interface
 
-This package bundles a small `fmrigds` command wrapper under `inst/bin/`. After
-installing `fmrigds`, you can run it by resolving its installed path via
-`system.file()`:
+This package bundles an `fmrigds` command wrapper under `inst/bin/`. After
+installing `fmrigds`, resolve its installed path via `system.file()` and then
+use the CLI to probe sources, assemble plans, preview small blocks, and run
+full analyses:
 
 ```bash
 # Show help
 "$(Rscript -e 'cat(system.file(\"bin\", \"fmrigds\", package = \"fmrigds\"))')" --help
 
+# Inspect a source
+"$(Rscript -e 'cat(system.file(\"bin\", \"fmrigds\", package = \"fmrigds\"))')" probe \
+  --input group.csv
+
+# Build and save a plan without executing it
+"$(Rscript -e 'cat(system.file(\"bin\", \"fmrigds\", package = \"fmrigds\"))')" plan \
+  --input group.csv \
+  --derive t,p \
+  --reduce fixed \
+  --posthoc fdr:bh \
+  --save-plan fixed-plan.json
+
 # Run a fixed-effects analysis from a CSV and write an HDF5 GDS
 "$(Rscript -e 'cat(system.file(\"bin\", \"fmrigds\", package = \"fmrigds\"))')" run \
   --input group.csv --reduce fixed --out results.h5
+
+# Reuse a saved plan later
+"$(Rscript -e 'cat(system.file(\"bin\", \"fmrigds\", package = \"fmrigds\"))')" run \
+  --load-plan fixed-plan.json --out results.h5
 ```
+
+Main commands:
+
+- `probe`: summarize a source or saved plan
+- `plan`: build, validate, inspect, and save plans
+- `preview`: execute a small sample block and print a tidy preview table
+- `run`: execute a plan and write outputs
+- `list`: inspect reducers, post-hoc methods, and adapters
+
+The CLI is designed around the same lazy grammar as the R API. Common paths are
+first-class (`--derive`, `--reduce`, `--posthoc`, `--out`), while more advanced
+workflows can still be steered through repeatable passthrough flags such as
+`--source-option`, `--reduce-option`, `--posthoc-option`, and `--write-option`.
+For plan-first workflows, `--save-plan` and `--load-plan` let you separate plan
+construction from execution.
 
 ## Interop Surface (for external packages)
 
@@ -133,7 +166,7 @@ col_data <- data.frame(
 )
 
 # Fixed-effects meta-regression
-plan <- gds("roi_stats.csv", col_data = col_data) %>%
+plan <- gds("roi_stats.csv", col_data = col_data) |>
   reduce(method = "meta:fe_reg", formula = ~ age + group)
 
 # Or attach covariates later
@@ -146,6 +179,41 @@ names(assays(result))
 # "coef:(Intercept)", "coef:age", "coef:grouppatient",
 # "se_coef:(Intercept)", "se_coef:age", "se_coef:grouppatient"
 ```
+
+### Repeated-measures mixed models
+
+For common neuroimaging repeated-measures workflows, `reduce()` also supports a
+restricted but efficient Gaussian mixed-model family. The fast path assumes the
+same observation layout and the same fixed/random design for every sample:
+
+```r
+result <- gds("roi_long.csv", contrast_data_cols = "time") |>
+  reduce(
+    method = "lmm:ri_slope1",
+    formula = ~ time,
+    options = list(
+      slope = "time",
+      covariance = "diag",
+      fit = "REML",
+      theta_mode = "voxelwise"
+    )
+  ) |>
+  compute()
+
+names(assays(result))
+# "coef:(Intercept)", "coef:time", "vc_intercept", "vc_slope",
+# "lambda_intercept", "lambda_slope", ...
+```
+
+Available repeated-measures reducers:
+
+- `method = "lmm:ri"` for a random-intercept model
+- `method = "lmm:ri_slope1"` for a random intercept plus one within-subject slope
+- `options$theta_mode = "pooled"` to share variance parameters across samples
+- `options$theta_mode = "voxelwise"` to fit variance parameters separately per sample
+
+This is intentionally narrower than `lmer()`: one grouping factor only,
+Gaussian outcomes only, and no general random-effects formula parser.
 
 ### Working with different formats
 
@@ -181,8 +249,8 @@ compute(plan_with_write)
 # install.packages("remotes")
 remotes::install_github("bbuchsbaum/fmrigds")
 
-# Optional dependencies for specific formats
-install.packages(c("arrow", "hdf5r", "RNifti"))
+# Optional packages for specific workflows
+install.packages(c("arrow", "neuroim2", "neurotabs", "neurothresh"))
 ```
 
 ## Development
@@ -194,24 +262,26 @@ make coverage
 
 ## Documentation
 
-Full documentation and vignettes: <https://bbuchsbaum.github.io/fmrigds/>
+Documentation is currently carried by the reference pages and source
+vignettes in this repository. After installation, run
+`browseVignettes("fmrigds")` to open the built articles locally.
 
 - **Getting Started**: `vignette("fmrigds")` --- core pipeline tutorial
+- **CLI Workflows**: `vignette("cli-workflows")` --- probe, plan, preview, and run analyses from the shell
+- **Repeated Measures**: `vignette("repeated-measures-lmm")` --- restricted Gaussian LMM workflow
 - **Spatial Operations**: `vignette("spatial-operations")` --- masking, alignment, and space mapping
 - **Post-hoc Corrections**: `vignette("as-plan-and-spatial-fdr")` --- standard and spatial FDR
 - **fmristore Integration**: `vignette("fmristore-ingestion")` --- reading fmristore HDF5 files
-- **Technical Details**: See `TECHNICAL_SPECIFICATION.md` for the full design specification
+- **Technical Details**: See `notes/TECHNICAL_SPECIFICATION.md` for the full design specification
 - **Function Reference**: `?gds`, `?compute`, `?reduce`, `?align`, `?mask`, `?map_to`
 
-## Development Status
+## Release Focus
 
-The package is functional and tested with comprehensive test coverage (224+ tests).
-Core APIs are stabilizing for the 0.1.0 release.
+The current development branch is focused on a clean path to `1.0.0`:
 
-### Planned Enhancements
-- Enhanced visualization tools for provenance graphs
-- Additional storage backends (TileDB, Arrow IPC)
-- Optimized spatial mapping kernels
+- polished end-user workflows for tabular ROI data, voxelwise NIfTI inputs, and HDF5/fmristore sources
+- a stable core grammar built around `gds()`, the lazy verbs, and `compute()`
+- cross-format consistency, provenance-aware export, and predictable object summaries
 
 ## Contributing
 
@@ -223,9 +293,9 @@ If you use fmrigds in your research, please cite:
 
 ```
 Buchsbaum, B. R. (2025). fmrigds: Format-agnostic group-level analysis for fMRI.
-R package version 0.1.0. https://github.com/bbuchsbaum/fmrigds
+R package. https://github.com/bbuchsbaum/fmrigds
 ```
 
 ## License
 
-GPL-3
+MIT

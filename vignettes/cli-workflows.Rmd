@@ -1,0 +1,333 @@
+---
+title: "Driving fmrigds from the command line"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Driving fmrigds from the command line}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  message = FALSE,
+  warning = FALSE
+)
+
+library(fmrigds)
+
+if (!exists(".cli_main", envir = asNamespace("fmrigds"), inherits = FALSE) &&
+    requireNamespace("pkgload", quietly = TRUE)) {
+  pkgload::load_all(".", helpers = FALSE, export_all = FALSE, quiet = TRUE)
+}
+
+cli_main <- getFromNamespace(".cli_main", "fmrigds")
+
+cli_run <- function(args) {
+  args <- as.character(args)
+  paste(capture.output(cli_main(args)), collapse = "\n")
+}
+
+cli_text <- function(...) {
+  cli_run(unlist(list(...), use.names = FALSE))
+}
+
+cli_json <- function(...) {
+  jsonlite::fromJSON(cli_text(...))
+}
+
+cli_show <- function(...) {
+  args <- as.character(unlist(list(...), use.names = FALSE))
+  cat("$ fmrigds ", paste(shQuote(args), collapse = " "), "\n", sep = "")
+  cat(cli_run(args), "\n", sep = "")
+  invisible(NULL)
+}
+
+node_table <- function(nodes) {
+  if (is.null(nodes)) {
+    return(data.frame(op = character(), summary = character()))
+  }
+  if (is.data.frame(nodes)) {
+    keep <- intersect(c("op", "summary"), names(nodes))
+    return(nodes[keep])
+  }
+  data.frame(
+    op = vapply(nodes, function(x) x$op, character(1)),
+    summary = vapply(nodes, function(x) x$summary, character(1)),
+    stringsAsFactors = FALSE
+  )
+}
+
+stats_path <- tempfile(fileext = ".csv")
+writeLines(c(
+  "sample,subject,contrast,time,beta,var",
+  "ROI_1,sub-01,baseline,0,0.50,0.04",
+  "ROI_1,sub-01,task,1,0.80,0.04",
+  "ROI_1,sub-02,baseline,0,0.40,0.05",
+  "ROI_1,sub-02,task,1,0.90,0.05",
+  "ROI_1,sub-03,baseline,0,0.45,0.05",
+  "ROI_1,sub-03,task,1,1.05,0.05",
+  "ROI_1,sub-04,baseline,0,0.52,0.05",
+  "ROI_1,sub-04,task,1,1.12,0.05",
+  "ROI_2,sub-01,baseline,0,0.60,0.03",
+  "ROI_2,sub-01,task,1,0.70,0.03",
+  "ROI_2,sub-02,baseline,0,0.55,0.02",
+  "ROI_2,sub-02,task,1,0.95,0.02",
+  "ROI_2,sub-03,baseline,0,0.58,0.02",
+  "ROI_2,sub-03,task,1,1.10,0.02",
+  "ROI_2,sub-04,baseline,0,0.62,0.02",
+  "ROI_2,sub-04,task,1,1.18,0.02"
+), stats_path)
+
+cov_path <- tempfile(fileext = ".csv")
+writeLines(c(
+  "subject,age,group",
+  "sub-01,29,control",
+  "sub-02,33,control",
+  "sub-03,37,patient",
+  "sub-04,41,patient"
+), cov_path)
+
+quick_out <- tempfile(fileext = ".csv")
+plan_path <- tempfile(fileext = ".json")
+```
+
+## Why use the CLI?
+
+Sometimes you want the `fmrigds` pipeline without opening an R session for each
+run. The CLI gives you the same lazy plan grammar that you use in R, but in a
+form that fits scripts, shell pipelines, and scheduled jobs.
+
+The common path is short: inspect a source, save a plan, preview a small block,
+then execute it. When you need more control, the same CLI also accepts metadata
+tables, model formulas, reducer options, post-hoc options, and saved plan JSON.
+
+At the terminal, the workflow looks like this:
+
+```bash
+fmrigds probe --input group.csv
+fmrigds plan --input group.csv --reduce fixed --save-plan plan.json
+fmrigds preview --load-plan plan.json --n 3
+fmrigds run --load-plan plan.json --out results.h5
+```
+
+The chunks below call the same CLI parser from inside R so the examples stay
+runnable in the vignette.
+
+## What are we driving?
+
+We'll use a small long-table input with ROI labels, four subjects, and two
+contrasts. The extra `time` column will become contrast metadata later.
+
+```{r cli-input}
+read.csv(stats_path, stringsAsFactors = FALSE)
+```
+
+## How do you get a result quickly?
+
+If you already know the source and the reducer you want, `run` is the shortest
+path from input table to output file.
+
+```{r cli-quick-win}
+cli_show(
+  "run",
+  "--input", stats_path,
+  "--subset", "contrast=task",
+  "--reduce", "fixed",
+  "--out", quick_out
+)
+```
+
+```{r cli-quick-win-output}
+head(read.csv(quick_out, stringsAsFactors = FALSE))
+```
+
+```{r cli-quick-win-check, include = FALSE}
+quick_df <- read.csv(quick_out, stringsAsFactors = FALSE)
+stopifnot(file.exists(quick_out))
+stopifnot(nrow(quick_df) == 2L)
+stopifnot(all(c("sample", "subject", "contrast", "beta", "var") %in% names(quick_df)))
+stopifnot(all(is.finite(quick_df$beta)))
+```
+
+That is the "easy path": subset to the contrast you want, reduce across
+subjects, and write a tidy result. For one-off jobs or shell scripts, that is
+often enough.
+
+## How do you inspect a source before you commit to a model?
+
+`probe` tells you what the CLI sees before anything is computed: the adapter,
+the dimensions, the assays, and whether the source has enough structure for the
+next step.
+
+```{r cli-probe}
+probe <- cli_json(
+  "probe",
+  "--input", stats_path,
+  "--contrast-data-cols", "time",
+  "--json"
+)
+
+data.frame(
+  adapter = probe$adapter,
+  samples = probe$dims[1],
+  subjects = probe$dims[2],
+  contrasts = probe$dims[3],
+  assays = paste(probe$assays, collapse = ", "),
+  has_contrast_data = probe$has_contrast_data,
+  stringsAsFactors = FALSE
+)
+```
+
+```{r cli-probe-check, include = FALSE}
+stopifnot(identical(probe$adapter, "tabular"))
+stopifnot(identical(as.integer(unlist(probe$dims)), c(2L, 4L, 2L)))
+stopifnot(isTRUE(probe$has_contrast_data))
+```
+
+Here `--contrast-data-cols time` promotes the `time` column into
+contrast-level metadata. That matters when you move from a simple group summary
+to a model that needs contrast annotations.
+
+## How do you separate planning from execution?
+
+`plan` is useful when you want to describe the workflow once, save it, review
+it, and execute it later.
+
+```{r cli-plan}
+plan_info <- cli_json(
+  "plan",
+  "--input", stats_path,
+  "--contrast-data-cols", "time",
+  "--subset", "contrast=task",
+  "--reduce", "fixed",
+  "--posthoc", "fdr:bh",
+  "--save-plan", plan_path,
+  "--json"
+)
+
+knitr::kable(node_table(plan_info$nodes), row.names = FALSE)
+```
+
+```{r cli-plan-check, include = FALSE}
+loaded_plan <- load_plan(plan_path)
+stopifnot(file.exists(plan_path))
+stopifnot(identical(vapply(loaded_plan$nodes, `[[`, character(1), "op"),
+                    c("subset_axis", "reduce", "posthoc")))
+stopifnot(identical(rownames(contrast_data(loaded_plan)), c("baseline", "task")))
+stopifnot(all(contrast_data(loaded_plan)$time == c(0, 1)))
+```
+
+This is the point where the CLI stops being a thin wrapper around `compute()`
+and becomes a real planning tool. You can keep the saved JSON under version
+control, review the steps, and reuse the same plan across runs.
+
+## How do you preview a saved plan?
+
+`preview` runs a small sample block through the current plan. That is useful
+when you want to check the output contract without writing the full result.
+
+```{r cli-preview}
+preview_out <- cli_json(
+  "preview",
+  "--load-plan", plan_path,
+  "--n", "1",
+  "--show-assay", "beta,q",
+  "--json"
+)
+
+preview_out$data
+```
+
+```{r cli-preview-check, include = FALSE}
+stopifnot(nrow(preview_out$data) == 1L)
+stopifnot(identical(preview_out$data$sample, "ROI_1"))
+stopifnot(identical(preview_out$data$subject, "meta"))
+stopifnot(identical(preview_out$data$contrast, "task"))
+stopifnot(all(is.finite(preview_out$data$beta)))
+stopifnot(all(preview_out$data$q >= 0 & preview_out$data$q <= 1))
+```
+
+The preview already includes the derived and post-hoc assays from the saved
+plan. In practice, this is the fastest way to confirm that a workflow is
+producing the fields you expect before you launch a longer batch run.
+
+## How do you reach more complex workflows?
+
+The CLI is not limited to fixed-effects summaries. You can also attach
+subject-level covariates, specify formulas, and hand reducer-specific options
+to more complex models.
+
+```{r cli-meta-regression}
+cli_show(
+  "preview",
+  "--input", stats_path,
+  "--subset", "contrast=task",
+  "--col-data", cov_path,
+  "--reduce", "meta:fe_reg",
+  "--formula", "~ age",
+  "--show-assay", "coef:age",
+  "--n", "2"
+)
+```
+
+```{r cli-meta-regression-check, include = FALSE}
+reg_preview <- cli_json(
+  "preview",
+  "--input", stats_path,
+  "--subset", "contrast=task",
+  "--col-data", cov_path,
+  "--reduce", "meta:fe_reg",
+  "--formula", "~ age",
+  "--show-assay", "coef:age",
+  "--n", "2",
+  "--json"
+)
+stopifnot("coef:age" %in% names(reg_preview$data))
+stopifnot(all(is.finite(reg_preview$data[["coef:age"]])))
+```
+
+The same pattern extends to other advanced switches:
+
+- `--source-option key=value` passes adapter-specific arguments through `gds()`.
+- `--reduce-option key=value` passes reducer options through `reduce()`.
+- `--posthoc-option key=value` passes method-specific options through `posthoc()`.
+- `--write-option key=value` controls exporters when you write to disk.
+- `--load-plan` and `--save-plan` let you mix shell-driven execution with
+  plan-first workflows.
+
+## How do you discover available methods?
+
+`list` exposes the registries that the CLI can target. You can use it to see
+which reducers and post-hoc methods are available in the current installation.
+
+```{r cli-list}
+reducers <- cli_json("list", "reducers", "--json")
+
+head(
+  data.frame(
+    name = reducers$name,
+    requires = vapply(reducers$requires, paste, collapse = ", ", character(1)),
+    provides = vapply(reducers$provides, paste, collapse = ", ", character(1)),
+    stringsAsFactors = FALSE
+  ),
+  6
+)
+```
+
+If you are scripting around the CLI, this registry view is a good way to make
+your wrapper validate method names before a larger run.
+
+## Where should you go next?
+
+Once you are comfortable with the CLI surface, the R vignettes fill in the
+modeling details:
+
+- `vignette("fmrigds")` for the core lazy workflow
+- `vignette("spatial-operations")` for mapping, masking, and alignment
+- `vignette("as-plan-and-spatial-fdr")` for post-hoc and spatial FDR workflows
+
+The CLI is best when you want a reproducible command surface. When you need
+custom transforms or deeply programmatic branching, save a plan from the CLI
+and continue in R with `load_plan()`, `explain_plan()`, and `compute()`.

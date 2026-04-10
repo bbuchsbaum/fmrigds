@@ -5,6 +5,7 @@
 \alias{as_gds.list}
 \alias{as_gds.array}
 \alias{as_gds.data.frame}
+\alias{as_gds.nftab}
 \title{Coerce common R objects into a GDS}
 \usage{
 as_gds(x, ...)
@@ -32,7 +33,18 @@ as_gds(x, ...)
   ...
 )
 
-\method{as_gds}{data.frame}(x, mapping = NULL, space = NULL, ...)
+\method{as_gds}{data.frame}(
+  x,
+  mapping = NULL,
+  space = NULL,
+  col_data = NULL,
+  row_data = NULL,
+  contrast_data = NULL,
+  metadata = list(),
+  ...
+)
+
+\method{as_gds}{nftab}(x, feature = NULL, ...)
 }
 \arguments{
 \item{x}{Object to coerce (list/array/data.frame)}
@@ -45,7 +57,7 @@ as_gds(x, ...)
 
 \item{contrasts}{Optional contrast identifiers}
 
-\item{col_data}{Optional subject-level covariates (rownames must match subjects)}
+\item{col_data}{Optional subject-level covariates}
 
 \item{row_data}{Optional sample-level metadata}
 
@@ -55,7 +67,13 @@ as_gds(x, ...)
 
 \item{mapping}{Optional list mapping column names for axes and assays.
 Default: list(sample="sample", subject="subject", contrast="contrast",
-assays=list(beta="beta", var="var"))}
+assays=list(beta="beta", var="var"), contrast_data=NULL)}
+
+\item{contrast_data}{Optional contrast-level metadata. When omitted,
+\code{mapping$contrast_data} can name one or more long-table columns to collapse
+onto the contrast axis.}
+
+\item{feature}{Name of the neurotabs feature to use as the primary assay}
 }
 \value{
 A \code{gds} object

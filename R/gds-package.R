@@ -1,25 +1,38 @@
-#' gdsfmri Package
+#' fmrigds
 #'
-#' Scaffolding for the Group Data Set (GDS) implementation as specified in
-#' `TECHNICAL_SPECIFICATION.md` and summarised in `fmrigds_blueprint.md`.
+#' Lazy, format-agnostic group analysis for fMRI.
 #'
-#' The functions exported from this package will implement:
+#' `fmrigds` provides a common Group Data Set (GDS) abstraction for first-level
+#' fMRI outputs together with a lazy, plan-based workflow for group analysis.
+#' The package centers on a compact public grammar:
+#'
+#' - `gds()` to open supported sources and create a plan
+#' - `subset()`, `derive()`, `align()`, `mask()`, `map_to()`, `reduce()`,
+#'   `posthoc()`, and `write_out()` to describe analysis steps
+#' - `compute()` to execute the plan and return a realised GDS
+#'
+#' Core capabilities include:
 #'   * Constructors for GDS objects and spaces
-#'   * Lazy plan verbs (`gds()`, `subset()`, `derive()`, `align()`, `mask()`,
-#'     `map_to()`, `reduce()`, `write_out()`, `compute()`)
 #'   * Storage adapters (tabular, NIfTI, HDF5, fmristore)
 #'   * Statistical derivations and variance propagation helpers
+#'   * Reducer and post-hoc registries for group and meta-analytic workflows
+#'   * Provenance-aware export and inspection helpers
 #'
-#' The current file provides package-level documentation placeholder so the
-#' skeleton can be installed. Concrete implementations will follow the
-#' technical specification.
+#' See the package reference and vignettes for supported workflows and release
+#' guidance.
+#' @importFrom stats setNames
+#' @importFrom utils head
+#' @useDynLib fmrigds, .registration = TRUE
 "_PACKAGE"
 
-.onLoad <- function(libname, pkgname) {
+.onLoad <- function(libname, pkgname) { # nocov start
   .register_default_assays()
   register_builtin_adapters()
   if (exists("register_core_reducers", mode = "function")) {
     register_core_reducers()
+  }
+  if (exists("register_lmm_reducers", mode = "function")) {
+    register_lmm_reducers()
   }
   if (exists(".register_builtin_posthoc", mode = "function")) {
     .register_builtin_posthoc()
@@ -27,4 +40,4 @@
   if (exists(".set_threads_from_option", mode = "function")) {
     .set_threads_from_option()
   }
-}
+} # nocov end

@@ -37,6 +37,7 @@ register_nifti_adapter <- function() {
 
 .nifti_detect <- function(source) {
   # Accept character vector (files/dir) or a named list with beta/se entries
+  if (is.data.frame(source)) return(FALSE)
   if (is.character(source)) {
     files <- .nifti_normalise_source(source)
     if (!length(files)) return(FALSE)
@@ -45,8 +46,16 @@ register_nifti_adapter <- function() {
     return(0.9)
   }
   if (is.list(source)) {
-    beta_ok <- !is.null(source$beta) && all(file.exists(unlist(source$beta)))
-    se_ok <- !is.null(source$se) && all(file.exists(unlist(source$se)))
+    beta_files <- if (!is.null(source$beta)) .nifti_normalise_source(source$beta) else NULL
+    se_files <- if (!is.null(source$se)) .nifti_normalise_source(source$se) else NULL
+    beta_ok <- !is.null(beta_files) &&
+      length(beta_files) > 0L &&
+      all(file.exists(beta_files)) &&
+      all(grepl("\\.nii(\\.gz)?$", beta_files, ignore.case = TRUE))
+    se_ok <- !is.null(se_files) &&
+      length(se_files) > 0L &&
+      all(file.exists(se_files)) &&
+      all(grepl("\\.nii(\\.gz)?$", se_files, ignore.case = TRUE))
     if (beta_ok || se_ok) return(0.8)
   }
   FALSE
@@ -74,7 +83,7 @@ register_nifti_adapter <- function() {
     beta_files <- files[grepl(bpat, base, ignore.case = TRUE)]
     se_files <- files[grepl(spat, base, ignore.case = TRUE)]
     if (length(beta_files) && length(se_files)) {
-      return(list(files_beta = beta_files, files_se = se_files))
+      return(.nifti_align_file_sets(beta_files, se_files))
     }
     # Fallback: treat all as beta if unclassified
     return(list(files_beta = files, files_se = NULL))
@@ -83,7 +92,7 @@ register_nifti_adapter <- function() {
     files_beta <- if (!is.null(source$beta)) .nifti_normalise_source(source$beta) else NULL
     files_se <- if (!is.null(source$se)) .nifti_normalise_source(source$se) else NULL
     if (is.null(files_beta) && is.null(files_se)) stop("No NIfTI files found in list", call. = FALSE)
-    return(list(files_beta = files_beta, files_se = files_se))
+    return(.nifti_align_file_sets(files_beta, files_se))
   }
   stop("Unsupported NIfTI source", call. = FALSE)
 }
@@ -128,7 +137,7 @@ register_nifti_adapter <- function() {
 
   mask_idx <- which(as.vector(mask_bitmap))
 
-  subjects <- .nifti_subject_ids(files1)
+  subjects <- .nifti_subject_key(files1)
   contrasts <- if (n_contrasts == 1L) {
     "contrast1"
   } else {
@@ -149,9 +158,9 @@ register_nifti_adapter <- function() {
   assays_avail <- c()
   if (!is.null(handle$files_beta)) assays_avail <- c(assays_avail, "beta")
   if (!is.null(handle$files_se)) assays_avail <- c(assays_avail, "se")
-  list(
+  out <- list(
     assays = assays_avail,
-    dims = c(sample = length(mask_idx), subject = length(files1), contrast = n_contrasts),
+    dims = gds_dims(sample = length(mask_idx), subject = length(files1), contrast = n_contrasts),
     subjects = subjects,
     contrasts = contrasts,
     space = space,
@@ -166,11 +175,46 @@ register_nifti_adapter <- function() {
     n_contrasts = n_contrasts,
     source_ndim = length(dim_all)
   )
+  probe_contract(out)
 }
 
 .nifti_subject_ids <- function(files) {
   ids <- tools::file_path_sans_ext(basename(files))
   sub("\\.nii$", "", ids)
+}
+
+.nifti_subject_key <- function(files) {
+  ids <- .nifti_subject_ids(files)
+  ids <- sub(
+    "([_.-](beta|cope|effect|se|stderr|sterr|sigma|std(err)?))+$",
+    "",
+    ids,
+    ignore.case = TRUE,
+    perl = TRUE
+  )
+  sub("[_.-]+$", "", ids, perl = TRUE)
+}
+
+.nifti_align_file_sets <- function(files_beta, files_se) {
+  if (is.null(files_beta) || is.null(files_se)) {
+    return(list(files_beta = files_beta, files_se = files_se))
+  }
+
+  beta_key <- .nifti_subject_key(files_beta)
+  se_key <- .nifti_subject_key(files_se)
+  if (anyDuplicated(beta_key) || anyDuplicated(se_key)) {
+    stop("NIfTI beta/se files must not contain duplicate subject identifiers", call. = FALSE)
+  }
+
+  ord_beta <- order(beta_key)
+  ord_se <- order(se_key)
+  beta_key <- beta_key[ord_beta]
+  se_key <- se_key[ord_se]
+  if (!identical(beta_key, se_key)) {
+    stop("NIfTI beta and se files must refer to the same subjects", call. = FALSE)
+  }
+
+  list(files_beta = files_beta[ord_beta], files_se = files_se[ord_se])
 }
 
 .nifti_read <- function(handle,
@@ -189,7 +233,10 @@ register_nifti_adapter <- function() {
   sample_idx <- if (!is.null(block) && !is.null(block$sample)) block$sample else seq_len(samples_total)
   n_subjects <- length(handle$files_beta %||% handle$files_se)
   out <- list()
-  read_stack <- function(file_vec) {
+  read_stack <- function(file_vec, assay_name) {
+    if (length(file_vec) != n_subjects) {
+      stop("NIfTI assay file count mismatch for ", assay_name, call. = FALSE)
+    }
     arr <- array(NA_real_, dim = c(length(sample_idx), n_subjects, n_contrasts))
     for (j in seq_along(file_vec)) {
       img <- .nifti_read_image(file_vec[j])
@@ -199,8 +246,8 @@ register_nifti_adapter <- function() {
     arr
   }
   for (nm in assays) {
-    if (identical(nm, "beta") && !is.null(handle$files_beta)) out$beta <- read_stack(handle$files_beta)
-    if (identical(nm, "se") && !is.null(handle$files_se)) out$se <- read_stack(handle$files_se)
+    if (identical(nm, "beta") && !is.null(handle$files_beta)) out$beta <- read_stack(handle$files_beta, "beta")
+    if (identical(nm, "se") && !is.null(handle$files_se)) out$se <- read_stack(handle$files_se, "se")
   }
   out
 }

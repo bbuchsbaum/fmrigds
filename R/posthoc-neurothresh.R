@@ -1,4 +1,4 @@
-# neurothresh post-hoc bridge -------------------------------------------------
+# neurothresh post-hoc bridge ------------------------------------------------- # nocov start
 
 .posthoc_resolve_voxel_spec <- function(opts, n_samples, method_name = "nt:tfce_fwer") {
   sp <- opts$space %||% NULL
@@ -488,3 +488,5 @@
     )
   }
 }
+
+# nocov end

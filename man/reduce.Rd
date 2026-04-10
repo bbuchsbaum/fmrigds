@@ -17,22 +17,41 @@ reduce(
 \arguments{
 \item{x}{Plan, source, or realised GDS}
 
-\item{method}{Reduction method. Built-ins: "fixed", "random", "stouffer", "fisher";
-or any registered reducer id like "meta:fe", "meta:re", "combine:stouffer", etc.}
+\item{method}{Reduction method. Built-ins include \code{"fixed"}, \code{"random"},
+\code{"stouffer"}, and \code{"fisher"}. Registry-backed reducers include
+meta-analytic regression reducers such as \code{"meta:fe_reg"} and the
+restricted repeated-measures Gaussian LMM reducers \code{"lmm:ri"} and
+\code{"lmm:ri_slope1"}.}
 
 \item{weights}{Weighting scheme (\code{"1/var"}, \code{"n_eff"}, \code{"equal"}, \code{"custom"})}
 
 \item{by}{Grouping variable (e.g., \code{"contrast"})}
 
-\item{options}{Additional options, e.g., \code{tau2 = NULL}, \code{custom_weights}
+\item{options}{Additional reducer options. Common examples include
+\code{tau2 = NULL}, \code{custom_weights}, or for restricted LMM reducers
+\code{list(fit = "REML", theta_mode = "pooled")} plus
+\code{list(slope = "time", covariance = "diag")} for \code{"lmm:ri_slope1"}.
 
 Note: Current grouping is per-contrast. Values other than "contrast" are
 not interpreted yet; future versions may extend grouping to other
-factors in \code{row_data}/\code{col_data}.}
+factors in \code{row_data}/\code{col_data}.
 
-\item{formula}{Optional model formula for meta-regression; if provided and
-\code{x} is a realised GDS with \code{col_data}, an \code{X} matrix is built automatically
-and passed via \code{options$X}.}
+Restricted repeated-measures LMM contract:
+\itemize{
+\item \code{"lmm:ri"} fits a Gaussian random-intercept model.
+\item \code{"lmm:ri_slope1"} fits a Gaussian random intercept plus one within-subject slope.
+\item Repeated-measure metadata must live on the contrast axis via \code{\link[=with_contrast_data]{with_contrast_data()}}
+or tabular ingestion with \code{gds(..., contrast_data_cols = ...)}.
+\item \code{options$theta_mode} can be \code{"pooled"} or \code{"voxelwise"}.
+\item The supported family is intentionally narrow: one grouping factor only,
+Gaussian responses only, and no general random-effects formula grammar.
+}}
+
+\item{formula}{Optional model formula. For meta-regression reducers the design
+is built from subject-level \code{col_data}. For \code{"lmm:ri"} and
+\code{"lmm:ri_slope1"}, the formula specifies fixed effects at the
+subject-by-repeat level and must not contain \code{lmer}-style random-effects
+syntax.}
 
 \item{data}{Optional data frame for building \code{X} when \code{x} is not a realised GDS.}
 }

@@ -78,6 +78,15 @@ register_h5_adapter <- function() {
   )
   maps <- .h5_read_alignments(h5)
   col_data <- .h5_read_subjects_table(h5, subjects)
+  sample_ids <- if (inherits(space, "space_sample_labels") || inherits(space, "space_parcels")) {
+    as.character(space$labels)
+  } else if (!is.null(space$mask_idx)) {
+    as.character(space$mask_idx)
+  } else {
+    as.character(seq_len(dims_raw[1]))
+  }
+  row_data <- .h5_read_samples_table(h5, sample_ids)
+  contrast_data <- .h5_read_contrasts_table(h5, as.character(contrasts))
   out <- list(
     assays = assay_names,
     dims = gds_dims(sample = dims_raw[1], subject = dims_raw[2], contrast = dims_raw[3]),
@@ -87,7 +96,9 @@ register_h5_adapter <- function() {
     maps = maps,
     metadata = list(schema_version = schema_num, source_file = handle$path),
     columns = list(),
-    col_data = col_data
+    col_data = col_data,
+    row_data = row_data,
+    contrast_data = contrast_data
   )
   probe_contract(out)
 }

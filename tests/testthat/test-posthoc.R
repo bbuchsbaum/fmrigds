@@ -50,3 +50,17 @@ test_that("FDR BY matches p.adjust across samples", {
     }
   }
 })
+
+test_that("validate() catches unknown post-hoc methods before compute", {
+  tmp <- tempfile(fileext = ".csv")
+  on.exit(unlink(tmp))
+  utils::write.csv(data.frame(
+    sample = "ROI_1",
+    subject = "s1",
+    contrast = "c1",
+    p = 0.1
+  ), tmp, row.names = FALSE)
+
+  plan <- gds(tmp, effect_cols = list(p = "p")) |> posthoc("not:a:method")
+  expect_error(validate(plan), "Unknown post-hoc method")
+})

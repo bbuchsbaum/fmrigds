@@ -3,9 +3,26 @@
 #' Human-readable summary of a realised GDS or a lazy `gds_plan`.
 #'
 #' @param x A `gds` or `gds_plan`
+#' @param ... Additional arguments ignored.
 #' @return Invisibly returns `x` (and prints a summary)
 #' @export
 explain <- function(x) UseMethod("explain")
+
+#' @rdname explain
+#' @method print gds
+#' @export
+print.gds <- function(x, ...) {
+  explain(x)
+  invisible(x)
+}
+
+#' @rdname explain
+#' @method print gds_plan
+#' @export
+print.gds_plan <- function(x, ...) {
+  explain(x)
+  invisible(x)
+}
 
 .space_brief <- function(space) {
   if (inherits(space, "space_voxel")) {
@@ -111,6 +128,14 @@ validate.gds_plan <- function(x, ...) {
       name <- n$method
       red <- get_reducer(.normalize_reducer_name(name))
       if (is.null(red)) stop("Unknown reducer: ", name, call. = FALSE)
+    } else if (identical(n$op, "posthoc")) {
+      if (is.null(get_posthoc(n$method))) stop("Unknown post-hoc method: ", n$method, call. = FALSE)
+    } else if (identical(n$op, "map")) {
+      if (is.null(n$target_space)) stop("Map node is missing target_space", call. = FALSE)
+    } else if (identical(n$op, "write")) {
+      if (!n$format %in% c("h5", "csv", "parquet", "nifti")) {
+        stop("Unsupported write format: ", n$format, call. = FALSE)
+      }
     }
   }
   TRUE
@@ -169,4 +194,3 @@ preview <- function(plan, n = 3, assays = NULL) {
   }
   compute(plan, block = blk)
 }
-

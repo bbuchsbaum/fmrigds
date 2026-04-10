@@ -1,0 +1,325 @@
+---
+title: "Repeated-measures mixed models"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Repeated-measures mixed models}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  message = FALSE,
+  warning = FALSE
+)
+library(fmrigds)
+set.seed(1)
+```
+
+Repeated-measures fMRI analyses are often statistically simple but operationally
+awkward. You have one effect estimate per ROI or voxel, per subject, per visit
+or condition, and you want a group model that respects the repeated structure
+without hand-writing a loop over `lmer()` calls. `fmrigds` gives you a narrow,
+fast path for that case.
+
+This vignette shows the supported contract: one grouping factor, Gaussian
+responses, shared observation layout across samples, and either a random
+intercept or a random intercept plus one within-subject slope. By the end, you
+will have one model-level GDS containing fixed-effect estimates and
+variance-component assays that you can inspect or write out like any other
+group result.
+
+## What does the input look like?
+
+The easiest route is a stacked long table with one row per sample, subject, and
+repeated-measure level. Here we build a small ROI example with three visits:
+
+```{r make-long-table}
+subjects <- paste0("sub-", sprintf("%02d", 1:6))
+visits <- c("pre", "mid", "post")
+time <- c(-1, 0, 1)
+
+rm_df <- expand.grid(
+  sample = c("ROI_1", "ROI_2"),
+  subject = subjects,
+  contrast = visits,
+  KEEP.OUT.ATTRS = FALSE,
+  stringsAsFactors = FALSE
+)
+
+subject_intercept <- c(-0.25, -0.10, 0.00, 0.10, 0.20, 0.30)
+names(subject_intercept) <- subjects
+subject_slope <- c(-0.05, -0.02, 0.00, 0.01, 0.03, 0.05)
+names(subject_slope) <- subjects
+sample_shift <- c(ROI_1 = 0.00, ROI_2 = 0.35)
+sample_slope <- c(ROI_1 = 0.45, ROI_2 = 0.70)
+
+rm_df$time <- time[match(rm_df$contrast, visits)]
+rm_df$beta <- 0.9 +
+  sample_shift[rm_df$sample] +
+  subject_intercept[rm_df$subject] +
+  (sample_slope[rm_df$sample] + subject_slope[rm_df$subject]) * rm_df$time
+rm_df$var <- 0.04
+
+knitr::kable(head(rm_df), row.names = FALSE)
+```
+
+The `time` column is constant within each visit, so it can be collapsed into
+contrast-level metadata during ingestion.
+
+## What is the fastest end-to-end path?
+
+Use `gds(..., contrast_data_cols = "time")` to put the repeated-measure
+metadata on the contrast axis, then call `reduce()` with one of the restricted
+LMM reducers:
+
+```{r quick-win}
+g_rm <- gds(rm_df, contrast_data_cols = "time") |>
+  reduce(
+    method = "lmm:ri_slope1",
+    formula = ~ time,
+    options = list(
+      slope = "time",
+      covariance = "diag",
+      fit = "REML",
+      theta_mode = "voxelwise"
+    )
+  ) |>
+  compute()
+```
+
+```{r quick-win-checks, include = FALSE}
+lmm_summary <- data.frame(
+  sample = sample_labels(g_rm),
+  intercept = as.numeric(assay(g_rm, "coef:(Intercept)")),
+  time = as.numeric(assay(g_rm, "coef:time")),
+  vc_intercept = as.numeric(assay(g_rm, "vc_intercept")),
+  vc_slope = as.numeric(assay(g_rm, "vc_slope")),
+  lambda_slope = as.numeric(assay(g_rm, "lambda_slope")),
+  stringsAsFactors = FALSE
+)
+
+lmm_summary_display <- transform(
+  lmm_summary,
+  intercept = round(intercept, 3),
+  time = round(time, 3),
+  vc_intercept = round(vc_intercept, 3),
+  vc_slope = round(vc_slope, 3),
+  lambda_slope = round(lambda_slope, 3)
+)
+
+stopifnot(
+  identical(subjects(g_rm), "meta"),
+  identical(contrasts(g_rm), "model"),
+  all(is.finite(lmm_summary$time)),
+  all(lmm_summary$vc_slope > 0),
+  all(lmm_summary$lambda_slope > 0)
+)
+```
+
+The result is still a GDS, but the subject and contrast axes have collapsed to
+the model level. A compact summary is usually easier to read than printing
+individual assay arrays:
+
+```{r inspect-summary}
+knitr::kable(lmm_summary_display, row.names = FALSE)
+```
+
+Fixed-effect outputs still follow the same naming convention as the regression
+reducers (`coef:<term>`, `se_coef:<term>`, `t_coef:<term>`, `p_coef:<term>`),
+while variance components are exposed as ordinary assays such as
+`vc_intercept`, `vc_slope`, and `lambda_slope`.
+
+## When should you use pooled vs voxelwise theta?
+
+`theta_mode = "pooled"` estimates one shared variance structure across all
+samples. `theta_mode = "voxelwise"` estimates variance parameters separately
+for each sample. Pooled mode reuses one variance structure, so it is typically
+faster; voxelwise mode is more flexible.
+
+```{r pooled-vs-voxelwise}
+g_pooled <- gds(rm_df, contrast_data_cols = "time") |>
+  reduce(
+    method = "lmm:ri_slope1",
+    formula = ~ time,
+    options = list(
+      slope = "time",
+      covariance = "diag",
+      fit = "REML",
+      theta_mode = "pooled"
+    )
+  ) |>
+  compute()
+
+theta_compare <- data.frame(
+  sample = sample_labels(g_rm),
+  pooled_lambda = round(as.numeric(assay(g_pooled, "lambda_slope")), 3),
+  voxelwise_lambda = round(as.numeric(assay(g_rm, "lambda_slope")), 3),
+  stringsAsFactors = FALSE
+)
+
+knitr::kable(theta_compare, row.names = FALSE)
+```
+
+```{r pooled-vs-voxelwise-checks, include = FALSE}
+bench_subjects <- paste0("sub-", sprintf("%02d", 1:10))
+bench_visits <- c("pre", "mid", "post")
+bench_time <- c(-1, 0, 1)
+bench_samples <- paste0("ROI_", sprintf("%02d", 1:24))
+
+bench_df <- expand.grid(
+  sample = bench_samples,
+  subject = bench_subjects,
+  contrast = bench_visits,
+  KEEP.OUT.ATTRS = FALSE,
+  stringsAsFactors = FALSE
+)
+
+bench_subject_intercept <- seq(-0.25, 0.25, length.out = length(bench_subjects))
+names(bench_subject_intercept) <- bench_subjects
+bench_subject_slope <- seq(-0.04, 0.04, length.out = length(bench_subjects))
+names(bench_subject_slope) <- bench_subjects
+bench_sample_shift <- seq(0.00, 0.45, length.out = length(bench_samples))
+names(bench_sample_shift) <- bench_samples
+bench_sample_slope <- seq(0.35, 0.85, length.out = length(bench_samples))
+names(bench_sample_slope) <- bench_samples
+
+bench_df$time <- bench_time[match(bench_df$contrast, bench_visits)]
+bench_df$beta <- 0.8 +
+  bench_sample_shift[bench_df$sample] +
+  bench_subject_intercept[bench_df$subject] +
+  (bench_sample_slope[bench_df$sample] + bench_subject_slope[bench_df$subject]) *
+    bench_df$time
+bench_df$var <- 0.04
+
+bench_pooled_plan <- gds(bench_df, contrast_data_cols = "time") |>
+  reduce(
+    method = "lmm:ri_slope1",
+    formula = ~ time,
+    options = list(
+      slope = "time",
+      covariance = "diag",
+      fit = "REML",
+      theta_mode = "pooled"
+    )
+  )
+
+bench_voxel_plan <- gds(bench_df, contrast_data_cols = "time") |>
+  reduce(
+    method = "lmm:ri_slope1",
+    formula = ~ time,
+    options = list(
+      slope = "time",
+      covariance = "diag",
+      fit = "REML",
+      theta_mode = "voxelwise"
+    )
+  )
+
+bench_times <- data.frame(
+  theta_mode = c("pooled", "voxelwise"),
+  elapsed = c(
+    median(replicate(3, unname(system.time(compute(bench_pooled_plan))[["elapsed"]]))),
+    median(replicate(3, unname(system.time(compute(bench_voxel_plan))[["elapsed"]])))
+  ),
+  stringsAsFactors = FALSE
+)
+
+stopifnot(
+  length(unique(as.numeric(assay(g_pooled, "lambda_slope")))) == 1L,
+  all(is.finite(as.numeric(assay(g_rm, "lambda_slope")))),
+  bench_times$elapsed[1] < bench_times$elapsed[2]
+)
+```
+
+```{r pooled-vs-voxelwise-timing}
+knitr::kable(transform(bench_times, elapsed = round(elapsed, 3)), row.names = FALSE)
+```
+
+## What if your repeated-measure metadata is already separate?
+
+If your `time`, visit order, or other repeated-measure annotations already live
+outside the long table, attach them explicitly with `with_contrast_data()`.
+
+```{r attach-contrast-data}
+contrast_df <- data.frame(time = time, row.names = visits)
+
+g_attached <- gds(rm_df[c("sample", "subject", "contrast", "beta", "var")]) |>
+  with_contrast_data(contrast_df) |>
+  reduce(
+    method = "lmm:ri_slope1",
+    formula = ~ time,
+    options = list(
+      slope = "time",
+      covariance = "diag",
+      fit = "REML",
+      theta_mode = "pooled"
+    )
+  ) |>
+  compute()
+
+knitr::kable(
+  data.frame(
+    sample = sample_labels(g_attached),
+    time = round(as.numeric(assay(g_attached, "coef:time")), 3),
+    stringsAsFactors = FALSE
+  ),
+  row.names = FALSE
+)
+```
+
+```{r attach-contrast-data-checks, include = FALSE}
+stopifnot(
+  max(abs(as.numeric(assay(g_attached, "coef:time")) -
+            as.numeric(assay(g_pooled, "coef:time")))) < 1e-10,
+  max(abs(as.numeric(assay(g_attached, "lambda_slope")) -
+            as.numeric(assay(g_pooled, "lambda_slope")))) < 1e-10
+)
+```
+
+If you only need a random intercept, use `method = "lmm:ri"` instead:
+
+```{r random-intercept}
+g_ri <- gds(rm_df, contrast_data_cols = "time") |>
+  reduce(
+    method = "lmm:ri",
+    formula = ~ time,
+    options = list(fit = "REML", theta_mode = "pooled")
+  ) |>
+  compute()
+
+knitr::kable(
+  data.frame(
+    sample = sample_labels(g_ri),
+    time = round(as.numeric(assay(g_ri, "coef:time")), 3),
+    lambda = round(as.numeric(assay(g_ri, "lambda")), 3),
+    stringsAsFactors = FALSE
+  ),
+  row.names = FALSE
+)
+```
+
+## What is supported, and what is intentionally out of scope?
+
+The repeated-measures LMM reducers are deliberately narrower than `lmer()`:
+
+- one grouping factor only
+- Gaussian outcomes only
+- shared observation layout across all samples
+- random intercept only (`"lmm:ri"`) or random intercept plus one slope (`"lmm:ri_slope1"`)
+- no crossed random effects
+- no general random-effects formula grammar
+
+That restriction is the point: it lets `fmrigds` reuse one design across many
+responses and produce a whole-brain or whole-ROI result with one call to
+`reduce()`.
+
+## Where do you go next?
+
+- See `?reduce` for the reducer contract and options.
+- See `?with_contrast_data` if your repeated-measure metadata is already
+  separate from the long table.
+- See `inst/examples/fmrigds_lmm_benchmark.R` for a benchmark harness that
+  compares pooled and voxelwise theta modes.

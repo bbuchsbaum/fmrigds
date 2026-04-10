@@ -15,7 +15,10 @@ write_out <- function(x,
                       format = c("h5", "csv", "parquet", "nifti"),
                       options = list()) {
   plan <- as_plan(x)
-  if (missing(path) || !nzchar(path)) {
+  if (!is.list(options)) {
+    stop("`options` must be a list", call. = FALSE)
+  }
+  if (missing(path) || !is.character(path) || length(path) != 1L || !nzchar(path)) {
     stop("`path` must be a non-empty string", call. = FALSE)
   }
   format <- match.arg(format)

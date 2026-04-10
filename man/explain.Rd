@@ -2,12 +2,20 @@
 % Please edit documentation in R/summary.R
 \name{explain}
 \alias{explain}
+\alias{print.gds}
+\alias{print.gds_plan}
 \title{Explain objects and plans}
 \usage{
 explain(x)
+
+\method{print}{gds}(x, ...)
+
+\method{print}{gds_plan}(x, ...)
 }
 \arguments{
 \item{x}{A \code{gds} or \code{gds_plan}}
+
+\item{...}{Additional arguments ignored.}
 }
 \value{
 Invisibly returns \code{x} (and prints a summary)

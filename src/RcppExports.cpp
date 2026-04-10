@@ -11,6 +11,64 @@ Rcpp::Rostream<true>&  Rcpp::Rcout = Rcpp::Rcpp_cout_get();
 Rcpp::Rostream<false>& Rcpp::Rcerr = Rcpp::Rcpp_cerr_get();
 #endif
 
+// lmm_ri_objective_cpp
+double lmm_ri_objective_cpp(const arma::mat& Y, const arma::mat& X, const int n_repeat, const double lambda, const std::string fit);
+RcppExport SEXP _fmrigds_lmm_ri_objective_cpp(SEXP YSEXP, SEXP XSEXP, SEXP n_repeatSEXP, SEXP lambdaSEXP, SEXP fitSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const arma::mat& >::type Y(YSEXP);
+    Rcpp::traits::input_parameter< const arma::mat& >::type X(XSEXP);
+    Rcpp::traits::input_parameter< const int >::type n_repeat(n_repeatSEXP);
+    Rcpp::traits::input_parameter< const double >::type lambda(lambdaSEXP);
+    Rcpp::traits::input_parameter< const std::string >::type fit(fitSEXP);
+    rcpp_result_gen = Rcpp::wrap(lmm_ri_objective_cpp(Y, X, n_repeat, lambda, fit));
+    return rcpp_result_gen;
+END_RCPP
+}
+// lmm_ri_fit_cpp
+Rcpp::List lmm_ri_fit_cpp(const arma::mat& Y, const arma::mat& X, const int n_repeat, const double lambda, const std::string fit);
+RcppExport SEXP _fmrigds_lmm_ri_fit_cpp(SEXP YSEXP, SEXP XSEXP, SEXP n_repeatSEXP, SEXP lambdaSEXP, SEXP fitSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const arma::mat& >::type Y(YSEXP);
+    Rcpp::traits::input_parameter< const arma::mat& >::type X(XSEXP);
+    Rcpp::traits::input_parameter< const int >::type n_repeat(n_repeatSEXP);
+    Rcpp::traits::input_parameter< const double >::type lambda(lambdaSEXP);
+    Rcpp::traits::input_parameter< const std::string >::type fit(fitSEXP);
+    rcpp_result_gen = Rcpp::wrap(lmm_ri_fit_cpp(Y, X, n_repeat, lambda, fit));
+    return rcpp_result_gen;
+END_RCPP
+}
+// lmm_lowrank_objective_cpp
+double lmm_lowrank_objective_cpp(const arma::mat& Y, const arma::mat& X, const arma::mat& U_block, const std::string fit);
+RcppExport SEXP _fmrigds_lmm_lowrank_objective_cpp(SEXP YSEXP, SEXP XSEXP, SEXP U_blockSEXP, SEXP fitSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const arma::mat& >::type Y(YSEXP);
+    Rcpp::traits::input_parameter< const arma::mat& >::type X(XSEXP);
+    Rcpp::traits::input_parameter< const arma::mat& >::type U_block(U_blockSEXP);
+    Rcpp::traits::input_parameter< const std::string >::type fit(fitSEXP);
+    rcpp_result_gen = Rcpp::wrap(lmm_lowrank_objective_cpp(Y, X, U_block, fit));
+    return rcpp_result_gen;
+END_RCPP
+}
+// lmm_lowrank_fit_cpp
+Rcpp::List lmm_lowrank_fit_cpp(const arma::mat& Y, const arma::mat& X, const arma::mat& U_block, const std::string fit);
+RcppExport SEXP _fmrigds_lmm_lowrank_fit_cpp(SEXP YSEXP, SEXP XSEXP, SEXP U_blockSEXP, SEXP fitSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const arma::mat& >::type Y(YSEXP);
+    Rcpp::traits::input_parameter< const arma::mat& >::type X(XSEXP);
+    Rcpp::traits::input_parameter< const arma::mat& >::type U_block(U_blockSEXP);
+    Rcpp::traits::input_parameter< const std::string >::type fit(fitSEXP);
+    rcpp_result_gen = Rcpp::wrap(lmm_lowrank_fit_cpp(Y, X, U_block, fit));
+    return rcpp_result_gen;
+END_RCPP
+}
 // set_omp_threads
 void set_omp_threads(const int n);
 RcppExport SEXP _fmrigds_set_omp_threads(SEXP nSEXP) {
@@ -121,6 +179,10 @@ END_RCPP
 }
 
 static const R_CallMethodDef CallEntries[] = {
+    {"_fmrigds_lmm_ri_objective_cpp", (DL_FUNC) &_fmrigds_lmm_ri_objective_cpp, 5},
+    {"_fmrigds_lmm_ri_fit_cpp", (DL_FUNC) &_fmrigds_lmm_ri_fit_cpp, 5},
+    {"_fmrigds_lmm_lowrank_objective_cpp", (DL_FUNC) &_fmrigds_lmm_lowrank_objective_cpp, 4},
+    {"_fmrigds_lmm_lowrank_fit_cpp", (DL_FUNC) &_fmrigds_lmm_lowrank_fit_cpp, 4},
     {"_fmrigds_set_omp_threads", (DL_FUNC) &_fmrigds_set_omp_threads, 1},
     {"_fmrigds_meta_fe_cpp", (DL_FUNC) &_fmrigds_meta_fe_cpp, 5},
     {"_fmrigds_meta_re_dl_cpp", (DL_FUNC) &_fmrigds_meta_re_dl_cpp, 5},

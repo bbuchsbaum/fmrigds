@@ -31,3 +31,39 @@ test_that("as_gds.array wraps a single array into an assay", {
   expect_true("z" %in% names(assays(g)))
   expect_equal(dim(assay(g, "z")), c(2, 2, 2))
 })
+
+test_that("as_gds.array preserves dimnames when upcasting 2D arrays", {
+  x <- matrix(
+    1:6,
+    nrow = 2,
+    dimnames = list(c("ROI_1", "ROI_2"), c("s1", "s2", "s3"))
+  )
+  g <- as_gds(x, assay_name = "z")
+  expect_equal(subjects(g), c("s1", "s2", "s3"))
+  expect_equal(contrasts(g), "contrast1")
+  expect_equal(space(g)$labels, c("ROI_1", "ROI_2"))
+})
+
+test_that("as_gds.data.frame can extract contrast_data from repeated-measures columns", {
+  df <- data.frame(
+    sample = rep("ROI_1", 4),
+    subject = rep(c("s1", "s2"), each = 2),
+    visit = rep(c("baseline", "task"), times = 2),
+    time = rep(c(0, 1), times = 2),
+    beta = c(0.5, 0.8, 0.4, 0.9),
+    var = c(0.04, 0.04, 0.05, 0.05),
+    stringsAsFactors = FALSE
+  )
+
+  g <- as_gds(
+    df,
+    mapping = list(
+      contrast = "visit",
+      contrast_data = "time"
+    )
+  )
+
+  expect_equal(contrasts(g), c("baseline", "task"))
+  expect_equal(rownames(contrast_data(g)), c("baseline", "task"))
+  expect_equal(as.numeric(contrast_data(g)$time), c(0, 1))
+})

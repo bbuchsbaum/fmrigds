@@ -1514,9 +1514,9 @@ The **fmristore adapter for gdsfmri** is a well-designed, comprehensive solution
 
 **Prepared by:** gdsfmri Integration Team
 **References:**
-- TECHNICAL_SPECIFICATION.md (§7.6)
+- notes/TECHNICAL_SPECIFICATION.md (§7.6)
 - fmrigds_blueprint.md (§§48-55)
-- sprint7.md
-- sprint_plan.md
+- notes/sprint7.md
+- notes/sprint_plan.md
 - fmristore package documentation
 - Sub-agent analyses (Agents 1-2)

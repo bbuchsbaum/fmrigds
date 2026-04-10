@@ -27,6 +27,12 @@ probe_contract <- function(x) {
   if (!is.null(x$col_data) && !is.data.frame(x$col_data)) {
     stop("Probe optional field 'col_data' must be a data.frame or NULL", call. = FALSE)
   }
+  if (!is.null(x$row_data) && !is.data.frame(x$row_data)) {
+    stop("Probe optional field 'row_data' must be a data.frame or NULL", call. = FALSE)
+  }
+  if (!is.null(x$contrast_data) && !is.data.frame(x$contrast_data)) {
+    stop("Probe optional field 'contrast_data' must be a data.frame or NULL", call. = FALSE)
+  }
 
   # Length consistency
   if (length(x$subjects) != x$dims[2L]) {
@@ -35,6 +41,11 @@ probe_contract <- function(x) {
   if (length(x$contrasts) != x$dims[3L]) {
     stop(sprintf("Probe contrasts length (%d) must equal dims[3] (%d)", length(x$contrasts), x$dims[3L]), call. = FALSE)
   }
+  if (!is.null(x$row_data) && nrow(x$row_data) != x$dims[1L]) {
+    stop(sprintf("Probe row_data rows (%d) must equal dims[1] (%d)", nrow(x$row_data), x$dims[1L]), call. = FALSE)
+  }
+  if (!is.null(x$contrast_data) && nrow(x$contrast_data) != x$dims[3L]) {
+    stop(sprintf("Probe contrast_data rows (%d) must equal dims[3] (%d)", nrow(x$contrast_data), x$dims[3L]), call. = FALSE)
+  }
   x
 }
-

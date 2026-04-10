@@ -2,7 +2,17 @@
 
 `%||%` <- function(x, y) if (is.null(x)) y else x
 
-.colwise_fe <- function(beta, var, eps = 1e-12) {
+.p_from_z <- function(z, alternative = "two.sided") {
+  if (identical(alternative, "greater")) {
+    stats::pnorm(z, lower.tail = FALSE)
+  } else if (identical(alternative, "less")) {
+    stats::pnorm(z, lower.tail = TRUE)
+  } else {
+    2 * stats::pnorm(-abs(z))
+  }
+}
+
+.colwise_fe <- function(beta, var, eps = 1e-12, alternative = "two.sided", min_subj = 1L) {
   w <- 1 / pmax(var, eps)
   sw <- colSums(w, na.rm = TRUE)
   wy <- colSums(w * beta, na.rm = TRUE)
@@ -15,8 +25,16 @@
   k <- colSums(is.finite(beta) & is.finite(var))
   I2 <- pmax(0, (Q - (k - 1)) / pmax(Q, .Machine$double.eps))
   z_g <- mu / se_mu
-  p_g <- 2 * pnorm(-abs(z_g))
-  list(beta_g = mu, var_g = var_mu, se_g = se_mu, z_g = z_g, p_g = p_g, Q = Q, I2 = I2)
+  p_g <- .p_from_z(z_g, alternative = alternative)
+  out <- list(beta_g = mu, var_g = var_mu, se_g = se_mu, z_g = z_g, p_g = p_g, Q = Q, I2 = I2)
+  bad <- k < as.integer(min_subj) | !is.finite(sw) | sw <= 0
+  if (any(bad)) {
+    out <- lapply(out, function(x) {
+      x[bad] <- NA_real_
+      x
+    })
+  }
+  out
 }
 
 .colwise_tau2_dl <- function(beta, var, eps = 1e-12) {
@@ -33,20 +51,22 @@
 core_meta_fe_kernel <- function(beta, var, X = NULL, df = NULL, opts = list()) {
   eps <- opts$eps %||% 1e-12
   alt <- opts$alternative %||% "two.sided"
+  min_subj <- opts$min_subjects %||% 2L
   tail <- if (identical(alt, "less")) 1L else if (identical(alt, "greater")) 2L else 0L
-  if (exists("meta_fe_cpp", mode = "function")) {
-    return(meta_fe_cpp(beta, var, min_subj = opts$min_subjects %||% 2L, eps = eps, tail = tail))
-  }
-  .colwise_fe(beta, var, eps = eps)
+  if (exists("meta_fe_cpp", mode = "function")) { # nocov start
+    return(meta_fe_cpp(beta, var, min_subj = min_subj, eps = eps, tail = tail))
+  } # nocov end
+  .colwise_fe(beta, var, eps = eps, alternative = alt, min_subj = min_subj)
 }
 
 core_meta_re_dl_kernel <- function(beta, var, X = NULL, df = NULL, opts = list()) {
   eps <- opts$eps %||% 1e-12
   alt <- opts$alternative %||% "two.sided"
+  min_subj <- opts$min_subjects %||% 2L
   tail <- if (identical(alt, "less")) 1L else if (identical(alt, "greater")) 2L else 0L
-  if (exists("meta_re_dl_cpp", mode = "function")) {
-    return(meta_re_dl_cpp(beta, var, min_subj = opts$min_subjects %||% 2L, eps = eps, tail = tail))
-  }
+  if (exists("meta_re_dl_cpp", mode = "function")) { # nocov start
+    return(meta_re_dl_cpp(beta, var, min_subj = min_subj, eps = eps, tail = tail))
+  } # nocov end
   tau2 <- .colwise_tau2_dl(beta, var, eps = eps)
   wstar <- 1 / (pmax(var, eps) + rep(tau2, each = nrow(var)))
   sws <- colSums(wstar, na.rm = TRUE)
@@ -55,51 +75,87 @@ core_meta_re_dl_kernel <- function(beta, var, X = NULL, df = NULL, opts = list()
   var_mu <- 1 / sws
   se_mu <- sqrt(var_mu)
   z_g <- mu / se_mu
-  p_g <- 2 * pnorm(-abs(z_g))
+  p_g <- .p_from_z(z_g, alternative = alt)
   w <- 1 / pmax(var, eps)
   mu_fe <- colSums(w * beta, na.rm = TRUE) / colSums(w, na.rm = TRUE)
   Q <- colSums(w * (beta - rep(mu_fe, each = nrow(beta)))^2, na.rm = TRUE)
   k <- colSums(is.finite(beta) & is.finite(var))
   I2 <- pmax(0, (Q - (k - 1)) / pmax(Q, .Machine$double.eps))
-  list(beta_g = mu, var_g = var_mu, se_g = se_mu, z_g = z_g, p_g = p_g, tau2 = tau2, Q = Q, I2 = I2)
+  out <- list(beta_g = mu, var_g = var_mu, se_g = se_mu, z_g = z_g, p_g = p_g, tau2 = tau2, Q = Q, I2 = I2)
+  bad <- k < as.integer(min_subj) | !is.finite(sws) | sws <= 0
+  if (any(bad)) {
+    out <- lapply(out, function(x) {
+      x[bad] <- NA_real_
+      x
+    })
+  }
+  out
+}
+
+.stouffer_fallback <- function(z, weights = NULL, min_subj = 1L) {
+  if (!is.null(weights)) {
+    if (length(weights) == 1L) weights <- rep(weights, nrow(z))
+    if (length(weights) != nrow(z)) stop("weights length must equal number of subjects", call. = FALSE)
+    finite_z <- is.finite(z)
+    num <- colSums(z * weights, na.rm = TRUE)
+    den <- sqrt(colSums((weights^2) * finite_z, na.rm = TRUE))
+    k <- colSums(finite_z)
+  } else {
+    k <- colSums(is.finite(z))
+    num <- colSums(z, na.rm = TRUE)
+    den <- sqrt(k)
+  }
+  Z <- num / den
+  bad <- k < as.integer(min_subj) | !is.finite(den) | den <= 0
+  Z[bad] <- NA_real_
+  list(z_g = Z, p_g = .p_from_z(Z))
 }
 
 core_stouffer_kernel <- function(beta = NULL, var = NULL, X = NULL, df = NULL, opts = list(), z) {
   w <- opts$weights %||% NULL
-  if (exists("stouffer_combine_cpp", mode = "function")) {
+  if (exists("stouffer_combine_cpp", mode = "function")) { # nocov start
     return(stouffer_combine_cpp(z, weights = w, min_subj = opts$min_subjects %||% 1L))
-  }
-  if (!is.null(w)) {
-    if (length(w) == 1L) w <- rep(w, nrow(z))
-    num <- colSums(z * w, na.rm = TRUE)
-    den <- sqrt(sum(w^2, na.rm = TRUE))
-  } else {
-    num <- colSums(z, na.rm = TRUE)
-    den <- sqrt(colSums(is.finite(z)))
-  }
-  Z <- num / den
-  list(z_g = Z, p_g = 2 * pnorm(-abs(Z)))
+  } # nocov end
+  .stouffer_fallback(z, weights = w, min_subj = opts$min_subjects %||% 1L)
 }
 
 core_fisher_kernel <- function(beta = NULL, var = NULL, X = NULL, df = NULL, opts = list(), p) {
-  if (exists("fisher_combine_cpp", mode = "function")) {
+  if (exists("fisher_combine_cpp", mode = "function")) { # nocov start
     return(fisher_combine_cpp(p, min_subj = opts$min_subjects %||% 1L))
-  }
+  } # nocov end
+  k <- colSums(is.finite(p))
   X2 <- -2 * colSums(log(p), na.rm = TRUE)
-  dfc <- 2 * colSums(is.finite(p))
-  list(chi2 = X2, df = dfc, p_g = pchisq(X2, dfc, lower.tail = FALSE))
+  dfc <- 2 * k
+  bad <- k < as.integer(opts$min_subjects %||% 1L)
+  X2[bad] <- NA_real_
+  dfc[bad] <- NA_real_
+  list(chi2 = X2, df = dfc, p_g = stats::pchisq(X2, dfc, lower.tail = FALSE))
+}
+
+.lancaster_fallback <- function(p, dfw, min_subj = 1L) {
+  if (length(dfw) != nrow(p)) stop("dfw length must equal number of subjects", call. = FALSE)
+  n_cols <- ncol(p)
+  X2 <- rep(NA_real_, n_cols)
+  dfc <- rep(NA_real_, n_cols)
+  k <- colSums(is.finite(p))
+  for (j in seq_len(n_cols)) {
+    ok <- is.finite(p[, j])
+    if (!any(ok)) next
+    X2[j] <- sum(stats::qchisq(1 - p[ok, j], df = 2 * dfw[ok]))
+    dfc[j] <- 2 * sum(dfw[ok])
+  }
+  bad <- k < as.integer(min_subj)
+  X2[bad] <- NA_real_
+  dfc[bad] <- NA_real_
+  list(chi2 = X2, df = dfc, p_g = stats::pchisq(X2, dfc, lower.tail = FALSE))
 }
 
 core_lancaster_kernel <- function(beta = NULL, var = NULL, X = NULL, df = NULL, opts = list(), p, dfw) {
   w <- as.integer(dfw)
-  if (exists("lancaster_combine_cpp", mode = "function")) {
+  if (exists("lancaster_combine_cpp", mode = "function")) { # nocov start
     return(lancaster_combine_cpp(p, dfw = w, min_subj = opts$min_subjects %||% 1L))
-  }
-  if (length(w) != nrow(p)) stop("dfw length must equal number of subjects", call. = FALSE)
-  chi_parts <- apply(p, 2, function(col) mapply(function(pi, wi) stats::qchisq(1 - pi, df = 2 * wi), col, w))
-  X2 <- colSums(chi_parts, na.rm = TRUE)
-  dfc <- 2 * sum(w)
-  list(chi2 = X2, df = rep(dfc, length(X2)), p_g = pchisq(X2, dfc, lower.tail = FALSE))
+  } # nocov end
+  .lancaster_fallback(p, dfw = w, min_subj = opts$min_subjects %||% 1L)
 }
 
 register_core_reducers <- function() {

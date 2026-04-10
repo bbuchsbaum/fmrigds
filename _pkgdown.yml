@@ -9,6 +9,7 @@ navbar:
   components:
     github:
       icon: fa-github
+      aria-label: GitHub repository
       href: https://github.com/bbuchsbaum/fmrigds
 
 articles:
@@ -17,6 +18,8 @@ articles:
       - fmrigds
   - title: Workflows
     contents:
+      - cli-workflows
+      - repeated-measures-lmm
       - spatial-operations
       - as-plan-and-spatial-fdr
   - title: Data formats

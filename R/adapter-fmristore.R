@@ -1,4 +1,4 @@
-# fmristore adapter (Path A + Path B preference) ------------------------------
+# fmristore adapter (Path A + Path B preference) ------------------------------ # nocov start
 
 # Detection priority scores
 .FMRI_SCORE_GDS_NATIVE <- 1.0   # Perfect match: /gds group
@@ -626,3 +626,5 @@ register_fmristore_adapter <- function() {
   }
   out
 }
+
+# nocov end

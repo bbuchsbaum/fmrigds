@@ -27,6 +27,8 @@ test_that("provenance builder appends entries", {
 
   expect_length(meta$provenance$graph, 1)
   expect_match(meta$provenance$log[[1]], "subset(", fixed = TRUE)
+  expect_equal(meta$software$package, "fmrigds")
+  expect_true(nzchar(meta$software$version))
 })
 
 test_that("space constructors validate inputs", {
@@ -73,6 +75,28 @@ test_that("plan infrastructure records operations", {
   expect_s3_class(plan, "gds_plan")
   expect_length(plan$nodes, 1)
   expect_equal(plan$nodes[[1]]$subject, "s01")
+})
+
+test_that("subset supports numeric subject and contrast indices during compute", {
+  testthat::skip_if_not_installed("data.table")
+  tmp <- tempfile(fileext = ".csv")
+  on.exit(unlink(tmp), add = TRUE)
+  df <- data.frame(
+    sample = rep("roi1", 4),
+    subject = rep(c("s1", "s2"), times = 2),
+    contrast = rep(c("c1", "c2"), each = 2),
+    beta = c(1, 2, 3, 4),
+    var = c(1, 1, 1, 1)
+  )
+  data.table::fwrite(df, tmp)
+
+  g <- gds(tmp) |>
+    subset(subject = 2, contrast = 2) |>
+    compute()
+
+  expect_equal(subjects(g), "s2")
+  expect_equal(contrasts(g), "c2")
+  expect_equal(as.numeric(assay(g, "beta")[1, 1, 1]), 4)
 })
 
 test_that("assay registry defaults are installed", {

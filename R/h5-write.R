@@ -24,21 +24,21 @@ write_gds_h5 <- function(gds,
 
   if (!is.null(gds$col_data) && nrow(gds$col_data) && ncol(gds$col_data)) {
     cd <- gds$col_data
-    if (is.null(rownames(cd))) {
-      rownames(cd) <- gds$subjects
-    }
-    cd <- cd[gds$subjects, , drop = FALSE]
-    subjects_tbl <- axes$create_group("subjects_table")
-    on.exit(subjects_tbl$close(), add = TRUE)
-    schema <- lapply(colnames(cd), function(nm) {
-      column <- cd[[nm]]
-      prepared <- .prepare_col_data_column(column)
-      ds <- subjects_tbl$create_dataset(nm, prepared$data)
-      ds$close()
-      list(name = nm, type = prepared$type)
-    })
-    schema_json <- jsonlite::toJSON(schema, auto_unbox = TRUE, null = "null")
-    subjects_tbl$create_dataset("schema", schema_json)
+    if (is.null(rownames(cd))) rownames(cd) <- gds$subjects
+    .write_h5_axis_table(axes, "subjects_table", cd[gds$subjects, , drop = FALSE])
+  }
+
+  if (!is.null(gds$row_data) && nrow(gds$row_data) && ncol(gds$row_data)) {
+    rd <- gds$row_data
+    sample_ids <- sample_labels(gds) %||% as.character(seq_len(nrow(rd)))
+    if (is.null(rownames(rd))) rownames(rd) <- sample_ids
+    .write_h5_axis_table(axes, "samples_table", rd[sample_ids, , drop = FALSE])
+  }
+
+  kdata <- contrast_data(gds)
+  if (!is.null(kdata) && nrow(kdata) && ncol(kdata)) {
+    if (is.null(rownames(kdata))) rownames(kdata) <- gds$contrasts
+    .write_h5_axis_table(axes, "contrasts_table", kdata[gds$contrasts, , drop = FALSE])
   }
 
   space_group <- g$create_group("space")
@@ -129,4 +129,18 @@ write_gds_h5 <- function(gds,
   }
   # Fallback: coerce to character
   list(data = as.character(x), type = "character")
+}
+
+.write_h5_axis_table <- function(parent_group, group_name, df) {
+  tbl <- parent_group$create_group(group_name)
+  on.exit(tbl$close())
+  schema <- lapply(colnames(df), function(nm) {
+    prepared <- .prepare_col_data_column(df[[nm]])
+    ds <- tbl$create_dataset(nm, prepared$data)
+    ds$close()
+    list(name = nm, type = prepared$type)
+  })
+  schema_json <- jsonlite::toJSON(schema, auto_unbox = TRUE, null = "null")
+  tbl$create_dataset("schema", schema_json)
+  invisible(NULL)
 }

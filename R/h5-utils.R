@@ -70,9 +70,9 @@
   out
 }
 
-.h5_read_subjects_table <- function(h5, subjects) {
-  if (!.h5_safe_exists(h5, "/gds/axes/subjects_table")) return(NULL)
-  tbl <- h5$open("/gds/axes/subjects_table")
+.h5_read_axis_table <- function(h5, path, ids, what = "metadata") {
+  if (!.h5_safe_exists(h5, path)) return(NULL)
+  tbl <- h5$open(path)
   on.exit(tbl$close())
   if (!tbl$exists("schema")) return(NULL)
   schema_ds <- tbl$open("schema")
@@ -85,8 +85,8 @@
   } else {
     entries <- schema
   }
-  subjects <- as.character(subjects)
-  out <- data.frame(row.names = subjects)
+  ids <- as.character(ids)
+  out <- data.frame(row.names = ids)
   for (entry in entries) {
     nm <- entry$name %||% entry[["name"]]
     type <- entry$type %||% entry[["type"]]
@@ -105,8 +105,8 @@
       character = as.character(val),
       as.character(val)
     )
-    if (length(val) != length(subjects)) {
-      warning(sprintf("Ignoring col_data column '%s' with unexpected length", nm), call. = FALSE)
+    if (length(val) != length(ids)) {
+      warning(sprintf("Ignoring %s column '%s' with unexpected length", what, nm), call. = FALSE)
       next
     }
     out[[nm]] <- val
@@ -115,3 +115,14 @@
   out
 }
 
+.h5_read_subjects_table <- function(h5, subjects) {
+  .h5_read_axis_table(h5, "/gds/axes/subjects_table", subjects, what = "col_data")
+}
+
+.h5_read_samples_table <- function(h5, samples) {
+  .h5_read_axis_table(h5, "/gds/axes/samples_table", samples, what = "row_data")
+}
+
+.h5_read_contrasts_table <- function(h5, contrasts) {
+  .h5_read_axis_table(h5, "/gds/axes/contrasts_table", contrasts, what = "contrast_data")
+}

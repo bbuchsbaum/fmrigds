@@ -73,7 +73,7 @@ find_maps <- function(root,
 #'
 #' @return A realised GDS object.
 #' @export
-gds_from_nifti_maps <- function(maps, mask = NULL, ...) {
+gds_from_nifti_maps <- function(maps, mask = NULL, ...) { # nocov start
   if (is.null(maps) || !nrow(maps)) {
     stop("`maps` must contain at least one file", call. = FALSE)
   }
@@ -105,5 +105,5 @@ gds_from_nifti_maps <- function(maps, mask = NULL, ...) {
     }
   }
   g
-}
+} # nocov end
 

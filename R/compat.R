@@ -13,12 +13,41 @@
 assert_compatible_spaces <- function(g1, g2, fields = c("type", "dim", "template_id")) {
   s1 <- if (inherits(g1, "gds_space")) g1 else g1$space
   s2 <- if (inherits(g2, "gds_space")) g2 else g2$space
+  if (missing(fields)) {
+    fields <- .default_space_compat_fields(s1, s2)
+  }
   for (f in fields) {
     v1 <- s1[[f]] %||% NA
     v2 <- s2[[f]] %||% NA
     if (!identical(v1, v2)) stop(sprintf("Space field '%s' mismatch: %s vs %s", f, format(v1), format(v2)), call. = FALSE)
   }
   TRUE
+}
+
+.default_space_compat_fields <- function(s1, s2) {
+  fields <- "type"
+
+  if (inherits(s1, "space_voxel") && inherits(s2, "space_voxel")) {
+    fields <- c(fields, "dim")
+  }
+
+  optional <- c(
+    "template_id",
+    "support_id",
+    "grid_id",
+    "topology_id",
+    "mesh_id",
+    "hemi",
+    "reference_space"
+  )
+
+  for (field in optional) {
+    if (!is.null(s1[[field]]) || !is.null(s2[[field]])) {
+      fields <- c(fields, field)
+    }
+  }
+
+  unique(fields)
 }
 
 #' Harmonise contrast names in a GDS

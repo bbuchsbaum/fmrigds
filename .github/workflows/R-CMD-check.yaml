@@ -20,3 +20,18 @@ jobs:
       - uses: r-lib/actions/check-r-package@v2
         with:
           args: '--no-manual'
+
+  mixed-model-parity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          extra-packages: any::lme4, any::testthat, any::pkgload, local::.
+      - name: Run restricted LMM parity and invariance tests
+        run: |
+          testthat::test_local(".", filter = "lmm-ri|lmm-ri-slope1")
+        shell: Rscript {0}
