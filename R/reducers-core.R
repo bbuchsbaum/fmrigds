@@ -158,6 +158,147 @@ core_lancaster_kernel <- function(beta = NULL, var = NULL, X = NULL, df = NULL, 
   .lancaster_fallback(p, dfw = w, min_subj = opts$min_subjects %||% 1L)
 }
 
+.perm_tail_code <- function(alternative) {
+  alt <- alternative %||% "two.sided"
+  if (identical(alt, "less")) 1L else if (identical(alt, "greater")) 2L else 0L
+}
+
+.perm_with_seed <- function(seed, expr) {
+  if (is.null(seed)) return(force(expr))
+  old <- if (exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)) {
+    get(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
+  } else {
+    NULL
+  }
+  on.exit({
+    if (is.null(old)) {
+      if (exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)) {
+        rm(".Random.seed", envir = .GlobalEnv)
+      }
+    } else {
+      assign(".Random.seed", old, envir = .GlobalEnv)
+    }
+  }, add = TRUE)
+  set.seed(as.integer(seed))
+  force(expr)
+}
+
+.make_sign_matrix <- function(n_subject, n_perm, seed = NULL, include_observed = TRUE) {
+  n_perm <- as.integer(n_perm)
+  if (!is.finite(n_perm) || n_perm < 1L) stop("options$n_perm must be a positive integer", call. = FALSE)
+  out <- .perm_with_seed(seed, {
+    matrix(sample.int(2L, n_perm * n_subject, replace = TRUE), nrow = n_perm, ncol = n_subject)
+  })
+  out[out == 1L] <- -1L
+  out[out == 2L] <- 1L
+  if (isTRUE(include_observed)) out[1L, ] <- 1L
+  storage.mode(out) <- "integer"
+  out
+}
+
+.make_group_matrix <- function(group, n_perm, seed = NULL, include_observed = TRUE) {
+  g <- as.integer(group)
+  if (!all(g %in% c(0L, 1L))) stop("Two-sample permutation group must encode two groups as 0/1", call. = FALSE)
+  n_perm <- as.integer(n_perm)
+  if (!is.finite(n_perm) || n_perm < 1L) stop("options$n_perm must be a positive integer", call. = FALSE)
+  out <- .perm_with_seed(seed, {
+    t(replicate(n_perm, sample(g), simplify = TRUE))
+  })
+  if (isTRUE(include_observed)) out[1L, ] <- g
+  storage.mode(out) <- "integer"
+  out
+}
+
+.infer_two_sample_group <- function(X, opts = list()) {
+  group <- opts$group %||% NULL
+  if (!is.null(group)) {
+    f <- as.factor(group)
+    if (nlevels(f) != 2L) stop("options$group must contain exactly two groups", call. = FALSE)
+    return(as.integer(f) - 1L)
+  }
+  if (is.null(X)) stop("perm:twosample requires X or options$group", call. = FALSE)
+  term <- opts$term %||% NULL
+  j <- if (is.null(term)) {
+    ncol(X)
+  } else if (is.character(term)) {
+    match(term, colnames(X))
+  } else {
+    as.integer(term)
+  }
+  if (length(j) != 1L || is.na(j) || j < 1L || j > ncol(X)) {
+    stop("options$term must identify one column of the model matrix", call. = FALSE)
+  }
+  x <- X[, j]
+  ux <- sort(unique(x[is.finite(x)]))
+  if (length(ux) != 2L) {
+    stop("perm:twosample expects the tested design column to have exactly two finite values", call. = FALSE)
+  }
+  as.integer(x == ux[2L])
+}
+
+.add_parametric_p_from_t <- function(res, alternative = "two.sided") {
+  tval <- as.numeric(res$t_g)
+  df <- as.numeric(res$df)
+  alt <- alternative %||% "two.sided"
+  p <- if (identical(alt, "greater")) {
+    stats::pt(tval, df = df, lower.tail = FALSE)
+  } else if (identical(alt, "less")) {
+    stats::pt(tval, df = df, lower.tail = TRUE)
+  } else {
+    2 * stats::pt(-abs(tval), df = df)
+  }
+  res$p_g <- p
+  res
+}
+
+core_perm_onesample_kernel <- function(beta, var = NULL, X = NULL, df = NULL, opts = list()) {
+  if (is.null(beta)) stop("perm:onesample requires beta", call. = FALSE)
+  n_perm <- opts$n_perm %||% 5000L
+  signs <- opts$signs %||% .make_sign_matrix(
+    n_subject = nrow(beta),
+    n_perm = n_perm,
+    seed = opts$seed %||% NULL,
+    include_observed = opts$include_observed %||% FALSE
+  )
+  tail <- .perm_tail_code(opts$alternative %||% "two.sided")
+  if (exists("perm_onesample_t_cpp", mode = "function")) { # nocov start
+    res <- perm_onesample_t_cpp(
+      beta,
+      signs,
+      tail = tail,
+      min_subj = opts$min_subjects %||% 2L
+    )
+  } else {
+    stop("perm:onesample requires compiled C++ support", call. = FALSE)
+  } # nocov end
+  .add_parametric_p_from_t(res, opts$alternative %||% "two.sided")
+}
+
+core_perm_twosample_kernel <- function(beta, var = NULL, X = NULL, df = NULL, opts = list()) {
+  if (is.null(beta)) stop("perm:twosample requires beta", call. = FALSE)
+  group <- .infer_two_sample_group(X, opts)
+  n_perm <- opts$n_perm %||% 5000L
+  group_mat <- opts$group_mat %||% .make_group_matrix(
+    group = group,
+    n_perm = n_perm,
+    seed = opts$seed %||% NULL,
+    include_observed = opts$include_observed %||% TRUE
+  )
+  tail <- .perm_tail_code(opts$alternative %||% "two.sided")
+  if (exists("perm_twosample_t_cpp", mode = "function")) { # nocov start
+    res <- perm_twosample_t_cpp(
+      beta,
+      group_mat,
+      tail = tail,
+      welch = identical((opts$variance %||% "welch"), "welch"),
+      min_group = opts$min_group %||% 2L
+    )
+  } else {
+    stop("perm:twosample requires compiled C++ support", call. = FALSE)
+  } # nocov end
+  .add_parametric_p_from_t(res, opts$alternative %||% "two.sided")
+}
+
 register_core_reducers <- function() {
   register_reducer(
     name = "meta:fe",
@@ -261,6 +402,25 @@ register_core_reducers <- function() {
     fun = function(beta, var, X, z, p, df, df1, df2, opts) core_lancaster_kernel(beta, var, X, df, opts, p = p, dfw = opts$dfw),
     requires = c("p"),
     provides = c("p_g", "chi2", "df")
+  )
+
+  register_reducer(
+    name = "perm:onesample",
+    fun = function(beta, var, X, z, p, df, df1, df2, opts) core_perm_onesample_kernel(beta, var, X, df, opts),
+    requires = c("beta"),
+    provides = c("beta_g", "se_g", "t_g", "df", "p_g", "p_perm", "p_fwer"),
+    options_schema = list(alternative = c("two.sided", "less", "greater"))
+  )
+
+  register_reducer(
+    name = "perm:twosample",
+    fun = function(beta, var, X, z, p, df, df1, df2, opts) core_perm_twosample_kernel(beta, var, X, df, opts),
+    requires = c("beta", "X"),
+    provides = c("beta_g", "se_g", "t_g", "df", "p_g", "p_perm", "p_fwer"),
+    options_schema = list(
+      alternative = c("two.sided", "less", "greater"),
+      variance = c("welch", "pooled")
+    )
   )
 
   # OLS across subjects per sample (voxelwise)

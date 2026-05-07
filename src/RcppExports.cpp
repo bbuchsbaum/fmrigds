@@ -177,6 +177,35 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// perm_onesample_t_cpp
+Rcpp::List perm_onesample_t_cpp(const arma::mat& beta, const arma::imat& sign_mat, const int tail, const int min_subj);
+RcppExport SEXP _fmrigds_perm_onesample_t_cpp(SEXP betaSEXP, SEXP sign_matSEXP, SEXP tailSEXP, SEXP min_subjSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const arma::mat& >::type beta(betaSEXP);
+    Rcpp::traits::input_parameter< const arma::imat& >::type sign_mat(sign_matSEXP);
+    Rcpp::traits::input_parameter< const int >::type tail(tailSEXP);
+    Rcpp::traits::input_parameter< const int >::type min_subj(min_subjSEXP);
+    rcpp_result_gen = Rcpp::wrap(perm_onesample_t_cpp(beta, sign_mat, tail, min_subj));
+    return rcpp_result_gen;
+END_RCPP
+}
+// perm_twosample_t_cpp
+Rcpp::List perm_twosample_t_cpp(const arma::mat& beta, const arma::imat& group_mat, const int tail, const bool welch, const int min_group);
+RcppExport SEXP _fmrigds_perm_twosample_t_cpp(SEXP betaSEXP, SEXP group_matSEXP, SEXP tailSEXP, SEXP welchSEXP, SEXP min_groupSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const arma::mat& >::type beta(betaSEXP);
+    Rcpp::traits::input_parameter< const arma::imat& >::type group_mat(group_matSEXP);
+    Rcpp::traits::input_parameter< const int >::type tail(tailSEXP);
+    Rcpp::traits::input_parameter< const bool >::type welch(welchSEXP);
+    Rcpp::traits::input_parameter< const int >::type min_group(min_groupSEXP);
+    rcpp_result_gen = Rcpp::wrap(perm_twosample_t_cpp(beta, group_mat, tail, welch, min_group));
+    return rcpp_result_gen;
+END_RCPP
+}
 
 static const R_CallMethodDef CallEntries[] = {
     {"_fmrigds_lmm_ri_objective_cpp", (DL_FUNC) &_fmrigds_lmm_ri_objective_cpp, 5},
@@ -191,6 +220,8 @@ static const R_CallMethodDef CallEntries[] = {
     {"_fmrigds_stouffer_combine_cpp", (DL_FUNC) &_fmrigds_stouffer_combine_cpp, 3},
     {"_fmrigds_fisher_combine_cpp", (DL_FUNC) &_fmrigds_fisher_combine_cpp, 2},
     {"_fmrigds_lancaster_combine_cpp", (DL_FUNC) &_fmrigds_lancaster_combine_cpp, 3},
+    {"_fmrigds_perm_onesample_t_cpp", (DL_FUNC) &_fmrigds_perm_onesample_t_cpp, 4},
+    {"_fmrigds_perm_twosample_t_cpp", (DL_FUNC) &_fmrigds_perm_twosample_t_cpp, 5},
     {NULL, NULL, 0}
 };
 

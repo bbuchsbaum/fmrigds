@@ -5,7 +5,8 @@
 #'   `"stouffer"`, and `"fisher"`. Registry-backed reducers include
 #'   meta-analytic regression reducers such as `"meta:fe_reg"` and the
 #'   restricted repeated-measures Gaussian LMM reducers `"lmm:ri"` and
-#'   `"lmm:ri_slope1"`.
+#'   `"lmm:ri_slope1"`, plus permutation reducers `"perm:onesample"` and
+#'   `"perm:twosample"`.
 #' @param weights Weighting scheme (`"1/var"`, `"n_eff"`, `"equal"`, `"custom"`)
 #' @param by Grouping variable (e.g., `"contrast"`)
 #' @param formula Optional model formula. For meta-regression reducers the design
@@ -51,6 +52,17 @@
 #' - `options$theta_mode` can be `"pooled"` or `"voxelwise"`.
 #' - The supported family is intentionally narrow: one grouping factor only,
 #'   Gaussian responses only, and no general random-effects formula grammar.
+#'
+#' Permutation reducer contract:
+#' - `"perm:onesample"` performs an unweighted one-sample sign-flip t test
+#'   for each sample and contrast.
+#' - `"perm:twosample"` performs an unweighted two-sample label-permutation
+#'   t test. It can infer the tested two-level group column from `formula`
+#'   and `col_data`, or use `options$group` directly.
+#' - Common options include `n_perm`, `seed`, `alternative`, and for
+#'   `"perm:twosample"` `variance = "welch"` or `"pooled"`.
+#' - Outputs include `t_g`, parametric `p_g`, permutation `p_perm`, and
+#'   max-|t| family-wise `p_fwer`.
 #' @return Updated plan
 #' @seealso [gds()], [compute()], [as_plan()], [plan()], [new_gds()], [gds_source()]
 #' @export

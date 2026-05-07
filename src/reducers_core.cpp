@@ -444,3 +444,260 @@ Rcpp::List lancaster_combine_cpp(const arma::mat& pmat,
   }
   return Rcpp::List::create(_["chi2"] = stat, _["df"] = df, _["p_g"] = p);
 }
+
+// ----- Permutation tests ----------------------------------------------------
+
+inline double perm_tail_p(const double obs, const double null_stat, const int tail) {
+  if (!finite_(obs) || !finite_(null_stat)) return 0.0;
+  if (tail == 1) return null_stat <= obs ? 1.0 : 0.0;       // less
+  if (tail == 2) return null_stat >= obs ? 1.0 : 0.0;       // greater
+  return std::fabs(null_stat) >= std::fabs(obs) ? 1.0 : 0.0; // two.sided
+}
+
+inline double mean_from_sums(const double sum, const int n) {
+  return n > 0 ? sum / static_cast<double>(n) : NA_REAL;
+}
+
+inline double t_onesample_from_sums(const double sum, const double sumsq, const int n) {
+  if (n < 2) return NA_REAL;
+  const double mean = sum / static_cast<double>(n);
+  double var = (sumsq - static_cast<double>(n) * mean * mean) / static_cast<double>(n - 1);
+  if (var < 0.0 && var > -1e-10) var = 0.0;
+  if (var <= 0.0 || !finite_(var)) return NA_REAL;
+  return mean / std::sqrt(var / static_cast<double>(n));
+}
+
+inline double t_twosample_from_sums(const double sum0, const double sumsq0, const int n0,
+                                    const double sum1, const double sumsq1, const int n1,
+                                    const bool welch) {
+  if (n0 < 2 || n1 < 2) return NA_REAL;
+  const double m0 = sum0 / static_cast<double>(n0);
+  const double m1 = sum1 / static_cast<double>(n1);
+  double v0 = (sumsq0 - static_cast<double>(n0) * m0 * m0) / static_cast<double>(n0 - 1);
+  double v1 = (sumsq1 - static_cast<double>(n1) * m1 * m1) / static_cast<double>(n1 - 1);
+  if (v0 < 0.0 && v0 > -1e-10) v0 = 0.0;
+  if (v1 < 0.0 && v1 > -1e-10) v1 = 0.0;
+  if (!finite_(v0) || !finite_(v1)) return NA_REAL;
+  double se2;
+  if (welch) {
+    se2 = v0 / static_cast<double>(n0) + v1 / static_cast<double>(n1);
+  } else {
+    const double sp2 = ((n0 - 1.0) * v0 + (n1 - 1.0) * v1) / static_cast<double>(n0 + n1 - 2);
+    se2 = sp2 * (1.0 / static_cast<double>(n0) + 1.0 / static_cast<double>(n1));
+  }
+  if (se2 <= 0.0 || !finite_(se2)) return NA_REAL;
+  return (m1 - m0) / std::sqrt(se2);
+}
+
+// sign_mat is n_perm x subjects with entries -1/+1.
+// [[Rcpp::export]]
+Rcpp::List perm_onesample_t_cpp(const arma::mat& beta,
+                                const arma::imat& sign_mat,
+                                const int tail = 0,
+                                const int min_subj = 2) {
+  const uword S = beta.n_rows, B = beta.n_cols;
+  const uword P = sign_mat.n_rows;
+  if (sign_mat.n_cols != S) stop("sign_mat column count must equal number of subjects.");
+
+  NumericVector estimate(B), se(B), stat(B), df(B), p_perm(B), p_fwer(B);
+  NumericVector max_null(P);
+
+  #ifdef _OPENMP
+  #pragma omp parallel for schedule(static)
+  #endif
+  for (long pp = 0; pp < static_cast<long>(P); ++pp) {
+    double max_abs = 0.0;
+    for (uword b = 0; b < B; ++b) {
+      double sum = 0.0, sumsq = 0.0;
+      int n = 0;
+      for (uword i = 0; i < S; ++i) {
+        const double y = beta(i, b);
+        if (!finite_(y)) continue;
+        const double yp = static_cast<double>(sign_mat(pp, i)) * y;
+        sum += yp;
+        sumsq += yp * yp;
+        ++n;
+      }
+      const double tp = t_onesample_from_sums(sum, sumsq, n);
+      if (finite_(tp)) max_abs = std::max(max_abs, std::fabs(tp));
+    }
+    max_null[pp] = max_abs;
+  }
+
+  #ifdef _OPENMP
+  #pragma omp parallel for schedule(static)
+  #endif
+  for (long b = 0; b < static_cast<long>(B); ++b) {
+    double sum = 0.0, sumsq = 0.0;
+    int n = 0;
+    for (uword i = 0; i < S; ++i) {
+      const double y = beta(i, b);
+      if (!finite_(y)) continue;
+      sum += y;
+      sumsq += y * y;
+      ++n;
+    }
+    if (n < min_subj) {
+      estimate[b] = se[b] = stat[b] = df[b] = p_perm[b] = p_fwer[b] = NA_REAL;
+      continue;
+    }
+    const double mean = mean_from_sums(sum, n);
+    double var = (sumsq - static_cast<double>(n) * mean * mean) / static_cast<double>(n - 1);
+    if (var < 0.0 && var > -1e-10) var = 0.0;
+    const double seb = (var > 0.0 && finite_(var)) ? std::sqrt(var / static_cast<double>(n)) : NA_REAL;
+    const double tobs = t_onesample_from_sums(sum, sumsq, n);
+    estimate[b] = mean;
+    se[b] = seb;
+    stat[b] = tobs;
+    df[b] = static_cast<double>(n - 1);
+    if (!finite_(tobs)) {
+      p_perm[b] = p_fwer[b] = NA_REAL;
+      continue;
+    }
+    double count = 0.0, count_fwer = 0.0;
+    for (uword pp = 0; pp < P; ++pp) {
+      double psum = 0.0, psumsq = 0.0;
+      int pn = 0;
+      for (uword i = 0; i < S; ++i) {
+        const double y = beta(i, b);
+        if (!finite_(y)) continue;
+        const double yp = static_cast<double>(sign_mat(pp, i)) * y;
+        psum += yp;
+        psumsq += yp * yp;
+        ++pn;
+      }
+      const double tnull = t_onesample_from_sums(psum, psumsq, pn);
+      count += perm_tail_p(tobs, tnull, tail);
+      if (max_null[pp] >= std::fabs(tobs)) count_fwer += 1.0;
+    }
+    p_perm[b] = (count + 1.0) / (static_cast<double>(P) + 1.0);
+    p_fwer[b] = (count_fwer + 1.0) / (static_cast<double>(P) + 1.0);
+  }
+
+  return Rcpp::List::create(
+    _["beta_g"] = estimate,
+    _["se_g"] = se,
+    _["t_g"] = stat,
+    _["df"] = df,
+    _["p_perm"] = p_perm,
+    _["p_fwer"] = p_fwer,
+    _["max_t_null"] = max_null
+  );
+}
+
+// group_mat is n_perm x subjects with entries 0/1.
+// Observed effect is mean(group == 1) - mean(group == 0).
+// [[Rcpp::export]]
+Rcpp::List perm_twosample_t_cpp(const arma::mat& beta,
+                                const arma::imat& group_mat,
+                                const int tail = 0,
+                                const bool welch = true,
+                                const int min_group = 2) {
+  const uword S = beta.n_rows, B = beta.n_cols;
+  const uword P = group_mat.n_rows;
+  if (group_mat.n_cols != S) stop("group_mat column count must equal number of subjects.");
+
+  NumericVector estimate(B), se(B), stat(B), df(B), p_perm(B), p_fwer(B);
+  NumericVector max_null(P);
+
+  #ifdef _OPENMP
+  #pragma omp parallel for schedule(static)
+  #endif
+  for (long pp = 0; pp < static_cast<long>(P); ++pp) {
+    double max_abs = 0.0;
+    for (uword b = 0; b < B; ++b) {
+      double sum0 = 0.0, sum1 = 0.0, sumsq0 = 0.0, sumsq1 = 0.0;
+      int n0 = 0, n1 = 0;
+      for (uword i = 0; i < S; ++i) {
+        const double y = beta(i, b);
+        if (!finite_(y)) continue;
+        if (group_mat(pp, i) == 1) {
+          sum1 += y; sumsq1 += y * y; ++n1;
+        } else {
+          sum0 += y; sumsq0 += y * y; ++n0;
+        }
+      }
+      const double tp = t_twosample_from_sums(sum0, sumsq0, n0, sum1, sumsq1, n1, welch);
+      if (finite_(tp)) max_abs = std::max(max_abs, std::fabs(tp));
+    }
+    max_null[pp] = max_abs;
+  }
+
+  #ifdef _OPENMP
+  #pragma omp parallel for schedule(static)
+  #endif
+  for (long b = 0; b < static_cast<long>(B); ++b) {
+    double sum0 = 0.0, sum1 = 0.0, sumsq0 = 0.0, sumsq1 = 0.0;
+    int n0 = 0, n1 = 0;
+    for (uword i = 0; i < S; ++i) {
+      const double y = beta(i, b);
+      if (!finite_(y)) continue;
+      if (group_mat(0, i) == 1) {
+        sum1 += y; sumsq1 += y * y; ++n1;
+      } else {
+        sum0 += y; sumsq0 += y * y; ++n0;
+      }
+    }
+    if (n0 < min_group || n1 < min_group) {
+      estimate[b] = se[b] = stat[b] = df[b] = p_perm[b] = p_fwer[b] = NA_REAL;
+      continue;
+    }
+    const double m0 = sum0 / static_cast<double>(n0);
+    const double m1 = sum1 / static_cast<double>(n1);
+    double v0 = (sumsq0 - static_cast<double>(n0) * m0 * m0) / static_cast<double>(n0 - 1);
+    double v1 = (sumsq1 - static_cast<double>(n1) * m1 * m1) / static_cast<double>(n1 - 1);
+    if (v0 < 0.0 && v0 > -1e-10) v0 = 0.0;
+    if (v1 < 0.0 && v1 > -1e-10) v1 = 0.0;
+    double se2;
+    double dfb;
+    if (welch) {
+      const double a = v0 / static_cast<double>(n0);
+      const double c = v1 / static_cast<double>(n1);
+      se2 = a + c;
+      const double den = (a * a) / static_cast<double>(n0 - 1) + (c * c) / static_cast<double>(n1 - 1);
+      dfb = den > 0.0 ? (se2 * se2) / den : NA_REAL;
+    } else {
+      const double sp2 = ((n0 - 1.0) * v0 + (n1 - 1.0) * v1) / static_cast<double>(n0 + n1 - 2);
+      se2 = sp2 * (1.0 / static_cast<double>(n0) + 1.0 / static_cast<double>(n1));
+      dfb = static_cast<double>(n0 + n1 - 2);
+    }
+    const double tobs = t_twosample_from_sums(sum0, sumsq0, n0, sum1, sumsq1, n1, welch);
+    estimate[b] = m1 - m0;
+    se[b] = se2 > 0.0 ? std::sqrt(se2) : NA_REAL;
+    stat[b] = tobs;
+    df[b] = dfb;
+    if (!finite_(tobs)) {
+      p_perm[b] = p_fwer[b] = NA_REAL;
+      continue;
+    }
+    double count = 0.0, count_fwer = 0.0;
+    for (uword pp = 1; pp < P; ++pp) {
+      double psum0 = 0.0, psum1 = 0.0, psumsq0 = 0.0, psumsq1 = 0.0;
+      int pn0 = 0, pn1 = 0;
+      for (uword i = 0; i < S; ++i) {
+        const double y = beta(i, b);
+        if (!finite_(y)) continue;
+        if (group_mat(pp, i) == 1) {
+          psum1 += y; psumsq1 += y * y; ++pn1;
+        } else {
+          psum0 += y; psumsq0 += y * y; ++pn0;
+        }
+      }
+      const double tnull = t_twosample_from_sums(psum0, psumsq0, pn0, psum1, psumsq1, pn1, welch);
+      count += perm_tail_p(tobs, tnull, tail);
+      if (max_null[pp] >= std::fabs(tobs)) count_fwer += 1.0;
+    }
+    p_perm[b] = (count + 1.0) / static_cast<double>(P);
+    p_fwer[b] = (count_fwer + 1.0) / static_cast<double>(P);
+  }
+
+  return Rcpp::List::create(
+    _["beta_g"] = estimate,
+    _["se_g"] = se,
+    _["t_g"] = stat,
+    _["df"] = df,
+    _["p_perm"] = p_perm,
+    _["p_fwer"] = p_fwer,
+    _["max_t_null"] = max_null
+  );
+}

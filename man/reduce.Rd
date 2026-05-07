@@ -21,7 +21,8 @@ reduce(
 \code{"stouffer"}, and \code{"fisher"}. Registry-backed reducers include
 meta-analytic regression reducers such as \code{"meta:fe_reg"} and the
 restricted repeated-measures Gaussian LMM reducers \code{"lmm:ri"} and
-\code{"lmm:ri_slope1"}.}
+\code{"lmm:ri_slope1"}, plus permutation reducers \code{"perm:onesample"} and
+\code{"perm:twosample"}.}
 
 \item{weights}{Weighting scheme (\code{"1/var"}, \code{"n_eff"}, \code{"equal"}, \code{"custom"})}
 
@@ -45,6 +46,19 @@ or tabular ingestion with \code{gds(..., contrast_data_cols = ...)}.
 \item \code{options$theta_mode} can be \code{"pooled"} or \code{"voxelwise"}.
 \item The supported family is intentionally narrow: one grouping factor only,
 Gaussian responses only, and no general random-effects formula grammar.
+}
+
+Permutation reducer contract:
+\itemize{
+\item \code{"perm:onesample"} performs an unweighted one-sample sign-flip t test
+for each sample and contrast.
+\item \code{"perm:twosample"} performs an unweighted two-sample label-permutation
+t test. It can infer the tested two-level group column from \code{formula}
+and \code{col_data}, or use \code{options$group} directly.
+\item Common options include \code{n_perm}, \code{seed}, \code{alternative}, and for
+\code{"perm:twosample"} \code{variance = "welch"} or \code{"pooled"}.
+\item Outputs include \code{t_g}, parametric \code{p_g}, permutation \code{p_perm}, and
+max-|t| family-wise \code{p_fwer}.
 }}
 
 \item{formula}{Optional model formula. For meta-regression reducers the design
