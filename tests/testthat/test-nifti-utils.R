@@ -51,3 +51,38 @@ test_that("find_maps returns empty data.frame when no files match", {
 test_that("find_maps errors on missing root", {
   expect_error(find_maps("/nonexistent/dir"), "does not exist")
 })
+
+test_that("gds_from_nifti_maps accepts beta-only maps with unit variance", {
+  skip_if_not_installed("RNifti")
+  skip_if_not_installed("neuroim2")
+
+  td <- tempfile("niftimaps-")
+  dir.create(td)
+  on.exit(unlink(td, recursive = TRUE), add = TRUE)
+
+  arr1 <- array(1, dim = c(2, 2, 2))
+  arr2 <- array(2, dim = c(2, 2, 2))
+  f1 <- file.path(td, "sub-01_naive_diag_mean.nii")
+  f2 <- file.path(td, "sub-02_naive_diag_mean.nii")
+  RNifti::writeNifti(arr1, f1)
+  RNifti::writeNifti(arr2, f2)
+
+  maps <- data.frame(
+    file = c(f1, f2),
+    subject = c("1001", "1002"),
+    contrast = "naive_diag_mean",
+    stringsAsFactors = FALSE
+  )
+
+  expect_warning(
+    g <- gds_from_nifti_maps(maps, mask = NULL),
+    "No variance or SE provided; using unit variance",
+    fixed = TRUE
+  )
+
+  expect_s3_class(g, "gds")
+  expect_equal(subjects(g), c("1001", "1002"))
+  expect_equal(contrasts(g), "naive_diag_mean")
+  expect_true(all(assay(g, "var") == 1))
+  expect_equal(dim(assay(g, "beta")), c(8L, 2L, 1L))
+})

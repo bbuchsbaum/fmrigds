@@ -19,6 +19,13 @@
 #' - Named list: pass `list(beta = <paths/dir>, se = <paths/dir>)` to explicitly
 #'   provide the sets. See [nifti_source()].
 #'
+#' Beta-only NIfTI sources are accepted for raw map workflows. When a realised
+#' GDS is materialised from beta maps without standard-error images, the adapter
+#' creates a synthetic `var` assay filled with 1 and emits a warning. That
+#' variance is only a placeholder; use unweighted reducers such as
+#' `method = "ols:voxelwise"` for group analyses of subject-level stat maps
+#' rather than fixed/random-effects meta-analysis.
+#'
 #' To provide a mask, pass it to gds() via the mask parameter:
 #' `gds(source, mask = "path/to/mask.nii")`
 #'
@@ -158,6 +165,7 @@ register_nifti_adapter <- function() {
   assays_avail <- c()
   if (!is.null(handle$files_beta)) assays_avail <- c(assays_avail, "beta")
   if (!is.null(handle$files_se)) assays_avail <- c(assays_avail, "se")
+  if (!is.null(handle$files_beta) && is.null(handle$files_se)) assays_avail <- c(assays_avail, "var")
   out <- list(
     assays = assays_avail,
     dims = gds_dims(sample = length(mask_idx), subject = length(files1), contrast = n_contrasts),
@@ -248,6 +256,10 @@ register_nifti_adapter <- function() {
   for (nm in assays) {
     if (identical(nm, "beta") && !is.null(handle$files_beta)) out$beta <- read_stack(handle$files_beta, "beta")
     if (identical(nm, "se") && !is.null(handle$files_se)) out$se <- read_stack(handle$files_se, "se")
+    if (identical(nm, "var") && !is.null(handle$files_beta) && is.null(handle$files_se)) {
+      warning("No variance or SE provided; using unit variance", call. = FALSE)
+      out$var <- array(1, dim = c(length(sample_idx), n_subjects, n_contrasts))
+    }
   }
   out
 }
@@ -345,6 +357,10 @@ register_nifti_adapter <- function() {
 #' Construct a NIfTI source specification
 #'
 #' Build an explicit NIfTI source list for use with `gds(..., format = "nifti")`.
+#' If `beta` is provided without `se`, materialising the GDS creates a unit
+#' variance placeholder with a warning. This supports raw beta/stat-map
+#' workflows; the synthetic variance should not be interpreted as subject-level
+#' uncertainty.
 #'
 #' @param beta Character vector of NIfTI paths or a directory containing beta/effect images
 #'             (optional, can be `NULL` if only `se` is provided)

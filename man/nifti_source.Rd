@@ -18,6 +18,10 @@ A list suitable for \verb{gds(source = <returned>, format = "nifti")}
 }
 \description{
 Build an explicit NIfTI source list for use with \code{gds(..., format = "nifti")}.
+If \code{beta} is provided without \code{se}, materialising the GDS creates a unit
+variance placeholder with a warning. This supports raw beta/stat-map
+workflows; the synthetic variance should not be interpreted as subject-level
+uncertainty.
 }
 \examples{
 src <- nifti_source(beta = c("sub-01_beta.nii.gz", "sub-02_beta.nii.gz"),

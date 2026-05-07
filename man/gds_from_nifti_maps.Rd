@@ -32,4 +32,33 @@ Subject and contrast labels can be injected post-hoc using the \code{subject} an
 \code{contrast} columns when available in \code{maps}. This avoids hard-coding any
 filename convention while still allowing callers to impose semantics via
 hooks.
+
+Beta-only raw maps are accepted. When no variance or standard-error maps are
+available, the realised GDS contains a synthetic \code{var} assay filled with 1 and
+a warning is emitted. This placeholder variance is useful for satisfying the
+GDS assay contract, but it is not meaningful subject-level uncertainty. For
+group analyses over subject-level searchlight or stat-map metrics, prefer an
+unweighted reducer such as \code{method = "ols:voxelwise"} instead of
+fixed/random-effects meta-analysis.
+}
+\examples{
+\dontrun{
+maps <- data.frame(
+  file = c("1001_era_partition/maps/naive_diag_mean.nii.gz",
+           "1002_era_partition/maps/naive_diag_mean.nii.gz"),
+  subject = c("1001", "1002"),
+  contrast = "naive_diag_mean"
+)
+
+group_info <- data.frame(
+  group = c("control", "patient"),
+  row.names = maps$subject
+)
+
+g <- gds_from_nifti_maps(maps) |>
+  with_col_data(group_info)
+
+fit <- reduce(g, method = "ols:voxelwise", formula = ~ group) |>
+  compute()
+}
 }

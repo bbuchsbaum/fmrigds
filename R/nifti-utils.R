@@ -62,6 +62,14 @@ find_maps <- function(root,
 #' filename convention while still allowing callers to impose semantics via
 #' hooks.
 #'
+#' Beta-only raw maps are accepted. When no variance or standard-error maps are
+#' available, the realised GDS contains a synthetic `var` assay filled with 1 and
+#' a warning is emitted. This placeholder variance is useful for satisfying the
+#' GDS assay contract, but it is not meaningful subject-level uncertainty. For
+#' group analyses over subject-level searchlight or stat-map metrics, prefer an
+#' unweighted reducer such as `method = "ols:voxelwise"` instead of
+#' fixed/random-effects meta-analysis.
+#'
 #' @param maps A data.frame (or tibble) with at least a `file` column of
 #'   NIfTI paths. Optional `subject` and `contrast` columns can be used to
 #'   relabel the realised GDS.
@@ -73,6 +81,26 @@ find_maps <- function(root,
 #'
 #' @return A realised GDS object.
 #' @export
+#' @examples
+#' \dontrun{
+#' maps <- data.frame(
+#'   file = c("1001_era_partition/maps/naive_diag_mean.nii.gz",
+#'            "1002_era_partition/maps/naive_diag_mean.nii.gz"),
+#'   subject = c("1001", "1002"),
+#'   contrast = "naive_diag_mean"
+#' )
+#'
+#' group_info <- data.frame(
+#'   group = c("control", "patient"),
+#'   row.names = maps$subject
+#' )
+#'
+#' g <- gds_from_nifti_maps(maps) |>
+#'   with_col_data(group_info)
+#'
+#' fit <- reduce(g, method = "ols:voxelwise", formula = ~ group) |>
+#'   compute()
+#' }
 gds_from_nifti_maps <- function(maps, mask = NULL, ...) { # nocov start
   if (is.null(maps) || !nrow(maps)) {
     stop("`maps` must contain at least one file", call. = FALSE)
@@ -99,11 +127,11 @@ gds_from_nifti_maps <- function(maps, mask = NULL, ...) { # nocov start
   }
   if (!is.null(maps$contrast)) {
     contr <- as.character(maps$contrast)
-    # Only relabel if we have a single-contrast-per-file layout
-    if (length(unique(contr)) == length(contr) && length(g$contrasts) == 1L) {
-      g$contrasts <- contr
+    non_missing <- contr[!is.na(contr)]
+    # For a one-contrast NIfTI layout, per-file contrast metadata must agree.
+    if (length(g$contrasts) == 1L && length(unique(non_missing)) == 1L) {
+      g$contrasts <- unique(non_missing)
     }
   }
   g
 } # nocov end
-
