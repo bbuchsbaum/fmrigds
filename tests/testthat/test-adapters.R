@@ -23,6 +23,7 @@ test_that("tabular adapter can extract contrast_data from long-table columns", {
 
 test_that("nifti adapter produces plan", {
   skip_if_not_installed("RNifti")
+  skip_if_not_installed("neuroim2")
   tmp_dir <- tempfile()
   dir.create(tmp_dir)
   on.exit(unlink(tmp_dir, recursive = TRUE), add = TRUE)
@@ -37,7 +38,14 @@ test_that("nifti adapter produces plan", {
 
   plan <- gds(c(f1, f2))
   expect_s3_class(plan, "gds_plan")
-  expect_error(compute(plan), "If 'beta' is provided", fixed = TRUE)
+  expect_warning(
+    g <- compute(plan),
+    "No variance or SE provided; using unit variance",
+    fixed = TRUE
+  )
+  expect_s3_class(g, "gds")
+  expect_true("var" %in% names(assays(g)))
+  expect_true(all(assay(g, "var") == 1))
 })
 
 test_that("nifti adapter flattens 5D non-spatial axes into contrasts", {

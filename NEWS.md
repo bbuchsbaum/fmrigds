@@ -1,5 +1,11 @@
 # fmrigds 0.1.0.9000
 
+## NIfTI raw-map ingestion
+- Beta-only NIfTI sources now materialise as realised GDS objects by adding a synthetic `var = 1` assay with a warning, matching `gds_from_neurovols()` behavior for raw maps without uncertainty images.
+- Documented beta-only `gds_from_nifti_maps()` workflows and the recommendation to use `ols:voxelwise` rather than fixed/random-effects meta-analysis when the variance assay is synthetic.
+- Tightened `gds_from_nifti_maps()` contrast relabeling for one-contrast raw-map layouts.
+- Added scalar-map workflow helpers: `gds_from_scalar_maps()` / `as_scalar_map_gds()`, `group_ols()`, `one_sample()`, `two_sample()`, and `write_nifti_assays()` with a per-file manifest.
+
 ## CLI overhaul
 - Expanded the bundled `fmrigds` CLI into a plan-oriented interface with `probe`, `plan`, `preview`, `run`, and `list` commands.
 - Added saved-plan workflows via `--save-plan` / `--load-plan`, plus repeatable passthrough flags for adapter, reducer, post-hoc, and writer options.

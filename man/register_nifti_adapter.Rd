@@ -35,6 +35,13 @@ occurring with separators like \verb{_}, \code{.}, or \code{-}.
 provide the sets. See \code{\link[=nifti_source]{nifti_source()}}.
 }
 
+Beta-only NIfTI sources are accepted for raw map workflows. When a realised
+GDS is materialised from beta maps without standard-error images, the adapter
+creates a synthetic \code{var} assay filled with 1 and emits a warning. That
+variance is only a placeholder; use unweighted reducers such as
+\code{method = "ols:voxelwise"} for group analyses of subject-level stat maps
+rather than fixed/random-effects meta-analysis.
+
 To provide a mask, pass it to gds() via the mask parameter:
 \code{gds(source, mask = "path/to/mask.nii")}
 }
