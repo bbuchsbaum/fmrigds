@@ -430,7 +430,11 @@ register_core_reducers <- function() {
       if (is.null(X)) stop("ols:voxelwise requires X (subjects x p) in options$X or via formula", call. = FALSE)
       ret <- opts$return_cov %||% "none"
       if (!ret %in% c("none", "tri")) stop("options$return_cov must be 'none' or 'tri'", call. = FALSE)
-      res <- ols_voxelwise_cpp(beta, X, return_cov_tri = identical(ret, "tri"))
+      res <- ols_voxelwise_cpp(
+        beta, X,
+        return_cov_tri = identical(ret, "tri"),
+        min_obs = opts$min_subjects %||% NULL
+      )
       # add t and p for coefficients
       tmat <- res$coef / res$se_coef
       dfv <- matrix(res$df_res, nrow = nrow(tmat), ncol = ncol(tmat), byrow = TRUE)
@@ -440,24 +444,31 @@ register_core_reducers <- function() {
       res
     },
     requires = c("beta", "X"),
-    provides = c("coef", "se_coef", "t_coef", "p_coef", "sigma2", "df_res", "cov_tri"),
+    provides = c("coef", "se_coef", "t_coef", "p_coef", "sigma2", "df_res", "n_obs", "cov_tri"),
     options_schema = list(return_cov = c("none", "tri"))
   )
 }
 
-# R fallback implementation for ols_voxelwise_cpp (overridden by Rcpp if present)
-ols_voxelwise_cpp <- function(beta, X, return_cov_tri = FALSE) {
+# R implementation of the voxelwise OLS kernel (no compiled override exists).
+#
+# Performs per-sample (voxel) listwise deletion: subjects whose effect is
+# non-finite at a given sample are dropped for that sample only, and the model
+# is refit on the remaining rows. Samples with fewer than `min_obs` finite
+# observations (default p + 1, the minimum for a residual df) cannot be
+# estimated and are returned as NA. The per-sample finite count is returned in
+# `n_obs` so callers can audit effective sample size, and a single summary
+# warning is emitted when any sample had non-finite subjects.
+ols_voxelwise_cpp <- function(beta, X, return_cov_tri = FALSE, min_obs = NULL) {
   # beta: subjects x samples; X: subjects x p
   N <- nrow(beta); B <- ncol(beta); p <- ncol(X)
-  XtX <- crossprod(X)
-  A <- tryCatch(solve(XtX), error = function(e) NULL)
-  if (is.null(A)) stop("X'X is not SPD; OLS failed", call. = FALSE)
+  min_obs <- if (is.null(min_obs)) p + 1L else max(as.integer(min_obs), p)
   Xt <- t(X)
+  A_full <- tryCatch(solve(crossprod(X)), error = function(e) NULL)
   coef <- matrix(NA_real_, nrow = p, ncol = B)
   se   <- matrix(NA_real_, nrow = p, ncol = B)
-  sigma2 <- numeric(B)
-  df_res <- numeric(B)
-  dA <- diag(A)
+  sigma2 <- rep(NA_real_, B)
+  df_res <- rep(NA_real_, B)
+  n_obs  <- rep(0L, B)
   if (return_cov_tri) {
     L <- p * (p + 1) / 2
     cov_tri <- matrix(NA_real_, nrow = L, ncol = B)
@@ -477,17 +488,36 @@ ols_voxelwise_cpp <- function(beta, X, return_cov_tri = FALSE) {
   }
   for (b in seq_len(B)) {
     y <- beta[, b]
-    bh <- A %*% (Xt %*% y)
-    r <- as.numeric(y - X %*% bh)
-    dff <- max(N - p, 1)
+    ok <- is.finite(y)
+    nb <- sum(ok)
+    n_obs[b] <- nb
+    if (nb < min_obs) next
+    if (nb == N) {
+      A <- A_full; Xb <- X; Xtb <- Xt; yb <- y
+    } else {
+      Xb <- X[ok, , drop = FALSE]; yb <- y[ok]; Xtb <- t(Xb)
+      A <- tryCatch(solve(crossprod(Xb)), error = function(e) NULL)
+    }
+    if (is.null(A)) next
+    bh <- A %*% (Xtb %*% yb)
+    r <- as.numeric(yb - Xb %*% bh)
+    dff <- max(nb - p, 1)
     s2 <- sum(r * r) / dff
     coef[, b] <- as.numeric(bh)
-    se[, b] <- sqrt(pmax(dA * s2, 0))
+    se[, b] <- sqrt(pmax(diag(A) * s2, 0))
     sigma2[b] <- s2
     df_res[b] <- dff
     if (!is.null(cov_tri)) cov_tri[, b] <- pack_tri(A, s2)
   }
-  out <- list(coef = coef, se_coef = se, sigma2 = sigma2, df_res = df_res)
+  n_reduced <- sum(n_obs < N)
+  if (n_reduced > 0L) {
+    n_dropped <- sum(n_obs < min_obs)
+    warning(sprintf(
+      "ols:voxelwise: %d of %d samples had non-finite subjects (per-voxel listwise deletion); %d had fewer than %d finite observations and were set to NA.",
+      n_reduced, B, n_dropped, min_obs
+    ), call. = FALSE)
+  }
+  out <- list(coef = coef, se_coef = se, sigma2 = sigma2, df_res = df_res, n_obs = as.numeric(n_obs))
   if (!is.null(cov_tri)) out$cov_tri <- cov_tri
   out
 }

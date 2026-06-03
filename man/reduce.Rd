@@ -96,6 +96,26 @@ For worked examples, see \code{vignette("fmrigds")} for the basic source -> plan
 -> compute workflow and \code{vignette("as-plan-and-spatial-fdr")} for chaining
 verbs on realised GDS objects.
 }
+\section{Output assays}{
+
+Reducers collapse the subject axis and write group-level assays (named on the
+realised GDS, retrievable with \code{\link[=assays]{assays()}}/\code{\link[=assay]{assay()}}):
+\itemize{
+\item \code{"ols:voxelwise"}: per-term \verb{coef:<term>}, \verb{se_coef:<term>},
+\verb{t_coef:<term>}, \verb{p_coef:<term>}, plus \code{sigma2}, \code{df_res}, \code{n_obs}
+(see \link{reducer-ols-voxelwise}).
+\item \code{"fixed"}/\code{"meta:fe"} and \code{"random"}/\code{"meta:re"}: \code{beta_g}, \code{var_g},
+\code{se_g}, \code{z_g}, \code{p_g}, \code{Q}, \code{I2} (random-effects also adds \code{tau2}).
+\item \code{"meta:fe_reg"}/\code{"meta:re_reg"}: per-term \verb{coef:<term>}/\verb{se_coef:<term>}
+plus \code{Q}, \code{df_res} (random-effects also adds \code{tau2}).
+\item \code{"stouffer"}/\code{"combine:stouffer"}: \code{z_g}, \code{p_g}.
+\item \code{"fisher"}/\code{"combine:fisher"} and \code{"combine:lancaster"}: \code{chi2}, \code{df},
+\code{p_g}.
+\item \code{"perm:onesample"}/\code{"perm:twosample"}: \code{beta_g}, \code{se_g}, \code{t_g}, \code{df},
+\code{p_g}, \code{p_perm}, \code{p_fwer}.
+}
+}
+
 \seealso{
 \code{\link[=gds]{gds()}}, \code{\link[=compute]{compute()}}, \code{\link[=as_plan]{as_plan()}}, \code{\link[=plan]{plan()}}, \code{\link[=new_gds]{new_gds()}}, \code{\link[=gds_source]{gds_source()}}
 }

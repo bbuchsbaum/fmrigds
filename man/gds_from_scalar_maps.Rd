@@ -43,7 +43,7 @@ present and row names are absent, it is used as the row key.}
 \item{...}{Additional arguments forwarded to \code{\link[=gds_from_nifti_maps]{gds_from_nifti_maps()}}.}
 }
 \value{
-A realised \code{\link[=gds]{gds}} object.
+A realised \code{\link{gds}} object.
 }
 \description{
 \code{gds_from_scalar_maps()} is a semantic wrapper for beta-only/stat-map

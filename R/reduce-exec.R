@@ -53,12 +53,16 @@ apply_reduce <- function(node, arrays, weights, subjects, col_data = NULL, contr
   # Validate and prepare reducer options once
   opts_root <- validate_reducer_options(reducer$options_schema %||% list(), node$options %||% list())
   # Build X once per reducer node if requested via options or formula
-  if (is.null(opts_root$X) && !is.null(node$formula) && !is.null(col_data)) {
+  if (is.null(opts_root$X) && !is.null(node$formula)) {
     f <- tryCatch(if (inherits(node$formula, "formula")) node$formula else stats::as.formula(node$formula), error = function(e) NULL)
     if (!is.null(f)) {
-      # Match subject order; require rownames(col_data) or a 'subject' column
+      # Match subject order; require rownames(col_data) or a 'subject' column.
+      # When no col_data is supplied, synthesize a subjects-only frame so that
+      # data-independent designs (e.g. intercept-only `~ 1`) still build.
       subj_col <- NULL
-      if (!is.null(rownames(col_data)) && length(rownames(col_data))) {
+      if (is.null(col_data)) {
+        subj_col <- data.frame(subject = as.character(subjects), stringsAsFactors = FALSE)
+      } else if (!is.null(rownames(col_data)) && length(rownames(col_data))) {
         subj_col <- data.frame(subject = rownames(col_data), col_data, check.names = FALSE)
       } else if ("subject" %in% names(col_data)) {
         subj_col <- col_data
@@ -66,7 +70,16 @@ apply_reduce <- function(node, arrays, weights, subjects, col_data = NULL, contr
       if (!is.null(subj_col)) {
         idx <- match(subjects, subj_col$subject)
         Xdat <- subj_col[idx, , drop = FALSE]
-        opts_root$X <- stats::model.matrix(f, data = Xdat)
+        opts_root$X <- tryCatch(
+          stats::model.matrix(f, data = Xdat),
+          error = function(e) {
+            stop(sprintf(
+              "Could not build the design matrix from formula %s: %s%s",
+              deparse(f), conditionMessage(e),
+              if (is.null(col_data)) " (no col_data supplied; attach subject covariates with with_col_data())" else ""
+            ), call. = FALSE)
+          }
+        )
       }
     }
   }

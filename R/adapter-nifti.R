@@ -175,7 +175,11 @@ register_nifti_adapter <- function() {
     maps = list(),
     metadata = list(
       schema_version = "0.1.0",
-      source_files = c(handle$files_beta %||% character(), handle$files_se %||% character())
+      source_files = c(handle$files_beta %||% character(), handle$files_se %||% character()),
+      # Beta-only sources have no real uncertainty; the `var` assay is a
+      # synthetic unit-variance placeholder. Flagged so variance-weighted
+      # reducers can refuse it (see reduce()).
+      synthetic_var = is.null(handle$files_se) && !is.null(handle$files_beta)
     ),
     columns = list(effect_cols = NULL, subject_col = NULL, sample_col = NULL, contrast_col = NULL),
     mask_idx = mask_idx,
@@ -360,7 +364,17 @@ register_nifti_adapter <- function() {
 #' If `beta` is provided without `se`, materialising the GDS creates a unit
 #' variance placeholder with a warning. This supports raw beta/stat-map
 #' workflows; the synthetic variance should not be interpreted as subject-level
-#' uncertainty.
+#' uncertainty, and variance-weighted reducers will refuse such a GDS.
+#'
+#' When both `beta` and `se` are supplied, files are paired by subject key: the
+#' file basename (extension removed) with a **trailing** statistic token
+#' stripped, matching `([_.-](beta|cope|effect|se|stderr|sterr|sigma|std(err)?))+$`
+#' (case insensitive). For example `sub-01_beta.nii.gz` and `sub-01_se.nii.gz`
+#' both reduce to the key `sub-01`. Filenames where the statistic token is not
+#' last (e.g. `sub-01_stat-beta_sm-2.nii.gz`) will fail to pair; rename so the
+#' token is trailing, or pass `beta`/`se` as already-aligned vectors in matching
+#' subject order. For beta/stat-only maps, prefer [gds_from_scalar_maps()], which
+#' takes an explicit `subject` vector and avoids filename heuristics entirely.
 #'
 #' @param beta Character vector of NIfTI paths or a directory containing beta/effect images
 #'             (optional, can be `NULL` if only `se` is provided)

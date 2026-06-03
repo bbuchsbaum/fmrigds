@@ -63,6 +63,22 @@
 #'   `"perm:twosample"` `variance = "welch"` or `"pooled"`.
 #' - Outputs include `t_g`, parametric `p_g`, permutation `p_perm`, and
 #'   max-|t| family-wise `p_fwer`.
+#' @section Output assays:
+#' Reducers collapse the subject axis and write group-level assays (named on the
+#' realised GDS, retrievable with [assays()]/[assay()]):
+#' - `"ols:voxelwise"`: per-term `coef:<term>`, `se_coef:<term>`,
+#'   `t_coef:<term>`, `p_coef:<term>`, plus `sigma2`, `df_res`, `n_obs`
+#'   (see [reducer-ols-voxelwise]).
+#' - `"fixed"`/`"meta:fe"` and `"random"`/`"meta:re"`: `beta_g`, `var_g`,
+#'   `se_g`, `z_g`, `p_g`, `Q`, `I2` (random-effects also adds `tau2`).
+#' - `"meta:fe_reg"`/`"meta:re_reg"`: per-term `coef:<term>`/`se_coef:<term>`
+#'   plus `Q`, `df_res` (random-effects also adds `tau2`).
+#' - `"stouffer"`/`"combine:stouffer"`: `z_g`, `p_g`.
+#' - `"fisher"`/`"combine:fisher"` and `"combine:lancaster"`: `chi2`, `df`,
+#'   `p_g`.
+#' - `"perm:onesample"`/`"perm:twosample"`: `beta_g`, `se_g`, `t_g`, `df`,
+#'   `p_g`, `p_perm`, `p_fwer`.
+#'
 #' @return Updated plan
 #' @seealso [gds()], [compute()], [as_plan()], [plan()], [new_gds()], [gds_source()]
 #' @export
@@ -83,6 +99,28 @@ reduce <- function(x,
     stop("`options` must be a list", call. = FALSE)
   }
   plan <- as_plan(x)
+
+  # Guard: variance-weighted reducers on a synthetic unit-variance placeholder
+  # (beta/stat maps ingested without standard errors) would yield meaningless
+  # group standard errors. Refuse rather than silently mislead.
+  synthetic_var <- isTRUE(if (inherits(x, "gds")) x$metadata$synthetic_var else NULL) ||
+    isTRUE(tryCatch(metadata(plan)$synthetic_var, error = function(e) NULL))
+  if (synthetic_var) {
+    red <- get_reducer(.normalize_reducer_name(method))
+    needs_var <- (!is.null(red) && "var" %in% (red$requires %||% character())) ||
+      weights %in% c("1/var", "n_eff")
+    if (needs_var) {
+      stop(sprintf(
+        paste0(
+          "Reducer '%s' is variance-weighted, but this GDS carries only a synthetic ",
+          "unit-variance placeholder (beta/stat maps ingested without standard errors), ",
+          "so the group standard errors would be meaningless. Use an unweighted reducer ",
+          "such as method = \"ols:voxelwise\" (e.g. one_sample()/group_ols()), or supply ",
+          "real standard errors via nifti_source(se = ...)."
+        ), method), call. = FALSE)
+    }
+  }
+
   is_observation_level <- grepl("^lmm:", method)
   # Auto-build X from formula and col_data/data if provided
   if (!is.null(formula) && !is_observation_level) {

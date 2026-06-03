@@ -21,7 +21,18 @@ Build an explicit NIfTI source list for use with \code{gds(..., format = "nifti"
 If \code{beta} is provided without \code{se}, materialising the GDS creates a unit
 variance placeholder with a warning. This supports raw beta/stat-map
 workflows; the synthetic variance should not be interpreted as subject-level
-uncertainty.
+uncertainty, and variance-weighted reducers will refuse such a GDS.
+}
+\details{
+When both \code{beta} and \code{se} are supplied, files are paired by subject key: the
+file basename (extension removed) with a \strong{trailing} statistic token
+stripped, matching \verb{([_.-](beta|cope|effect|se|stderr|sterr|sigma|std(err)?))+$}
+(case insensitive). For example \verb{sub-01_beta.nii.gz} and \verb{sub-01_se.nii.gz}
+both reduce to the key \code{sub-01}. Filenames where the statistic token is not
+last (e.g. \verb{sub-01_stat-beta_sm-2.nii.gz}) will fail to pair; rename so the
+token is trailing, or pass \code{beta}/\code{se} as already-aligned vectors in matching
+subject order. For beta/stat-only maps, prefer \code{\link[=gds_from_scalar_maps]{gds_from_scalar_maps()}}, which
+takes an explicit \code{subject} vector and avoids filename heuristics entirely.
 }
 \examples{
 src <- nifti_source(beta = c("sub-01_beta.nii.gz", "sub-02_beta.nii.gz"),

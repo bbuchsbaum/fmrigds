@@ -62,6 +62,13 @@ find_maps <- function(root,
 #' filename convention while still allowing callers to impose semantics via
 #' hooks.
 #'
+#' This helper is **single-contrast**: every file in `maps$file` is loaded as
+#' one map per subject along a single contrast axis. A `contrast` column is used
+#' only to *label* that one contrast (all non-missing values must agree); it
+#' does not pivot a long subject x contrast table into a grid. For multi-contrast
+#' workflows, call `gds_from_nifti_maps()` once per contrast and combine the
+#' results, or assemble the source manually with [nifti_source()].
+#'
 #' Beta-only raw maps are accepted. When no variance or standard-error maps are
 #' available, the realised GDS contains a synthetic `var` assay filled with 1 and
 #' a warning is emitted. This placeholder variance is useful for satisfying the
@@ -118,11 +125,14 @@ gds_from_nifti_maps <- function(maps, mask = NULL, ...) { # nocov start
   plan <- gds(src, format = "nifti", mask = mask, ...)
   g <- compute(plan)
 
-  # Optional relabelling using hooks output, if provided
+  # Optional relabelling using hooks output, if provided. Use relabel_subjects()
+  # so the stored col_data rownames and assay dimnames stay consistent with the
+  # new labels (otherwise downstream reduce()/formula handling fails with
+  # "col_data is missing subjects").
   if (!is.null(maps$subject)) {
     subj <- as.character(maps$subject)
-    if (length(subj) == length(g$subjects)) {
-      g$subjects <- subj
+    if (length(subj) == length(g$subjects) && !anyDuplicated(subj)) {
+      g <- relabel_subjects(g, stats::setNames(subj, g$subjects))
     }
   }
   if (!is.null(maps$contrast)) {

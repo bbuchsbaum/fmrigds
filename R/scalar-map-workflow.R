@@ -256,7 +256,7 @@ write_nifti_assays <- function(g,
           next
         }
         vol <- .array_to_nifti_volume(arr[, j, k], sp)
-        RNifti::writeNifti(RNifti::asNifti(vol), path)
+        .write_voxel_nifti(vol, sp$affine, path)
         add_row(nm, subject_labels[j], contrast_labels[k], path, TRUE, NA_character_)
       }
     }

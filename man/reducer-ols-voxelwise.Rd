@@ -15,12 +15,31 @@ Outputs are expanded into per-term assays to preserve the 3-axis invariant:
 \item \verb{coef:<term>} and \verb{se_coef:<term>} (one assay per model term)
 \item \verb{t_coef:<term>} and \verb{p_coef:<term>} convenience statistics
 \item \code{sigma2} (residual variance) and \code{df_res} (residual degrees of freedom)
+\item \code{n_obs} (number of finite subjects contributing at each sample)
 }
 
 Optionally, a packed triangular covariance for the coefficient vector can be
-attached per contrast using \code{options = list(return_cov = "tri")}. Retrieve
-it from a realised GDS via \code{\link[=coef_cov_tri]{coef_cov_tri()}}.
+attached per contrast using \code{options = list(return_cov = "tri")}, which also
+promotes per-pair \verb{cov:<term_i>:<term_j>} assays. Retrieve the packed form
+from a realised GDS via \code{\link[=coef_cov_tri]{coef_cov_tri()}}.
+
+Missing data are handled by per-sample listwise deletion: subjects whose
+effect is non-finite at a given sample are dropped for that sample only and
+the model is refit on the remaining rows. Samples with fewer than \code{p + 1}
+finite observations (override with \code{options = list(min_subjects = ...)})
+cannot be estimated and are returned as \code{NA}; \code{n_obs} records the effective
+sample size and a summary warning is emitted when any sample is reduced.
 }
+\section{Output assays}{
+
+For an intercept-only fit (\code{formula = ~ 1}):
+\code{coef:(Intercept)}, \code{se_coef:(Intercept)}, \code{t_coef:(Intercept)},
+\code{p_coef:(Intercept)}, plus \code{sigma2}, \code{df_res}, and \code{n_obs}. Each additional
+model term adds a matching \verb{coef:<term>}/\verb{se_coef:<term>}/\verb{t_coef:<term>}/
+\verb{p_coef:<term>} quartet. Pass these names verbatim (including the colon and
+any parentheses) to \code{\link[=write_nifti_assays]{write_nifti_assays()}} / \code{\link[=write_out]{write_out()}}.
+}
+
 \section{Usage}{
 
 

@@ -78,6 +78,53 @@
   invisible(path)
 }
 
+# Write a voxel-space numeric array to NIfTI, preserving the spatial affine.
+#
+# The GDS voxel `affine` originates from neuroim2 (`neuroim2::trans()`), so for
+# 3D images we round-trip through neuroim2: this reproduces the affine exactly
+# and writes a valid `scl_slope = 1`. For higher-dimensional arrays we fall back
+# to RNifti, stamping the affine into the sform/qform and pixdim so the geometry
+# is still preserved (RNifti writes `scl_slope = 0`, which is spec-valid "no
+# scaling").
+.write_voxel_nifti <- function(arr, affine, path) {
+  dir.create(dirname(path), recursive = TRUE, showWarnings = FALSE)
+  d <- dim(arr) %||% length(arr)
+  # Drop singleton non-spatial axes (e.g. a collapsed subject axis after reduce)
+  if (length(d) > 3L) {
+    keep <- c(rep(TRUE, 3L), d[-(1:3)] != 1L)
+    arr <- array(as.numeric(arr), dim = d[keep])
+    d <- dim(arr)
+  }
+  affine_ok <- is.matrix(affine) && all(dim(affine) == 4L)
+  if (affine_ok && length(d) == 3L && requireNamespace("neuroim2", quietly = TRUE)) {
+    sp <- neuroim2::NeuroSpace(dim = as.integer(d), trans = affine)
+    vol <- neuroim2::NeuroVol(array(as.numeric(arr), dim = as.integer(d)), sp)
+    neuroim2::write_vol(vol, path)
+    return(invisible(path))
+  }
+  if (!requireNamespace("RNifti", quietly = TRUE)) {
+    stop("The 'RNifti' or 'neuroim2' package is required for NIfTI export.", call. = FALSE)
+  }
+  RNifti::writeNifti(.stamp_nifti_xform(arr, if (affine_ok) affine else NULL), path)
+  invisible(path)
+}
+
+# Stamp a 4x4 voxel->world affine onto an RNifti image (fallback path for
+# non-3D arrays). Sets pixdim from the affine column norms and both sform and
+# qform with a generic ALIGNED_ANAT code so viewers honour the geometry.
+.stamp_nifti_xform <- function(arr, affine) {
+  vol <- RNifti::asNifti(arr)
+  if (is.matrix(affine) && all(dim(affine) == 4L)) {
+    vox <- sqrt(colSums(affine[1:3, 1:3, drop = FALSE]^2))
+    vox[!is.finite(vox) | vox == 0] <- 1
+    RNifti::pixdim(vol) <- vox
+    xf <- structure(affine, code = 2L)
+    RNifti::sform(vol) <- xf
+    tryCatch({ RNifti::qform(vol) <- xf }, error = function(e) NULL)
+  }
+  vol
+}
+
 .write_gds_nifti <- function(gds, path, options = list()) {
   if (!requireNamespace("RNifti", quietly = TRUE)) {
     stop("The 'RNifti' package is required for NIfTI export.", call. = FALSE)
@@ -108,10 +155,7 @@
     }
   }
 
-  vol <- RNifti::asNifti(out)
-  dir.create(dirname(path), recursive = TRUE, showWarnings = FALSE)
-  RNifti::writeNifti(vol, path)
-  invisible(path)
+  .write_voxel_nifti(out, space$affine, path)
 }
 
 .write_export <- function(gds, fmt, path, options) {

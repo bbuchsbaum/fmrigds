@@ -16,7 +16,7 @@ write_nifti_assays(
 )
 }
 \arguments{
-\item{g}{A realised \code{\link[=gds]{gds}} with voxel space.}
+\item{g}{A realised \code{\link{gds}} with voxel space.}
 
 \item{out_dir}{Output directory.}
 
@@ -39,8 +39,8 @@ A data.frame manifest with \code{assay}, \code{subject}, \code{contrast}, \code{
 \description{
 Writes each selected assay/subject/contrast image in a voxel-space GDS to a
 separate NIfTI file and returns a manifest describing written and skipped
-outputs. This is intended for model outputs such as \code{coef:*}, \code{t_coef:*},
-and \code{p_coef:*} assays.
+outputs. This is intended for model outputs such as \verb{coef:*}, \verb{t_coef:*},
+and \verb{p_coef:*} assays.
 }
 \examples{
 \dontrun{

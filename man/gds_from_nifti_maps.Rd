@@ -33,6 +33,13 @@ Subject and contrast labels can be injected post-hoc using the \code{subject} an
 filename convention while still allowing callers to impose semantics via
 hooks.
 
+This helper is \strong{single-contrast}: every file in \code{maps$file} is loaded as
+one map per subject along a single contrast axis. A \code{contrast} column is used
+only to \emph{label} that one contrast (all non-missing values must agree); it
+does not pivot a long subject x contrast table into a grid. For multi-contrast
+workflows, call \code{gds_from_nifti_maps()} once per contrast and combine the
+results, or assemble the source manually with \code{\link[=nifti_source]{nifti_source()}}.
+
 Beta-only raw maps are accepted. When no variance or standard-error maps are
 available, the realised GDS contains a synthetic \code{var} assay filled with 1 and
 a warning is emitted. This placeholder variance is useful for satisfying the

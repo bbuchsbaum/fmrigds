@@ -21,9 +21,9 @@ two_sample(
 )
 }
 \arguments{
-\item{x}{A realised \code{\link[=gds]{gds}} or \code{\link[=gds_plan]{gds_plan}}.}
+\item{x}{A realised \code{\link{gds}} or \code{\link{gds_plan}}.}
 
-\item{formula}{One-sided model formula for \code{group_ols()}.}
+\item{formula}{One-sided model formula for \code{\link[=group_ols]{group_ols()}}.}
 
 \item{col_data}{Optional subject-level covariates to attach before fitting.}
 
@@ -42,12 +42,12 @@ subjects before fitting the one-sample model.}
 omitted, all non-baseline levels are retained in the model.}
 }
 \value{
-A \code{\link[=gds_plan]{gds_plan}} with an OLS reduce node.
+A \code{\link{gds_plan}} with an OLS reduce node.
 }
 \description{
 These helpers wrap \code{reduce(method = "ols:voxelwise")} for subject-level map
-workflows. They return a lazy GDS plan; call \code{\link[=compute]{compute()}} to
-materialise the fitted maps.
+workflows. They return a lazy GDS plan; call \code{\link[=compute]{compute()}} to materialise the
+fitted maps.
 }
 \examples{
 \dontrun{

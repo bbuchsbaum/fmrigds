@@ -1,5 +1,26 @@
 # fmrigds 0.1.0.9000
 
+## Bug fixes (reported issues #1, #5, #6, #7)
+- `write_nifti_assays()` and `write_out(format = "nifti")` now preserve the
+  input spatial affine (spacing, origin, orientation) and write `scl_slope = 1`
+  for 3D outputs, instead of emitting an identity NeuroSpace. Exported group
+  maps are now geometrically correct without a manual re-stamp (#6).
+- `ols:voxelwise` (and therefore `one_sample()`/`group_ols()`) now applies
+  per-sample listwise deletion for non-finite subjects: a single `NaN` subject
+  no longer poisons a voxel and an all-`NaN` subject no longer poisons the whole
+  map. Samples with too few finite observations are returned as `NA`, a new
+  `n_obs` assay reports the effective sample size, and a summary warning is
+  emitted when any sample is reduced (#7).
+- `one_sample()` / `group_ols(~ 1)` now build the intercept-only design
+  automatically and no longer require `col_data` (#1).
+- Variance-weighted reducers (`fixed`/`random`/`meta:*`, or any `weights =
+  "1/var"` reduction) now error with an actionable message when applied to a
+  beta-only GDS whose `var` assay is the synthetic unit-variance placeholder,
+  rather than silently producing meaningless group standard errors (#5).
+- Documented reducer output assay names (`reduce()` and the `ols:voxelwise`
+  topic), the single-contrast scope of `gds_from_nifti_maps()`, and the
+  filename pairing contract for `nifti_source(beta=, se=)` (#2, #3, #4).
+
 ## NIfTI raw-map ingestion
 - Beta-only NIfTI sources now materialise as realised GDS objects by adding a synthetic `var = 1` assay with a warning, matching `gds_from_neurovols()` behavior for raw maps without uncertainty images.
 - Documented beta-only `gds_from_nifti_maps()` workflows and the recommendation to use `ols:voxelwise` rather than fixed/random-effects meta-analysis when the variance assay is synthetic.
