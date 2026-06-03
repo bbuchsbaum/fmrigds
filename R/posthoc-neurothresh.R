@@ -104,30 +104,14 @@
   )
 }
 
-.posthoc_tfce_corrected_p <- function(tfce_res, mask_idx, n_full) {
-  p_corr <- tfce_res$p_corr %||% NULL
-  if (!is.null(p_corr)) {
-    p_vec <- as.numeric(p_corr)
-    if (length(p_vec) != n_full) {
-      stop("neurothresh::tfce_fwer returned p_corr with unexpected length", call. = FALSE)
-    }
-    return(p_vec)
+.posthoc_tfce_corrected_p <- function(tfce_res, n_full) {
+  p_corr <- tfce_res$pvals
+  if (is.null(p_corr)) {
+    stop("neurothresh::tfce_fwer returned no corrected p-values (pvals)", call. = FALSE)
   }
-
-  tfce_map <- tfce_res$tfce_2 %||% tfce_res$tfce %||% NULL
-  max_null <- as.numeric(tfce_res$max_null %||% numeric(0))
-  if (is.null(tfce_map) || !length(max_null)) {
-    stop("Unable to construct corrected p-values from neurothresh output", call. = FALSE)
-  }
-  tfce_vec <- as.numeric(tfce_map)
-  if (length(tfce_vec) != n_full) {
-    stop("neurothresh TFCE map length does not match expected voxel count", call. = FALSE)
-  }
-
-  p_vec <- rep.int(1, n_full)
-  denom <- length(max_null) + 1
-  for (idx in mask_idx) {
-    p_vec[idx] <- (1 + sum(max_null >= tfce_vec[idx])) / denom
+  p_vec <- as.numeric(p_corr)
+  if (length(p_vec) != n_full) {
+    stop("neurothresh::tfce_fwer returned pvals with unexpected length", call. = FALSE)
   }
   p_vec
 }
@@ -219,7 +203,7 @@
         tail = tail
       )
 
-      q_full <- .posthoc_tfce_corrected_p(tfce_res, mask_idx = spec$mask_idx, n_full = spec$n_full)
+      q_full <- .posthoc_tfce_corrected_p(tfce_res, n_full = spec$n_full)
       q_out[, 1L, k] <- .posthoc_pack_from_full(q_full, spec)
 
       sig_full <- as.numeric(as.logical(tfce_res$sig_mask))
@@ -228,9 +212,9 @@
       }
       sig_out[, 1L, k] <- .posthoc_pack_from_full(sig_full, spec)
 
-      tfce_map <- tfce_res$tfce %||% tfce_res$tfce_2 %||% NULL
+      tfce_map <- tfce_res$extras$tfce
       if (is.null(tfce_map)) {
-        stop("neurothresh::tfce_fwer returned no TFCE map", call. = FALSE)
+        stop("neurothresh::tfce_fwer returned no TFCE map (extras$tfce)", call. = FALSE)
       }
       tfce_full <- as.numeric(tfce_map)
       if (length(tfce_full) != spec$n_full) {
