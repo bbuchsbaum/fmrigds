@@ -30,7 +30,7 @@ test_that("tabular adapter probe with explicit column mapping", {
                           contrast_col = "cond")
   expect_equal(probe$subjects, c("s01", "s02"))
   expect_equal(probe$contrasts, c("A", "B"))
-  expect_equal(probe$dims[1L], 2L)
+  expect_equal(probe$dims[[1L]], 2L)
 
   arrs <- .tabular_read(handle, assays = c("beta", "var"),
                         effect_cols = list(beta = "effect", var = "variance"),

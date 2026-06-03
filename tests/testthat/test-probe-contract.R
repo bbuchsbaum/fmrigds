@@ -9,8 +9,8 @@ test_that("memory adapter probe respects contract", {
   expect_true(is.list(pr))
   expect_true(is.character(pr$assays))
   expect_true(inherits(pr$dims, "gds_dims"))
-  expect_equal(length(pr$subjects), pr$dims[2])
-  expect_equal(length(pr$contrasts), pr$dims[3])
+  expect_equal(length(pr$subjects), pr$dims[[2]])
+  expect_equal(length(pr$contrasts), pr$dims[[3]])
   expect_true(inherits(pr$space, "gds_space"))
 })
 

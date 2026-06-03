@@ -231,10 +231,10 @@ test_that("nftab adapter: probe returns valid contract", {
   probe <- .nftab_probe(handle, feature = "roi_beta")
 
   expect_equal(probe$assays, "beta")
-  expect_equal(probe$dims[1L], 3L)  # 3 ROIs
+  expect_equal(probe$dims[[1L]], 3L)  # 3 ROIs
 
-  expect_equal(probe$dims[2L], 2L)  # 2 subjects
-  expect_equal(probe$dims[3L], 2L)  # 2 conditions
+  expect_equal(probe$dims[[2L]], 2L)  # 2 subjects
+  expect_equal(probe$dims[[3L]], 2L)  # 2 conditions
   expect_equal(probe$subjects, c("s01", "s02"))
   expect_equal(probe$contrasts, c("faces", "houses"))
   expect_s3_class(probe$space, "gds_space")
@@ -355,9 +355,9 @@ test_that("nftab adapter: single contrast (no contrast axis)", {
   probe <- .nftab_probe(handle, feature = "roi_beta")
 
   expect_equal(probe$contrasts, "all")
-  expect_equal(probe$dims[3L], 1L)
+  expect_equal(probe$dims[[3L]], 1L)
   expect_equal(probe$subjects, c("s01", "s02", "s03"))
-  expect_equal(probe$dims[2L], 3L)
+  expect_equal(probe$dims[[2L]], 3L)
 })
 
 test_that("nftab adapter: single contrast read", {
