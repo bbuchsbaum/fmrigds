@@ -112,14 +112,33 @@
 # Stamp a 4x4 voxel->world affine onto an RNifti image (fallback path for
 # non-3D arrays). Sets pixdim from the affine column norms and both sform and
 # qform with a generic ALIGNED_ANAT code so viewers honour the geometry.
+#
+# Two subtleties make the naive version silently wrong for >3D outputs:
+#   1. `RNifti::pixdim(vol) <- vox` does NOT persist on an image built from a
+#      bare R array, so the qform (quaternion + pixdim) ends up encoding unit
+#      scale even though the sform is correct. RNifti's own xform() prefers the
+#      qform, so the affine reads back as identity-scaled. We instead stamp
+#      pixdim as an attribute on the array *before* asNifti(), where it sticks.
+#   2. The qform can only represent an orthogonal rotation * scale (with an
+#      optional handedness flip). For a sheared / non-orthogonal affine the
+#      quaternion encoding is lossy but assignment still "succeeds", so the
+#      tryCatch never fires. We only stamp the qform when the direction cosines
+#      are orthogonal; otherwise we leave it unset (code 0) and let readers fall
+#      back to the exact sform.
 .stamp_nifti_xform <- function(arr, affine) {
+  if (!(is.matrix(affine) && all(dim(affine) == 4L))) {
+    return(RNifti::asNifti(arr))
+  }
+  rot <- affine[1:3, 1:3, drop = FALSE]
+  vox <- sqrt(colSums(rot^2))
+  vox[!is.finite(vox) | vox == 0] <- 1
+  d <- dim(arr) %||% length(arr)
+  attr(arr, "pixdim") <- c(vox, rep(1, max(0L, length(d) - 3L)))
   vol <- RNifti::asNifti(arr)
-  if (is.matrix(affine) && all(dim(affine) == 4L)) {
-    vox <- sqrt(colSums(affine[1:3, 1:3, drop = FALSE]^2))
-    vox[!is.finite(vox) | vox == 0] <- 1
-    RNifti::pixdim(vol) <- vox
-    xf <- structure(affine, code = 2L)
-    RNifti::sform(vol) <- xf
+  xf <- structure(affine, code = 2L)
+  RNifti::sform(vol) <- xf
+  cosines <- sweep(rot, 2L, vox, "/")
+  if (max(abs(crossprod(cosines) - diag(3))) < 1e-4) {
     tryCatch({ RNifti::qform(vol) <- xf }, error = function(e) NULL)
   }
   vol

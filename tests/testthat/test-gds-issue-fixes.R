@@ -138,3 +138,80 @@ test_that("#6 write_out(format = 'nifti') preserves the spatial affine", {
   expect_equal(as.numeric(neuroim2::spacing(neuroim2::space(v))), c(3, 3, 3), tolerance = 1e-4)
   expect_equal(as.numeric(neuroim2::origin(neuroim2::space(v))), c(10, 20, 30), tolerance = 1e-4)
 })
+
+test_that("#6 write_out(format = 'nifti') preserves the affine for >3D output (RNifti fallback)", {
+  skip_if_not_installed("RNifti")
+
+  # Multi-subject and/or multi-contrast output stays 4D/5D and is written via
+  # the RNifti fallback (not the 3D neuroim2 path). The naive fallback wrote a
+  # correct sform but a qform that lost voxel scale, so qform-preferring readers
+  # (including RNifti's default xform()) saw unit spacing. Exercise that branch.
+  aff <- matrix(c(-2, 0, 0, 90,
+                   0, 2, 0, -126,
+                   0, 0, 2, -72,
+                   0, 0, 0, 1), nrow = 4L, byrow = TRUE)
+  vdim <- c(4L, 5L, 6L)
+  nvox <- prod(vdim)
+
+  cases <- list(
+    c(nsub = 2L, ncon = 1L), # 4D
+    c(nsub = 1L, ncon = 2L), # 4D
+    c(nsub = 2L, ncon = 2L)  # 5D
+  )
+  for (cs in cases) {
+    arr <- array(seq_len(nvox * cs[["nsub"]] * cs[["ncon"]]) * 1.0,
+                 dim = c(nvox, cs[["nsub"]], cs[["ncon"]]))
+    g <- new_gds(
+      list(beta = arr, var = array(1, dim = dim(arr))),
+      space_voxel(vdim, aff, storage = "dense"),
+      paste0("s", seq_len(cs[["nsub"]])),
+      paste0("c", seq_len(cs[["ncon"]]))
+    )
+    path <- tempfile(fileext = ".nii.gz")
+    .write_gds_nifti(g, path, options = list(stat = "beta"))
+
+    img <- RNifti::readNifti(path)
+    # The affine must read back correctly regardless of qform/sform preference.
+    xq <- RNifti::xform(img, useQuaternionFirst = TRUE)
+    xs <- RNifti::xform(img, useQuaternionFirst = FALSE)
+    expect_equal(unname(xq)[1:3, ], unname(aff)[1:3, ], tolerance = 1e-3)
+    expect_equal(unname(xs)[1:3, ], unname(aff)[1:3, ], tolerance = 1e-3)
+    hdr <- RNifti::niftiHeader(path)
+    expect_equal(as.numeric(hdr$pixdim[2:4]), c(2, 2, 2), tolerance = 1e-3)
+
+    # Data volumes must land in the right place (first subject x first contrast).
+    got <- array(as.array(img), dim = c(vdim, cs[["nsub"]], cs[["ncon"]]))
+    expect_equal(as.numeric(got[, , , 1, 1]),
+                 as.numeric(array(arr[, 1, 1], dim = vdim)), tolerance = 1e-4)
+    unlink(path)
+  }
+})
+
+test_that("#6 RNifti fallback leaves qform unset for a non-orthogonal (sheared) affine", {
+  skip_if_not_installed("RNifti")
+
+  # A sheared affine cannot be represented by the quaternion qform; stamping it
+  # anyway would silently approximate the geometry. The writer must keep the
+  # exact sform and disable the qform (code 0) so readers use the sform.
+  shear <- matrix(c(2, 0.7, 0, 10,
+                    0, 2,   0, 20,
+                    0, 0,   2, 30,
+                    0, 0,   0, 1), nrow = 4L, byrow = TRUE)
+  arr <- array(seq_len(prod(c(60, 2, 1))) * 1.0, dim = c(60L, 2L, 1L)) # 4D fallback
+  g <- new_gds(
+    list(beta = arr, var = array(1, dim = dim(arr))),
+    space_voxel(c(3L, 4L, 5L), shear, storage = "dense"),
+    c("s1", "s2"),
+    "c1"
+  )
+  path <- tempfile(fileext = ".nii.gz")
+  on.exit(unlink(path), add = TRUE)
+  .write_gds_nifti(g, path, options = list(stat = "beta"))
+
+  hdr <- RNifti::niftiHeader(path)
+  expect_identical(as.integer(hdr$qform_code), 0L)
+  expect_gt(hdr$sform_code, 0)
+  # The sform (read with sform preference) keeps the exact sheared affine.
+  xs <- RNifti::xform(RNifti::readNifti(path), useQuaternionFirst = FALSE)
+  expect_equal(unname(xs)[1:3, ], unname(shear)[1:3, ], tolerance = 1e-3)
+})
