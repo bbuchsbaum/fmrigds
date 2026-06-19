@@ -43,8 +43,13 @@ as_gds.list <- function(x,
   dn <- dimnames(assays[[1L]])
   subjects <- subjects %||% (dn[[2L]] %||% as.character(seq_len(dims[2L])))
   contrasts <- contrasts %||% (dn[[3L]] %||% paste0("contrast", seq_len(dims[3L])))
-  sample_labels <- dn[[1L]] %||% as.character(seq_len(dims[1L]))
+  has_sample_labels <- !is.null(dn[[1L]])
+  space_missing <- is.null(space)
+  sample_labels <- if (has_sample_labels) dn[[1L]] else as.character(seq_len(dims[1L]))
   space <- space %||% space_sample_labels(sample_labels)
+  if (space_missing && !has_sample_labels) {
+    metadata <- utils::modifyList(list(sample_labels_synthetic = TRUE), metadata)
+  }
 
   new_gds(
     assays = assays,

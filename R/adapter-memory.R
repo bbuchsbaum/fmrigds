@@ -59,7 +59,7 @@ register_memory_adapter <- function() {
       contrasts = paste0("contrast", seq_len(dims[3L])),
       space = space_sample_labels(labels = as.character(seq_len(dims[1L]))),
       maps = list(),
-      metadata = list(schema_version = "0.1.0", source = "<memory>"),
+      metadata = list(schema_version = "0.1.0", source = "<memory>", sample_labels_synthetic = TRUE),
       columns = list()
     )
     return(probe_contract(out))

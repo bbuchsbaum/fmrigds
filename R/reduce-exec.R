@@ -123,6 +123,7 @@ apply_reduce <- function(node, arrays, weights, subjects, col_data = NULL, contr
     }
 
     res <- reducer$fun(beta_mat, var_mat, X, z_mat, p_mat, arrays$df, arrays$df1, arrays$df2, opts_local)
+    .warn_on_reduced_effective_n(reducer$name, res$n_eff, n_subject)
     #
     # Handle regression/parametric results (matrix outputs): expand into param-suffixed assays
     if ((is.matrix(res$coef) && nrow(res$coef) >= 1) || (is.matrix(res$se_coef) && nrow(res$se_coef) >= 1)) {
@@ -213,6 +214,22 @@ apply_reduce <- function(node, arrays, weights, subjects, col_data = NULL, contr
     is.array(a) && length(dim(a)) == 3L && dim(a)[2L] == 1L
   }, arrays)
   list(arrays = arrays, subjects = "meta", design_info = design_info, attachments = attachments)
+}
+
+.warn_on_reduced_effective_n <- function(reducer_name, n_eff, n_subject) {
+  if (!(reducer_name %in% c("meta:fe", "meta:re")) || is.null(n_eff)) {
+    return(invisible(NULL))
+  }
+
+  n_eff <- as.numeric(n_eff)
+  reduced <- is.finite(n_eff) & n_eff < n_subject
+  if (any(reduced)) {
+    warning(sprintf(
+      "%s used fewer than %d finite subjects for %d of %d samples; inspect `n_eff` for effective subject counts.",
+      reducer_name, n_subject, sum(reduced), length(n_eff)
+    ), call. = FALSE)
+  }
+  invisible(NULL)
 }
 
 .apply_joint_reducer <- function(node, reducer, arrays, subjects, contrasts = NULL, col_data = NULL, contrast_data = NULL) {

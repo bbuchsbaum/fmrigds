@@ -105,7 +105,8 @@ realised GDS, retrievable with \code{\link[=assays]{assays()}}/\code{\link[=assa
 \verb{t_coef:<term>}, \verb{p_coef:<term>}, plus \code{sigma2}, \code{df_res}, \code{n_obs}
 (see \link{reducer-ols-voxelwise}).
 \item \code{"fixed"}/\code{"meta:fe"} and \code{"random"}/\code{"meta:re"}: \code{beta_g}, \code{var_g},
-\code{se_g}, \code{z_g}, \code{p_g}, \code{Q}, \code{I2} (random-effects also adds \code{tau2}).
+\code{se_g}, \code{z_g}, \code{p_g}, \code{Q}, \code{I2}, \code{n_eff} (random-effects also adds
+\code{tau2}). \code{n_eff} is the number of finite subject-level inputs used for each sample and contrast.
 \item \code{"meta:fe_reg"}/\code{"meta:re_reg"}: per-term \verb{coef:<term>}/\verb{se_coef:<term>}
 plus \code{Q}, \code{df_res} (random-effects also adds \code{tau2}).
 \item \code{"stouffer"}/\code{"combine:stouffer"}: \code{z_g}, \code{p_g}.

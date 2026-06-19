@@ -294,11 +294,13 @@ sample_labels <- function(x) UseMethod("sample_labels")
 
 #' @export
 sample_labels.gds <- function(x) {
-  .sample_labels_from_row_data(row_data(x), space(x))
+  .sample_labels_from_row_data(row_data(x), space(x), metadata(x))
 }
 
 #' @export
-sample_labels.gds_plan <- sample_labels.gds
+sample_labels.gds_plan <- function(x) {
+  .sample_labels_from_row_data(row_data(x), space(x), x$source$probe$metadata %||% list())
+}
 
 #' Extract sample-group metadata from a GDS object
 #'
@@ -412,7 +414,7 @@ metadata.gds <- function(x) x$metadata
 
 .normalise_row_data <- function(row_data, n_samples) {
   if (is.null(row_data)) {
-    return(data.frame(sample = seq_len(n_samples), row.names = seq_len(n_samples), check.names = FALSE))
+    return(data.frame(row.names = as.character(seq_len(n_samples)), check.names = FALSE))
   }
   if (!is.data.frame(row_data)) {
     stop("`row_data` must be a data.frame", call. = FALSE)
@@ -451,7 +453,25 @@ metadata.gds <- function(x) x$metadata
   contrast_data
 }
 
-.sample_labels_from_row_data <- function(row_data, space = NULL) {
+.is_positional_sample_labels <- function(x, n) {
+  if (is.null(x) || is.null(n) || !is.finite(n) || length(x) != n) {
+    return(FALSE)
+  }
+  identical(as.character(x), as.character(seq_len(n)))
+}
+
+.sample_labels_from_row_data <- function(row_data, space = NULL, metadata = list()) {
+  n_samples <- if (!is.null(row_data)) {
+    nrow(row_data)
+  } else if (!is.null(space$labels)) {
+    length(space$labels)
+  } else if (!is.null(space$mask_idx)) {
+    length(space$mask_idx)
+  } else {
+    NA_integer_
+  }
+  synthetic <- isTRUE(metadata$sample_labels_synthetic)
+
   if (!is.null(row_data) && nrow(row_data) > 0L) {
     for (nm in c("label", "roi", "parcel")) {
       if (nm %in% names(row_data)) {
@@ -462,19 +482,31 @@ metadata.gds <- function(x) x$metadata
 
   if (!is.null(space)) {
     if (!is.null(space$labels)) {
+      if (synthetic && .is_positional_sample_labels(space$labels, n_samples)) {
+        return(NULL)
+      }
       return(as.character(space$labels))
     }
     if (!is.null(space$mask_idx)) {
+      if (synthetic) {
+        return(NULL)
+      }
       return(as.character(space$mask_idx))
     }
   }
 
   if (!is.null(row_data) && nrow(row_data) > 0L) {
     if ("sample" %in% names(row_data)) {
+      if (.is_positional_sample_labels(row_data[["sample"]], nrow(row_data))) {
+        return(NULL)
+      }
       return(as.character(row_data[["sample"]]))
     }
     rn <- rownames(row_data)
     if (!is.null(rn) && !anyNA(rn)) {
+      if (.is_positional_sample_labels(rn, nrow(row_data))) {
+        return(NULL)
+      }
       return(as.character(rn))
     }
   }

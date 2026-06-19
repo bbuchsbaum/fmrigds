@@ -140,7 +140,11 @@ test_that("gds_from_neurovols accepts col_data", {
     row.names = c("s1", "s2")
   )
 
-  gds_obj <- gds_from_neurovols(beta_vols, col_data = covars, mask = "none")
+  expect_warning(
+    gds_obj <- gds_from_neurovols(beta_vols, col_data = covars, mask = "none"),
+    "No variance or SE provided; using unit variance",
+    fixed = TRUE
+  )
 
   cd <- col_data(gds_obj)
   expect_equal(nrow(cd), 2)
@@ -229,9 +233,13 @@ test_that("gds_from_neurovol_nested handles list of NeuroVecs", {
     `s2` = neuroim2::NeuroVec(arr2, nspace)
   )
 
-  gds_obj <- gds_from_neurovol_nested(beta,
-                                   contrasts = c("faces", "places"),
-                                   mask = "none")
+  expect_warning(
+    gds_obj <- gds_from_neurovol_nested(beta,
+                                        contrasts = c("faces", "places"),
+                                        mask = "none"),
+    "No variance or SE provided; using unit variance",
+    fixed = TRUE
+  )
 
   expect_equal(subjects(gds_obj), c("s1", "s2"))
   expect_equal(contrasts(gds_obj), c("faces", "places"))
@@ -265,10 +273,14 @@ test_that("gds_from_neurovol_nested attaches col_data and metadata", {
     notes = "Test data"
   )
 
-  gds_obj <- gds_from_neurovol_nested(beta,
-                                   col_data = covars,
-                                   metadata = custom_meta,
-                                   mask = "none")
+  expect_warning(
+    gds_obj <- gds_from_neurovol_nested(beta,
+                                        col_data = covars,
+                                        metadata = custom_meta,
+                                        mask = "none"),
+    "No variance or SE provided; using unit variance",
+    fixed = TRUE
+  )
 
   cd <- col_data(gds_obj)
   expect_equal(nrow(cd), 2)

@@ -244,7 +244,8 @@ register_nifti_adapter <- function() {
       # Beta-only sources have no real uncertainty; the `var` assay is a
       # synthetic unit-variance placeholder. Flagged so variance-weighted
       # reducers can refuse it (see reduce()).
-      synthetic_var = is.null(handle$files_se) && !is.null(handle$files_beta)
+      synthetic_var = is.null(handle$files_se) && !is.null(handle$files_beta),
+      sample_labels_synthetic = TRUE
     ),
     columns = list(effect_cols = NULL, subject_col = NULL, sample_col = NULL, contrast_col = NULL),
     mask_idx = mask_idx,

@@ -12,17 +12,25 @@
   }
 }
 
+.meta_effective_n <- function(beta, var) {
+  colSums(is.finite(beta) & is.finite(var) & var > 0)
+}
+
 .colwise_fe <- function(beta, var, eps = 1e-12, alternative = "two.sided", min_subj = 1L) {
+  ok <- is.finite(beta) & is.finite(var) & var > 0
+  beta_ok <- beta
+  beta_ok[!ok] <- NA_real_
   w <- 1 / pmax(var, eps)
+  w[!ok] <- NA_real_
   sw <- colSums(w, na.rm = TRUE)
-  wy <- colSums(w * beta, na.rm = TRUE)
+  wy <- colSums(w * beta_ok, na.rm = TRUE)
   mu <- wy / sw
   var_mu <- 1 / sw
   se_mu <- sqrt(var_mu)
   # Q and I2
-  resid <- beta - rep(mu, each = nrow(beta))
+  resid <- beta_ok - rep(mu, each = nrow(beta))
   Q <- colSums(w * resid * resid, na.rm = TRUE)
-  k <- colSums(is.finite(beta) & is.finite(var))
+  k <- colSums(ok)
   I2 <- pmax(0, (Q - (k - 1)) / pmax(Q, .Machine$double.eps))
   z_g <- mu / se_mu
   p_g <- .p_from_z(z_g, alternative = alternative)
@@ -38,12 +46,16 @@
 }
 
 .colwise_tau2_dl <- function(beta, var, eps = 1e-12) {
+  ok <- is.finite(beta) & is.finite(var) & var > 0
+  beta_ok <- beta
+  beta_ok[!ok] <- NA_real_
   w <- 1 / pmax(var, eps)
+  w[!ok] <- NA_real_
   sw <- colSums(w, na.rm = TRUE)
-  wy <- colSums(w * beta, na.rm = TRUE)
+  wy <- colSums(w * beta_ok, na.rm = TRUE)
   mu_fe <- wy / sw
-  Q <- colSums(w * (beta - rep(mu_fe, each = nrow(beta)))^2, na.rm = TRUE)
-  k <- colSums(is.finite(beta) & is.finite(var))
+  Q <- colSums(w * (beta_ok - rep(mu_fe, each = nrow(beta)))^2, na.rm = TRUE)
+  k <- colSums(ok)
   C <- sw - colSums(w^2, na.rm = TRUE) / sw
   pmax(0, (Q - (k - 1)) / pmax(C, .Machine$double.eps))
 }
@@ -53,10 +65,14 @@ core_meta_fe_kernel <- function(beta, var, X = NULL, df = NULL, opts = list()) {
   alt <- opts$alternative %||% "two.sided"
   min_subj <- opts$min_subjects %||% 2L
   tail <- if (identical(alt, "less")) 1L else if (identical(alt, "greater")) 2L else 0L
+  n_eff <- .meta_effective_n(beta, var)
   if (exists("meta_fe_cpp", mode = "function")) { # nocov start
-    return(meta_fe_cpp(beta, var, min_subj = min_subj, eps = eps, tail = tail))
+    out <- meta_fe_cpp(beta, var, min_subj = min_subj, eps = eps, tail = tail)
+  } else {
+    out <- .colwise_fe(beta, var, eps = eps, alternative = alt, min_subj = min_subj)
   } # nocov end
-  .colwise_fe(beta, var, eps = eps, alternative = alt, min_subj = min_subj)
+  out$n_eff <- as.numeric(n_eff)
+  out
 }
 
 core_meta_re_dl_kernel <- function(beta, var, X = NULL, df = NULL, opts = list()) {
@@ -64,31 +80,39 @@ core_meta_re_dl_kernel <- function(beta, var, X = NULL, df = NULL, opts = list()
   alt <- opts$alternative %||% "two.sided"
   min_subj <- opts$min_subjects %||% 2L
   tail <- if (identical(alt, "less")) 1L else if (identical(alt, "greater")) 2L else 0L
+  n_eff <- .meta_effective_n(beta, var)
   if (exists("meta_re_dl_cpp", mode = "function")) { # nocov start
-    return(meta_re_dl_cpp(beta, var, min_subj = min_subj, eps = eps, tail = tail))
+    out <- meta_re_dl_cpp(beta, var, min_subj = min_subj, eps = eps, tail = tail)
+  } else {
+    tau2 <- .colwise_tau2_dl(beta, var, eps = eps)
+    ok <- is.finite(beta) & is.finite(var) & var > 0
+    beta_ok <- beta
+    beta_ok[!ok] <- NA_real_
+    wstar <- 1 / (pmax(var, eps) + rep(tau2, each = nrow(var)))
+    wstar[!ok] <- NA_real_
+    sws <- colSums(wstar, na.rm = TRUE)
+    wys <- colSums(wstar * beta_ok, na.rm = TRUE)
+    mu <- wys / sws
+    var_mu <- 1 / sws
+    se_mu <- sqrt(var_mu)
+    z_g <- mu / se_mu
+    p_g <- .p_from_z(z_g, alternative = alt)
+    w <- 1 / pmax(var, eps)
+    w[!ok] <- NA_real_
+    mu_fe <- colSums(w * beta_ok, na.rm = TRUE) / colSums(w, na.rm = TRUE)
+    Q <- colSums(w * (beta_ok - rep(mu_fe, each = nrow(beta)))^2, na.rm = TRUE)
+    k <- colSums(ok)
+    I2 <- pmax(0, (Q - (k - 1)) / pmax(Q, .Machine$double.eps))
+    out <- list(beta_g = mu, var_g = var_mu, se_g = se_mu, z_g = z_g, p_g = p_g, tau2 = tau2, Q = Q, I2 = I2)
+    bad <- k < as.integer(min_subj) | !is.finite(sws) | sws <= 0
+    if (any(bad)) {
+      out <- lapply(out, function(x) {
+        x[bad] <- NA_real_
+        x
+      })
+    }
   } # nocov end
-  tau2 <- .colwise_tau2_dl(beta, var, eps = eps)
-  wstar <- 1 / (pmax(var, eps) + rep(tau2, each = nrow(var)))
-  sws <- colSums(wstar, na.rm = TRUE)
-  wys <- colSums(wstar * beta, na.rm = TRUE)
-  mu <- wys / sws
-  var_mu <- 1 / sws
-  se_mu <- sqrt(var_mu)
-  z_g <- mu / se_mu
-  p_g <- .p_from_z(z_g, alternative = alt)
-  w <- 1 / pmax(var, eps)
-  mu_fe <- colSums(w * beta, na.rm = TRUE) / colSums(w, na.rm = TRUE)
-  Q <- colSums(w * (beta - rep(mu_fe, each = nrow(beta)))^2, na.rm = TRUE)
-  k <- colSums(is.finite(beta) & is.finite(var))
-  I2 <- pmax(0, (Q - (k - 1)) / pmax(Q, .Machine$double.eps))
-  out <- list(beta_g = mu, var_g = var_mu, se_g = se_mu, z_g = z_g, p_g = p_g, tau2 = tau2, Q = Q, I2 = I2)
-  bad <- k < as.integer(min_subj) | !is.finite(sws) | sws <= 0
-  if (any(bad)) {
-    out <- lapply(out, function(x) {
-      x[bad] <- NA_real_
-      x
-    })
-  }
+  out$n_eff <- as.numeric(n_eff)
   out
 }
 
@@ -304,13 +328,13 @@ register_core_reducers <- function() {
     name = "meta:fe",
     fun = function(beta, var, X, z, p, df, df1, df2, opts) core_meta_fe_kernel(beta, var, X, df, opts),
     requires = c("beta", "var"),
-    provides = c("beta_g", "var_g", "se_g", "z_g", "p_g", "Q", "I2")
+    provides = c("beta_g", "var_g", "se_g", "z_g", "p_g", "Q", "I2", "n_eff")
   )
   register_reducer(
     name = "meta:re",
     fun = function(beta, var, X, z, p, df, df1, df2, opts) core_meta_re_dl_kernel(beta, var, X, df, opts),
     requires = c("beta", "var"),
-    provides = c("beta_g", "var_g", "se_g", "z_g", "p_g", "tau2", "Q", "I2"),
+    provides = c("beta_g", "var_g", "se_g", "z_g", "p_g", "tau2", "Q", "I2", "n_eff"),
     options_schema = list(tau2 = c("DL"))
   )
   register_reducer(

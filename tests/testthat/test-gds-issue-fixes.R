@@ -115,6 +115,81 @@ test_that("#5 variance-weighted reducers refuse a synthetic unit-variance placeh
   expect_s3_class(group_ols(g, ~ 1), "gds_plan")
 })
 
+test_that("#5 beta-only NIfTI OLS does not materialize synthetic variance", {
+  skip_if_not_installed("neuroim2")
+  skip_if_not_installed("RNifti")
+
+  td <- tempfile("beta-only-ols-"); dir.create(td)
+  on.exit(unlink(td, recursive = TRUE), add = TRUE)
+  files <- file.path(td, paste0("sub-", 1:3, "_beta.nii"))
+  for (i in 1:3) RNifti::writeNifti(array(as.numeric(i), c(2, 2, 2)), files[i])
+
+  plan <- gds(
+    nifti_source(beta = files, subject = paste0("s", 1:3), contrast = "metric"),
+    format = "nifti"
+  )
+
+  expect_warning(compute(plan), "No variance or SE provided; using unit variance", fixed = TRUE)
+  expect_silent(fit <- group_ols(plan, ~ 1) |> compute())
+  expect_true("coef:(Intercept)" %in% names(assays(fit)))
+})
+
+test_that("#7 meta reducers expose effective subject counts for finite inputs", {
+  beta <- array(c(1, 2, 3, 4, NaN, 6), dim = c(2L, 3L, 1L))
+  var <- array(1, dim = dim(beta))
+
+  fixed_node <- op_reduce(method = "fixed", weights = "1/var", by = "contrast", options = list())
+  expect_warning(
+    fixed <- apply_reduce(fixed_node, list(beta = beta, var = var), weights = "1/var", subjects = paste0("s", 1:3)),
+    "n_eff"
+  )
+  expect_true("n_eff" %in% names(fixed$arrays))
+  expect_equal(as.numeric(fixed$arrays$n_eff[, 1, 1]), c(2, 3))
+  expect_equal(as.numeric(fixed$arrays$beta_g[, 1, 1]), c(2, 4), tolerance = 1e-8)
+
+  random_node <- op_reduce(method = "random", weights = "1/var", by = "contrast", options = list())
+  expect_warning(
+    random <- apply_reduce(random_node, list(beta = beta, var = var), weights = "1/var", subjects = paste0("s", 1:3)),
+    "n_eff"
+  )
+  expect_true("n_eff" %in% names(random$arrays))
+  expect_equal(as.numeric(random$arrays$n_eff[, 1, 1]), c(2, 3))
+})
+
+test_that("#10 synthetic positional sample labels are not exposed as real labels", {
+  beta <- array(seq_len(15), dim = c(5L, 3L, 1L))
+  se <- array(1, dim = dim(beta))
+
+  g <- as_gds(
+    list(beta = beta, se = se),
+    space = NULL,
+    subjects = paste0("sub-", 1:3),
+    contrasts = "c1"
+  )
+
+  expect_null(sample_labels(g))
+  expect_false("sample" %in% names(row_data(g)))
+  expect_equal(nrow(row_data(g)), 5L)
+})
+
+test_that("#10 explicit sample labels are preserved", {
+  beta <- array(seq_len(15), dim = c(5L, 3L, 1L))
+  se <- array(1, dim = dim(beta))
+  dimnames(beta) <- list(paste0("roi-", 1:5), paste0("sub-", 1:3), "c1")
+  dimnames(se) <- dimnames(beta)
+
+  g <- as_gds(list(beta = beta, se = se))
+  expect_equal(sample_labels(g), paste0("roi-", 1:5))
+
+  numeric_labels <- new_gds(
+    list(beta = beta, se = se),
+    space_sample_labels(as.character(seq_len(5L))),
+    paste0("sub-", 1:3),
+    "c1"
+  )
+  expect_equal(sample_labels(numeric_labels), as.character(seq_len(5L)))
+})
+
 test_that("#6 write_out(format = 'nifti') preserves the spatial affine", {
   skip_if_not_installed("neuroim2")
 

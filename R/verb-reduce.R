@@ -70,7 +70,9 @@
 #'   `t_coef:<term>`, `p_coef:<term>`, plus `sigma2`, `df_res`, `n_obs`
 #'   (see [reducer-ols-voxelwise]).
 #' - `"fixed"`/`"meta:fe"` and `"random"`/`"meta:re"`: `beta_g`, `var_g`,
-#'   `se_g`, `z_g`, `p_g`, `Q`, `I2` (random-effects also adds `tau2`).
+#'   `se_g`, `z_g`, `p_g`, `Q`, `I2`, `n_eff` (random-effects also adds
+#'   `tau2`). `n_eff` is the number of finite subject-level inputs used for
+#'   each sample and contrast.
 #' - `"meta:fe_reg"`/`"meta:re_reg"`: per-term `coef:<term>`/`se_coef:<term>`
 #'   plus `Q`, `df_res` (random-effects also adds `tau2`).
 #' - `"stouffer"`/`"combine:stouffer"`: `z_g`, `p_g`.

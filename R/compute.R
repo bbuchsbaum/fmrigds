@@ -50,9 +50,10 @@ compute <- function(x,
     ))
   }
 
+  read_assays <- .initial_assays_for_plan(plan, all_assays)
   arrays <- adapter$read(
     handle,
-    assays = all_assays,
+    assays = read_assays,
     block = block,
     effect_cols = columns$effect_cols,
     subject_col = columns$subject_col,
@@ -212,6 +213,29 @@ canonicalize_node <- function(node) {
 
 # -------------------------------------------------------------------------
 # Helpers ------------------------------------------------------------------
+
+.initial_assays_for_plan <- function(plan, all_assays) {
+  if (!"beta" %in% all_assays) {
+    return(all_assays)
+  }
+  nodes <- plan$nodes %||% list()
+  if (!length(nodes)) {
+    return(all_assays)
+  }
+
+  for (node in nodes) {
+    if (identical(node$op, "subset_axis")) {
+      next
+    }
+    if (identical(node$op, "reduce") &&
+        identical(.normalize_reducer_name(node$method), "ols:voxelwise")) {
+      return("beta")
+    }
+    return(all_assays)
+  }
+
+  all_assays
+}
 
 .apply_plan_nodes <- function(arrays, plan, space, subjects, col_data = NULL, row_data = NULL, contrast_data = NULL) {
   subset_info <- list(samples = NULL, subjects = NULL, contrasts = NULL)
