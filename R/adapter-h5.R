@@ -22,6 +22,14 @@ register_h5_adapter <- function() {
 }
 
 .h5_open <- function(source, mode = "r", ...) {
+  if (!is.character(source) || length(source) != 1L) {
+    stop(
+      "The HDF5 adapter accepts a single native fmrigds .h5/.hdf5 file ",
+      "(one file = one GDS), not a vector of per-subject files. To combine ",
+      "per-subject maps use nifti_source()/as_gds(), or write a single GDS first.",
+      call. = FALSE
+    )
+  }
   list(file = hdf5r::H5File$new(source, mode = mode), path = source)
 }
 

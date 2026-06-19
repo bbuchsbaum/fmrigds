@@ -14,3 +14,12 @@ test_that("h5 adapter roundtrip", {
   res <- compute(plan)
   expect_equal(assay(res, "beta")[1, 1, 1], 1)
 })
+
+test_that("h5 adapter rejects vector sources with a clear single-file error", {
+  skip_if_not_installed("hdf5r")
+  expect_error(
+    gds(c("a.h5", "b.h5"), format = "h5"),
+    "single native fmrigds .h5/.hdf5 file",
+    fixed = TRUE
+  )
+})

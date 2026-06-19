@@ -116,3 +116,64 @@ test_that("nifti beta and se file sets are aligned by subject key", {
     "same subjects"
   )
 })
+
+test_that("nifti explicit subjects bypass filename-key beta/se pairing", {
+  skip_if_not_installed("RNifti")
+  skip_if_not_installed("neuroim2")
+
+  tmp_dir <- tempfile()
+  dir.create(tmp_dir)
+  on.exit(unlink(tmp_dir, recursive = TRUE), add = TRUE)
+
+  beta_files <- file.path(tmp_dir, paste0("sub-0", 1:2, "_stat-beta_sm-2.nii"))
+  se_files <- file.path(tmp_dir, paste0("sub-0", 1:2, "_stat-se_sm-2.nii"))
+  for (i in seq_along(beta_files)) {
+    RNifti::writeNifti(array(i, dim = c(2, 2, 2)), beta_files[i])
+    RNifti::writeNifti(array(i / 10, dim = c(2, 2, 2)), se_files[i])
+  }
+
+  expect_error(
+    gds(nifti_source(beta = beta_files, se = se_files), format = "nifti"),
+    "same subjects"
+  )
+
+  src <- nifti_source(
+    beta = beta_files,
+    se = se_files,
+    subject = c("sub-A", "sub-B"),
+    contrast = "cue"
+  )
+  g <- compute(gds(src, format = "nifti"))
+  expect_equal(subjects(g), c("sub-A", "sub-B"))
+  expect_equal(contrasts(g), "cue")
+  expect_equal(as.numeric(assay(g, "beta")[1, , 1]), c(1, 2))
+  expect_equal(as.numeric(assay(g, "se")[1, , 1]), c(0.1, 0.2))
+})
+
+test_that("nifti gds() subjects argument is stored for compute", {
+  skip_if_not_installed("RNifti")
+  skip_if_not_installed("neuroim2")
+
+  tmp_dir <- tempfile()
+  dir.create(tmp_dir)
+  on.exit(unlink(tmp_dir, recursive = TRUE), add = TRUE)
+
+  beta_files <- file.path(tmp_dir, paste0("beta_s0", 1:2, ".nii"))
+  se_files <- file.path(tmp_dir, paste0("se_s0", 1:2, ".nii"))
+  for (i in seq_along(beta_files)) {
+    RNifti::writeNifti(array(10 + i, dim = c(2, 2, 2)), beta_files[i])
+    RNifti::writeNifti(array(i, dim = c(2, 2, 2)), se_files[i])
+  }
+
+  plan <- gds(
+    list(beta = beta_files, se = se_files),
+    format = "nifti",
+    subjects = c("s1", "s2"),
+    contrasts = "effect"
+  )
+  expect_equal(plan$source$source$subjects, c("s1", "s2"))
+  g <- compute(plan)
+  expect_equal(subjects(g), c("s1", "s2"))
+  expect_equal(contrasts(g), "effect")
+  expect_equal(as.numeric(assay(g, "beta")[1, , 1]), c(11, 12))
+})

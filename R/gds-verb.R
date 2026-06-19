@@ -130,6 +130,10 @@ gds <- function(source,
   dots$contrast_matrix <- NULL
   dots$contrast_names  <- NULL
 
+  if (identical(adapter_name, "nifti")) {
+    source <- .nifti_attach_source_metadata(source, dots)
+  }
+
   handle <- adapter$open(source)
   probe_result <- do.call(adapter$probe, c(list(handle), dots, list(temporal_policy = temporal_policy, contrast_matrix = contrast_matrix, contrast_names = contrast_names)))
   adapter$close(handle)

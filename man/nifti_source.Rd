@@ -4,7 +4,14 @@
 \alias{nifti_source}
 \title{Construct a NIfTI source specification}
 \usage{
-nifti_source(beta = NULL, se = NULL)
+nifti_source(
+  beta = NULL,
+  se = NULL,
+  subject = NULL,
+  subjects = NULL,
+  contrast = NULL,
+  contrasts = NULL
+)
 }
 \arguments{
 \item{beta}{Character vector of NIfTI paths or a directory containing beta/effect images
@@ -12,6 +19,13 @@ nifti_source(beta = NULL, se = NULL)
 
 \item{se}{Character vector of NIfTI paths or a directory containing standard error images
 (optional, can be \code{NULL} if only \code{beta} is provided)}
+
+\item{subject, subjects}{Optional subject labels. When both \code{beta} and \code{se}
+are supplied, these labels declare that the vectors are already aligned in
+matching subject order and bypass filename-key pairing.}
+
+\item{contrast, contrasts}{Optional contrast labels. Length must match the
+number of contrasts in each NIfTI image (one for ordinary 3D maps).}
 }
 \value{
 A list suitable for \verb{gds(source = <returned>, format = "nifti")}
@@ -24,15 +38,16 @@ workflows; the synthetic variance should not be interpreted as subject-level
 uncertainty, and variance-weighted reducers will refuse such a GDS.
 }
 \details{
-When both \code{beta} and \code{se} are supplied, files are paired by subject key: the
-file basename (extension removed) with a \strong{trailing} statistic token
-stripped, matching \verb{([_.-](beta|cope|effect|se|stderr|sterr|sigma|std(err)?))+$}
+When both \code{beta} and \code{se} are supplied, files are paired by subject key unless
+explicit \code{subject}/\code{subjects} labels are supplied. The fallback key is the file
+basename (extension removed) with a \strong{trailing} statistic token stripped,
+matching \verb{([_.-](beta|cope|effect|se|stderr|sterr|sigma|std(err)?))+$}
 (case insensitive). For example \verb{sub-01_beta.nii.gz} and \verb{sub-01_se.nii.gz}
 both reduce to the key \code{sub-01}. Filenames where the statistic token is not
-last (e.g. \verb{sub-01_stat-beta_sm-2.nii.gz}) will fail to pair; rename so the
-token is trailing, or pass \code{beta}/\code{se} as already-aligned vectors in matching
-subject order. For beta/stat-only maps, prefer \code{\link[=gds_from_scalar_maps]{gds_from_scalar_maps()}}, which
-takes an explicit \code{subject} vector and avoids filename heuristics entirely.
+last (e.g. \verb{sub-01_stat-beta_sm-2.nii.gz}) will fail to pair unless explicit
+subject labels are provided. For beta/stat-only maps, prefer
+\code{\link[=gds_from_scalar_maps]{gds_from_scalar_maps()}}, which takes an explicit \code{subject} vector and avoids
+filename heuristics entirely.
 }
 \examples{
 src <- nifti_source(beta = c("sub-01_beta.nii.gz", "sub-02_beta.nii.gz"),

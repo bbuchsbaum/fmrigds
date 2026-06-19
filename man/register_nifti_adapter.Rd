@@ -32,7 +32,8 @@ directory. The adapter will attempt to classify files into beta vs se sets by
 filename patterns: \code{beta|cope|effect} for beta, and \verb{(se|stderr|sterr|sigma|std(err)?)}
 occurring with separators like \verb{_}, \code{.}, or \code{-}.
 \item Named list: pass \verb{list(beta = <paths/dir>, se = <paths/dir>)} to explicitly
-provide the sets. See \code{\link[=nifti_source]{nifti_source()}}.
+provide the sets. See \code{\link[=nifti_source]{nifti_source()}}. Supplying explicit \code{subjects}
+labels pairs beta/se vectors positionally instead of by filename key.
 }
 
 Beta-only NIfTI sources are accepted for raw map workflows. When a realised

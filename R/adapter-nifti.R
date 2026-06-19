@@ -17,7 +17,8 @@
 #'   filename patterns: `beta|cope|effect` for beta, and `(se|stderr|sterr|sigma|std(err)?)`
 #'   occurring with separators like `_`, `.`, or `-`.
 #' - Named list: pass `list(beta = <paths/dir>, se = <paths/dir>)` to explicitly
-#'   provide the sets. See [nifti_source()].
+#'   provide the sets. See [nifti_source()]. Supplying explicit `subjects`
+#'   labels pairs beta/se vectors positionally instead of by filename key.
 #'
 #' Beta-only NIfTI sources are accepted for raw map workflows. When a realised
 #' GDS is materialised from beta maps without standard-error images, the adapter
@@ -53,6 +54,13 @@ register_nifti_adapter <- function() {
     return(0.9)
   }
   if (is.list(source)) {
+    if (!is.null(source$files)) {
+      files <- .nifti_normalise_source(source$files)
+      files_ok <- length(files) > 0L &&
+        all(file.exists(files)) &&
+        all(grepl("\\.nii(\\.gz)?$", files, ignore.case = TRUE))
+      if (files_ok) return(0.8)
+    }
     beta_files <- if (!is.null(source$beta)) .nifti_normalise_source(source$beta) else NULL
     se_files <- if (!is.null(source$se)) .nifti_normalise_source(source$se) else NULL
     beta_ok <- !is.null(beta_files) &&
@@ -80,28 +88,89 @@ register_nifti_adapter <- function() {
   if (!requireNamespace("neuroim2", quietly = TRUE)) {
     stop("neuroim2 package is required for NIfTI adapter", call. = FALSE)
   }
+  dots <- list(...)
+  axis <- .nifti_axis_metadata(source, dots)
   if (is.character(source)) {
     files <- .nifti_normalise_source(source)
     if (!length(files)) stop("No NIfTI files found", call. = FALSE)
-    # Try to classify by filename patterns when both beta and se present
-    bpat <- "beta|cope|effect"
-    spat <- "(^|[_.-])(se|stderr|sterr|sigma|std(err)?)([_.-]|$)"
-    base <- basename(files)
-    beta_files <- files[grepl(bpat, base, ignore.case = TRUE)]
-    se_files <- files[grepl(spat, base, ignore.case = TRUE)]
-    if (length(beta_files) && length(se_files)) {
-      return(.nifti_align_file_sets(beta_files, se_files))
-    }
-    # Fallback: treat all as beta if unclassified
-    return(list(files_beta = files, files_se = NULL))
+    return(.nifti_open_file_vector(files, subjects = axis$subjects, contrasts = axis$contrasts))
   }
   if (is.list(source)) {
+    if (!is.null(source$files)) {
+      files <- .nifti_normalise_source(source$files)
+      if (!length(files)) stop("No NIfTI files found in list", call. = FALSE)
+      return(.nifti_open_file_vector(files, subjects = axis$subjects, contrasts = axis$contrasts))
+    }
     files_beta <- if (!is.null(source$beta)) .nifti_normalise_source(source$beta) else NULL
     files_se <- if (!is.null(source$se)) .nifti_normalise_source(source$se) else NULL
     if (is.null(files_beta) && is.null(files_se)) stop("No NIfTI files found in list", call. = FALSE)
-    return(.nifti_align_file_sets(files_beta, files_se))
+    out <- .nifti_align_file_sets(files_beta, files_se, subjects = axis$subjects)
+    out$contrasts <- axis$contrasts
+    return(out)
   }
   stop("Unsupported NIfTI source", call. = FALSE)
+}
+
+.nifti_attach_source_metadata <- function(source, dots = list()) {
+  axis <- .nifti_axis_metadata(source, dots)
+  if (is.null(axis$subjects) && is.null(axis$contrasts)) return(source)
+
+  if (is.character(source)) {
+    source <- list(files = source)
+  } else if (!is.list(source)) {
+    return(source)
+  }
+
+  source$subject <- NULL
+  source$contrast <- NULL
+  if (!is.null(axis$subjects)) source$subjects <- axis$subjects
+  if (!is.null(axis$contrasts)) source$contrasts <- axis$contrasts
+  source
+}
+
+.nifti_axis_metadata <- function(source, dots = list()) {
+  list(
+    subjects = .nifti_axis_value(source, dots, "subject", "subjects"),
+    contrasts = .nifti_axis_value(source, dots, "contrast", "contrasts")
+  )
+}
+
+.nifti_axis_value <- function(source, dots, singular, plural) {
+  values <- list()
+  if (is.list(source)) {
+    if (!is.null(source[[singular]])) values[[length(values) + 1L]] <- source[[singular]]
+    if (!is.null(source[[plural]])) values[[length(values) + 1L]] <- source[[plural]]
+  }
+  if (!is.null(dots[[singular]])) values[[length(values) + 1L]] <- dots[[singular]]
+  if (!is.null(dots[[plural]])) values[[length(values) + 1L]] <- dots[[plural]]
+  if (!length(values)) return(NULL)
+
+  values <- lapply(values, as.character)
+  ref <- values[[1L]]
+  for (val in values[-1L]) {
+    if (!identical(ref, val)) {
+      stop("Conflicting `", singular, "`/`", plural, "` values supplied.", call. = FALSE)
+    }
+  }
+  ref
+}
+
+.nifti_open_file_vector <- function(files, subjects = NULL, contrasts = NULL) {
+  bpat <- "beta|cope|effect"
+  spat <- "(^|[_.-])(se|stderr|sterr|sigma|std(err)?)([_.-]|$)"
+  base <- basename(files)
+  beta_files <- files[grepl(bpat, base, ignore.case = TRUE)]
+  se_files <- files[grepl(spat, base, ignore.case = TRUE)]
+  if (length(beta_files) && length(se_files)) {
+    out <- .nifti_align_file_sets(beta_files, se_files, subjects = subjects)
+  } else {
+    out <- list(files_beta = files, files_se = NULL)
+    if (!is.null(subjects)) {
+      out$subjects <- .nifti_validate_subjects(subjects, length(files))
+    }
+  }
+  out$contrasts <- contrasts
+  out
 }
 
 .nifti_probe <- function(handle, ...) {
@@ -144,12 +213,8 @@ register_nifti_adapter <- function() {
 
   mask_idx <- which(as.vector(mask_bitmap))
 
-  subjects <- .nifti_subject_key(files1)
-  contrasts <- if (n_contrasts == 1L) {
-    "contrast1"
-  } else {
-    paste0("contrast", seq_len(n_contrasts))
-  }
+  subjects <- handle$subjects %||% .nifti_subject_key(files1)
+  contrasts <- .nifti_contrast_labels(handle$contrasts, n_contrasts)
 
   # Extract affine transformation from neuroim2 NeuroSpace
   nspace <- neuroim2::space(first_img)
@@ -207,9 +272,24 @@ register_nifti_adapter <- function() {
   sub("[_.-]+$", "", ids, perl = TRUE)
 }
 
-.nifti_align_file_sets <- function(files_beta, files_se) {
+.nifti_align_file_sets <- function(files_beta, files_se, subjects = NULL) {
   if (is.null(files_beta) || is.null(files_se)) {
-    return(list(files_beta = files_beta, files_se = files_se))
+    out <- list(files_beta = files_beta, files_se = files_se)
+    if (!is.null(subjects)) {
+      out$subjects <- .nifti_validate_subjects(subjects, length(files_beta %||% files_se))
+    }
+    return(out)
+  }
+
+  if (!is.null(subjects)) {
+    if (length(files_beta) != length(files_se)) {
+      stop("NIfTI beta and se file vectors must have the same length when explicit subjects are supplied", call. = FALSE)
+    }
+    return(list(
+      files_beta = files_beta,
+      files_se = files_se,
+      subjects = .nifti_validate_subjects(subjects, length(files_beta))
+    ))
   }
 
   beta_key <- .nifti_subject_key(files_beta)
@@ -226,7 +306,39 @@ register_nifti_adapter <- function() {
     stop("NIfTI beta and se files must refer to the same subjects", call. = FALSE)
   }
 
-  list(files_beta = files_beta[ord_beta], files_se = files_se[ord_se])
+  list(files_beta = files_beta[ord_beta], files_se = files_se[ord_se], subjects = beta_key)
+}
+
+.nifti_validate_subjects <- function(subjects, n_subjects) {
+  subjects <- as.character(subjects)
+  if (length(subjects) != n_subjects) {
+    stop("Length of `subjects` must equal number of NIfTI subject files.", call. = FALSE)
+  }
+  if (anyNA(subjects) || any(!nzchar(subjects))) {
+    stop("`subjects` must contain non-missing, non-empty labels.", call. = FALSE)
+  }
+  if (anyDuplicated(subjects)) {
+    stop("`subjects` must not contain duplicates.", call. = FALSE)
+  }
+  subjects
+}
+
+.nifti_contrast_labels <- function(contrasts, n_contrasts) {
+  if (is.null(contrasts)) {
+    if (n_contrasts == 1L) return("contrast1")
+    return(paste0("contrast", seq_len(n_contrasts)))
+  }
+  contrasts <- as.character(contrasts)
+  if (length(contrasts) != n_contrasts) {
+    stop("Length of `contrasts` must equal the NIfTI contrast count.", call. = FALSE)
+  }
+  if (anyNA(contrasts) || any(!nzchar(contrasts))) {
+    stop("`contrasts` must contain non-missing, non-empty labels.", call. = FALSE)
+  }
+  if (anyDuplicated(contrasts)) {
+    stop("`contrasts` must not contain duplicates.", call. = FALSE)
+  }
+  contrasts
 }
 
 .nifti_read <- function(handle,
@@ -366,20 +478,26 @@ register_nifti_adapter <- function() {
 #' workflows; the synthetic variance should not be interpreted as subject-level
 #' uncertainty, and variance-weighted reducers will refuse such a GDS.
 #'
-#' When both `beta` and `se` are supplied, files are paired by subject key: the
-#' file basename (extension removed) with a **trailing** statistic token
-#' stripped, matching `([_.-](beta|cope|effect|se|stderr|sterr|sigma|std(err)?))+$`
+#' When both `beta` and `se` are supplied, files are paired by subject key unless
+#' explicit `subject`/`subjects` labels are supplied. The fallback key is the file
+#' basename (extension removed) with a **trailing** statistic token stripped,
+#' matching `([_.-](beta|cope|effect|se|stderr|sterr|sigma|std(err)?))+$`
 #' (case insensitive). For example `sub-01_beta.nii.gz` and `sub-01_se.nii.gz`
 #' both reduce to the key `sub-01`. Filenames where the statistic token is not
-#' last (e.g. `sub-01_stat-beta_sm-2.nii.gz`) will fail to pair; rename so the
-#' token is trailing, or pass `beta`/`se` as already-aligned vectors in matching
-#' subject order. For beta/stat-only maps, prefer [gds_from_scalar_maps()], which
-#' takes an explicit `subject` vector and avoids filename heuristics entirely.
+#' last (e.g. `sub-01_stat-beta_sm-2.nii.gz`) will fail to pair unless explicit
+#' subject labels are provided. For beta/stat-only maps, prefer
+#' [gds_from_scalar_maps()], which takes an explicit `subject` vector and avoids
+#' filename heuristics entirely.
 #'
 #' @param beta Character vector of NIfTI paths or a directory containing beta/effect images
 #'             (optional, can be `NULL` if only `se` is provided)
 #' @param se   Character vector of NIfTI paths or a directory containing standard error images
 #'             (optional, can be `NULL` if only `beta` is provided)
+#' @param subject,subjects Optional subject labels. When both `beta` and `se`
+#'   are supplied, these labels declare that the vectors are already aligned in
+#'   matching subject order and bypass filename-key pairing.
+#' @param contrast,contrasts Optional contrast labels. Length must match the
+#'   number of contrasts in each NIfTI image (one for ordinary 3D maps).
 #'
 #' @return A list suitable for `gds(source = <returned>, format = "nifti")`
 #' @export
@@ -387,9 +505,18 @@ register_nifti_adapter <- function() {
 #' src <- nifti_source(beta = c("sub-01_beta.nii.gz", "sub-02_beta.nii.gz"),
 #'                     se   = c("sub-01_se.nii.gz",   "sub-02_se.nii.gz"))
 #' str(src)
-nifti_source <- function(beta = NULL, se = NULL) {
+nifti_source <- function(beta = NULL,
+                         se = NULL,
+                         subject = NULL,
+                         subjects = NULL,
+                         contrast = NULL,
+                         contrasts = NULL) {
   if (is.null(beta) && is.null(se)) {
     stop("Provide at least one of `beta` or `se`", call. = FALSE)
   }
-  list(beta = beta, se = se)
+  source <- list(beta = beta, se = se)
+  .nifti_attach_source_metadata(
+    source,
+    list(subject = subject, subjects = subjects, contrast = contrast, contrasts = contrasts)
+  )
 }
