@@ -287,6 +287,21 @@ register_nifti_adapter <- function() {
   sub("[_.-]+$", "", stripped, perl = TRUE)
 }
 
+# Filename "context" used to confirm a beta file and the se file it was paired
+# with (by subject) really are the same map. It is the basename with the file
+# extension and the statistic indicator removed -- whether that indicator is a
+# BIDS `desc-`/`stat-` entity value (e.g. desc-beta, stat-se) or a legacy
+# trailing token (e.g. _beta, .se). Two files that differ ONLY in the statistic
+# therefore share a context; files differing in task/run/session/space do not.
+.nifti_pair_context <- function(ids) {
+  b <- basename(ids)
+  b <- sub("\\.nii(\\.gz)?$", "", b, ignore.case = TRUE, perl = TRUE)
+  stat <- "(beta|cope|effect|se|stderr|sterr|sigma|std(err)?)"
+  b <- gsub(paste0("(?i)[_-](desc|stat)-", stat, "(?=([_.-]|$))"), "", b, perl = TRUE)
+  b <- sub(paste0("(?i)([_.-]", stat, ")+$"), "", b, perl = TRUE)
+  gsub("[_.-]+$", "", b, perl = TRUE)
+}
+
 .nifti_align_file_sets <- function(files_beta, files_se, subjects = NULL) {
   if (is.null(files_beta) || is.null(files_se)) {
     out <- list(files_beta = files_beta, files_se = files_se)
@@ -321,7 +336,26 @@ register_nifti_adapter <- function() {
     stop("NIfTI beta and se files must refer to the same subjects", call. = FALSE)
   }
 
-  list(files_beta = files_beta[ord_beta], files_se = files_se[ord_se], subjects = beta_key)
+  files_beta <- files_beta[ord_beta]
+  files_se <- files_se[ord_se]
+
+  # Subject-keyed pairing alone is unsafe: two files sharing `sub-<label>` but
+  # differing in task/run/session/space would be paired silently. Require the
+  # non-statistic filename context to match for each paired subject; surface a
+  # mismatch so the user can fix the inputs or pass explicit `subjects=`.
+  ctx_mismatch <- .nifti_pair_context(files_beta) != .nifti_pair_context(files_se)
+  if (any(ctx_mismatch)) {
+    i <- which(ctx_mismatch)[1L]
+    stop(
+      "NIfTI beta and se files share subject '", beta_key[i],
+      "' but differ in non-statistic filename entities (e.g. task/run/session/space):\n  beta: ",
+      basename(files_beta[i]), "\n  se:   ", basename(files_se[i]),
+      "\nEnsure beta/se maps correspond, or pass explicit `subject=`/`subjects=` to override pairing.",
+      call. = FALSE
+    )
+  }
+
+  list(files_beta = files_beta, files_se = files_se, subjects = beta_key)
 }
 
 .nifti_validate_subjects <- function(subjects, n_subjects) {
@@ -388,8 +422,9 @@ register_nifti_adapter <- function() {
     if (identical(nm, "beta") && !is.null(handle$files_beta)) out$beta <- read_stack(handle$files_beta, "beta")
     if (identical(nm, "se") && !is.null(handle$files_se)) out$se <- read_stack(handle$files_se, "se")
     if (identical(nm, "var") && !is.null(handle$files_beta) && is.null(handle$files_se)) {
-      warning("No variance or SE provided; using unit variance", call. = FALSE)
+      .warn_synthetic_variance(once = TRUE)
       out$var <- array(1, dim = c(length(sample_idx), n_subjects, n_contrasts))
+      attr(out$var, "synthetic_unit_variance") <- TRUE
     }
   }
   out

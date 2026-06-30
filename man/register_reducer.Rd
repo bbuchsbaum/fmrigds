@@ -27,6 +27,9 @@ register_reducer(
 \item{input_shape}{Reducer execution mode: \code{"contrastwise"} (default) or
 \code{"joint_contrast"} for reducers that consume the full contrast axis jointly}
 }
+\value{
+Invisibly, the registered reducer \code{name}.
+}
 \description{
 Register a reducer kernel
 }

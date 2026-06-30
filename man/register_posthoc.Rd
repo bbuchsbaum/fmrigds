@@ -17,6 +17,9 @@ register_posthoc(name, fun, requires, provides, overwrite = TRUE)
 
 \item{overwrite}{Logical; if FALSE and a handler with \code{name} exists, error}
 }
+\value{
+Invisibly, the registered post-hoc method \code{name}.
+}
 \description{
 Register or replace a post-hoc handler identified by \code{name}.
 }
@@ -26,4 +29,7 @@ named list of assays shaped \verb{sample x subject x contrast}. It should return
 either (a) a named list of new/updated assays to merge (e.g., \code{list(q = ...)}),
 or (b) the full \code{arrays} list with modifications. Implementations must
 preserve the input array dimensions.
+}
+\seealso{
+\link{posthoc-methods} for the built-in methods and their output assays.
 }

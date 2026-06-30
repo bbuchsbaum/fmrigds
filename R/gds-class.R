@@ -185,19 +185,101 @@ assay <- function(x, name = "beta", ...) UseMethod("assay")
 #' @export
 assay.gds <- function(x, name = "beta", ...) x$assays[[name]]
 
+#' List the assays present on a GDS (or that a reducer would produce)
+#'
+#' Discoverability helper for finding assay names to pass to [assay()],
+#' [write_nifti_assays()], or [write_out()] without having to run a job and
+#' inspect `names(assays(fit))`. Works on a realised [`gds`], a lazy
+#' [`gds_plan`]/[`gds_source`] (reporting the *input* assays the source probed),
+#' or---when `reducer` is supplied---reports a reducer's declared output stems
+#' without computing anything.
+#'
+#' @param x A realised [`gds`], a [`gds_plan`], or a [`gds_source`].
+#' @param reducer Optional reducer name (e.g. `"meta:re"`, `"ols:voxelwise"`, or
+#'   an alias like `"random"`). When supplied, `x` is ignored and the reducer's
+#'   declared `provides` stems are returned. Regression/LMM reducers expand
+#'   `coef`/`se_coef`/`t_coef`/`p_coef` into per-term `coef:<term>` etc. at
+#'   compute time, so realised names depend on the model formula.
+#' @param info Logical; if `TRUE` (default) return a data frame with `assay`,
+#'   `role`, and `units` columns (from [assay_info()] where registered, else
+#'   `NA`); if `FALSE` return a plain character vector of names.
+#'
+#' @return A data frame (or a character vector when `info = FALSE`).
+#' @seealso [assays()], [assay()], [assay_info()], [list_reducers()],
+#'   [list_posthoc()], [write_nifti_assays()]
+#' @export
+#' @examples
+#' \dontrun{
+#' fit <- one_sample(g) |> compute()
+#' list_assays(fit)                       # names + roles of computed assays
+#' list_assays(reducer = "meta:re")       # what random-effects would produce
+#' }
+list_assays <- function(x, reducer = NULL, info = TRUE) {
+  if (!is.null(reducer)) {
+    red <- get_reducer(.normalize_reducer_name(reducer))
+    if (is.null(red)) {
+      stop("Unknown reducer: ", reducer, ". See list_reducers().", call. = FALSE)
+    }
+    nm <- as.character(red$provides %||% character(0))
+  } else if (inherits(x, "gds")) {
+    nm <- names(assays(x))
+  } else if (inherits(x, "gds_source")) {
+    nm <- as.character(x$probe$assays %||% character(0))
+  } else if (inherits(x, "gds_plan")) {
+    nm <- as.character(x$source$probe$assays %||% character(0))
+  } else {
+    stop("`x` must be a gds, gds_plan, or gds_source (or supply `reducer`).", call. = FALSE)
+  }
+  nm <- unique(nm)
+  if (!isTRUE(info)) {
+    return(nm)
+  }
+  meta <- lapply(nm, assay_info)
+  data.frame(
+    assay = nm,
+    role = vapply(meta, function(m) if (is.null(m)) NA_character_ else m$role, character(1)),
+    units = vapply(meta, function(m) {
+      u <- if (is.null(m)) NA_character_ else m$units %||% NA_character_
+      if (length(u) != 1L) NA_character_ else as.character(u)
+    }, character(1)),
+    stringsAsFactors = FALSE,
+    row.names = NULL
+  )
+}
+
 #' Extract space descriptor from a GDS object
 #'
-#' @param x A GDS object
+#' For non-GDS objects (e.g. a \pkg{neuroim2} `NeuroVol`/`NeuroVec`) this
+#' generic falls back to [neuroim2::space()] when that package is available, so
+#' that attaching \pkg{fmrigds} does not mask `neuroim2::space()` on the search
+#' path.
+#'
+#' @param x A GDS object, or any object with a `space` method (such as a
+#'   \pkg{neuroim2} image).
+#' @param ... Additional arguments passed to methods.
 #'
 #' @return A space object
 #' @export
-space <- function(x) UseMethod("space")
+space <- function(x, ...) UseMethod("space")
 
 #' @export
-space.gds <- function(x) x$space
+space.gds <- function(x, ...) x$space
 
 #' @export
-space.gds_plan <- function(x) x$source$probe$space
+space.gds_plan <- function(x, ...) x$source$probe$space
+
+#' @export
+space.default <- function(x, ...) {
+  if (requireNamespace("neuroim2", quietly = TRUE)) {
+    return(neuroim2::space(x, ...))
+  }
+  stop(
+    "No applicable 'space()' method for an object of class ",
+    paste(deparse(class(x)), collapse = ""),
+    ". Install 'neuroim2' to use space() on neuroimaging objects.",
+    call. = FALSE
+  )
+}
 
 #' Extract subject identifiers from a GDS object
 #'

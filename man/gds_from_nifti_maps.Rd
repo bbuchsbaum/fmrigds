@@ -50,6 +50,9 @@ fixed/random-effects meta-analysis.
 }
 \examples{
 \dontrun{
+# NOTE: `contrast` is a single label here. gds_from_nifti_maps() is
+# single-contrast; to analyse several contrasts, subset `maps` and call
+# once per contrast (a multi-valued `contrast` column triggers a warning).
 maps <- data.frame(
   file = c("1001_era_partition/maps/naive_diag_mean.nii.gz",
            "1002_era_partition/maps/naive_diag_mean.nii.gz"),

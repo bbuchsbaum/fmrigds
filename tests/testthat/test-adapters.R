@@ -38,6 +38,7 @@ test_that("nifti adapter produces plan", {
 
   plan <- gds(c(f1, f2))
   expect_s3_class(plan, "gds_plan")
+  fmrigds:::.reset_synthetic_variance_warning()
   expect_warning(
     g <- compute(plan),
     "No variance or SE provided; using unit variance",
@@ -132,10 +133,13 @@ test_that("nifti explicit subjects bypass filename-key beta/se pairing", {
     RNifti::writeNifti(array(i / 10, dim = c(2, 2, 2)), se_files[i])
   }
 
-  expect_error(
-    gds(nifti_source(beta = beta_files, se = se_files), format = "nifti"),
-    "same subjects"
-  )
+  # BIDS-aware keying: beta/se files sharing a sub-<label> entity pair on that
+  # entity even though their stat-<token> infixes differ, so no explicit
+  # `subject` is required and pairing succeeds.
+  g_keyed <- compute(gds(nifti_source(beta = beta_files, se = se_files), format = "nifti"))
+  expect_equal(subjects(g_keyed), c("sub-01", "sub-02"))
+  expect_equal(as.numeric(assay(g_keyed, "beta")[1, , 1]), c(1, 2))
+  expect_equal(as.numeric(assay(g_keyed, "se")[1, , 1]), c(0.1, 0.2))
 
   src <- nifti_source(
     beta = beta_files,

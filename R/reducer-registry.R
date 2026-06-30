@@ -11,6 +11,7 @@
 #' @param options_schema Optional schema for options
 #' @param input_shape Reducer execution mode: `"contrastwise"` (default) or
 #'   `"joint_contrast"` for reducers that consume the full contrast axis jointly
+#' @return Invisibly, the registered reducer `name`.
 #' @export
 register_reducer <- function(name,
                              fun,
@@ -42,6 +43,8 @@ get_reducer <- function(name) {
 }
 
 #' List registered reducers
+#' @return A sorted character vector of registered reducer names.
+#' @seealso [list_assays()] to preview a reducer's output assays.
 #' @export
 list_reducers <- function() {
   sort(ls(.gds_reducers))

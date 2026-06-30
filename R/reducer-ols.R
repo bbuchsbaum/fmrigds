@@ -51,6 +51,8 @@
 #' coef_arr <- coef_array(g)
 #' ```
 #'
+#' @return This is a documentation page (no return value); the reducer is
+#'   invoked via [reduce()], [one_sample()], or [group_ols()].
 #' @name reducer-ols-voxelwise
 #' @keywords models regression reduce
 NULL

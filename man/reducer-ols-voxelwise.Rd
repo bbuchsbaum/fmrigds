@@ -3,6 +3,10 @@
 \name{reducer-ols-voxelwise}
 \alias{reducer-ols-voxelwise}
 \title{Voxelwise OLS reducer (per-sample GLM across subjects)}
+\value{
+This is a documentation page (no return value); the reducer is
+invoked via \code{\link[=reduce]{reduce()}}, \code{\link[=one_sample]{one_sample()}}, or \code{\link[=group_ols]{group_ols()}}.
+}
 \description{
 The reducer identified by \code{method = "ols:voxelwise"} performs unweighted
 ordinary least squares across subjects independently for each sample and

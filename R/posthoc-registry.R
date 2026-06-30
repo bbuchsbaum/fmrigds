@@ -17,6 +17,8 @@
 #' @param requires Character vector of required input assays, e.g., c("p")
 #' @param provides Character vector of output assay names, e.g., c("q")
 #' @param overwrite Logical; if FALSE and a handler with `name` exists, error
+#' @return Invisibly, the registered post-hoc method `name`.
+#' @seealso [posthoc-methods] for the built-in methods and their output assays.
 #' @export
 register_posthoc <- function(name, fun, requires, provides, overwrite = TRUE) {
   stopifnot(is.character(name), length(name) == 1L, is.function(fun))
@@ -42,10 +44,43 @@ get_posthoc <- function(name) {
 }
 
 #' List registered post-hoc methods
+#' @return A sorted character vector of registered post-hoc method names.
+#' @seealso [posthoc-methods] for what each method outputs.
 #' @export
 list_posthoc <- function() {
   sort(ls(.gds_posthoc))
 }
+
+#' Built-in post-hoc correction methods and their output assays
+#'
+#' Methods are selected by name in [posthoc()] and add their adjusted-p assays
+#' to the realised GDS. The FDR methods adjust the object's p-value assay(s):
+#' a genuine bare `p` (from meta/combine reducers or a tabular `p` column) yields
+#' a single `q`; a per-term `p_coef:<term>` family (from regression/LMM reducers
+#' such as `ols:voxelwise`) yields one `q_coef:<term>` per term. Pass
+#' `options = list(source = "p_coef:<term>")` to adjust one specific term.
+#'
+#' @section Methods and outputs:
+#' - `"fdr:bh"`, `"fdr:by"`: add `q` (or per-term `q_coef:<term>`),
+#'   Benjamini-Hochberg / Benjamini-Yekutieli adjusted p-values, computed
+#'   column-wise per subject x contrast.
+#' - `"fdr:spatial"`: adds `q` (or per-term `q_coef:<term>`), group-wise spatial
+#'   FDR. Requires a discrete spatial grouping (one parcel/cluster id per
+#'   sample) via `options$group` or a recognised `row_data` column
+#'   (`feature_group`, `spatial_group`, `group`, `parcel`, `parcel_id`).
+#' - `"nt:tfce_fwer"` (needs the optional `neurothresh` package): adds `q`
+#'   (TFCE FWER-corrected p), `sig_mask` (1/0 at `alpha`), and `tfce` (the
+#'   TFCE-enhanced statistic map).
+#' - `"nt:cluster_fdr_perm"` (needs `neurothresh`): adds `q` (cluster-FDR q
+#'   broadcast to voxels) and `sig_mask`.
+#'
+#' Required input assays are auto-derived (and persisted) when absent: e.g.
+#' `fdr:bh` on a z-only GDS adds a derived `p` alongside `q`.
+#'
+#' @return This is a documentation page (no return value).
+#' @seealso [posthoc()], [list_posthoc()], [list_assays()]
+#' @name posthoc-methods
+NULL
 
 #' Unregister a post-hoc method
 #'
@@ -60,39 +95,76 @@ unregister_posthoc <- function(name) {
 
 # Built-ins: FDR BH/BY --------------------------------------------------------
 
+# Resolve the p-value assay(s) an FDR post-hoc should adjust, returning a named
+# list mapping each *output* assay name to its source p-array. This avoids the
+# fragile `arrays$p` partial match (which silently resolved to a lone
+# `p_coef:<term>` for single-term models and errored for multi-term models):
+#
+#   * `options$source = "<assay>"` -> adjust exactly that assay; output is
+#     `q_coef:<term>` when the source is `p_coef:<term>`, else `q`.
+#   * a genuine bare `p` assay (meta/combine reducers, tabular `p` columns,
+#     or one derived from z/t+df) -> a single `q` (back-compatible).
+#   * one or more `p_coef:<term>` assays (regression/LMM reducers) -> one
+#     `q_coef:<term>` per term, mirroring the `coef:`/`se_coef:`/`t_coef:`/
+#     `p_coef:` family.
+.fdr_p_sources <- function(arrays, opts = list()) {
+  nms <- names(arrays)
+  if (!is.null(opts$source)) {
+    src <- opts$source
+    if (!src %in% nms) {
+      stop("post-hoc FDR: options$source assay not found: ", src, call. = FALSE)
+    }
+    out <- if (grepl("^p_coef:", src)) sub("^p_coef:", "q_coef:", src) else "q"
+    return(stats::setNames(list(arrays[[src]]), out))
+  }
+  if (!is.null(arrays[["p"]])) {
+    return(list(q = arrays[["p"]]))
+  }
+  pcoef <- grep("^p_coef:", nms, value = TRUE)
+  if (length(pcoef)) {
+    return(stats::setNames(
+      lapply(pcoef, function(n) arrays[[n]]),
+      sub("^p_coef:", "q_coef:", pcoef)
+    ))
+  }
+  # Last resort: derive a bare p from z or t+df (e.g. when the handler is called
+  # directly without .ensure_required_arrays having added `p`).
+  if (!is.null(arrays[["z"]])) {
+    return(list(q = derive_p(list(z = arrays[["z"]]))))
+  }
+  if (!is.null(arrays[["t"]]) && !is.null(arrays[["df"]])) {
+    return(list(q = derive_p(list(t = arrays[["t"]], df = arrays[["df"]]))))
+  }
+  stop("post-hoc FDR requires p values (or z/t with df)", call. = FALSE)
+}
+
 .posthoc_fdr_template <- function(method) {
   force(method)
   function(arrays, opts) {
-    if (is.null(arrays$p)) {
-      # try to derive p from z or t
-      if (!is.null(arrays$z)) {
-        arrays$p <- derive_p(list(z = arrays$z))
-      } else if (!is.null(arrays$t) && !is.null(arrays$df)) {
-        arrays$p <- derive_p(list(t = arrays$t, df = arrays$df))
-      } else {
-        stop("post-hoc FDR requires p values (or z/t with df)", call. = FALSE)
+    sources <- .fdr_p_sources(arrays, opts)
+    out_list <- vector("list", length(sources))
+    names(out_list) <- names(sources)
+    for (out_name in names(sources)) {
+      p <- sources[[out_name]]
+      dims <- dim(p)
+      out <- array(NA_real_, dim = dims)
+      for (j in seq_len(dims[2])) {
+        for (k in seq_len(dims[3])) {
+          out[, j, k] <- stats::p.adjust(p[, j, k], method = method)
+        }
       }
+      out_list[[out_name]] <- out
     }
-    p <- arrays$p
-    dims <- dim(p)
-    out <- array(NA_real_, dim = dims)
-    for (j in seq_len(dims[2])) {
-      for (k in seq_len(dims[3])) {
-        pv <- p[, j, k]
-        adj <- stats::p.adjust(pv, method = method)
-        out[, j, k] <- adj
-      }
-    }
-    list(q = out)
+    out_list
   }
 }
 
 .register_builtin_posthoc <- function() {
-  register_posthoc("fdr:bh", .posthoc_fdr_template("BH"), requires = c("p"), provides = c("q"))
-  register_posthoc("fdr:by", .posthoc_fdr_template("BY"), requires = c("p"), provides = c("q"))
+  register_posthoc("fdr:bh", .posthoc_fdr_template("BH"), requires = c("p"), provides = c("q", "q_coef"))
+  register_posthoc("fdr:by", .posthoc_fdr_template("BY"), requires = c("p"), provides = c("q", "q_coef"))
   # Register spatial FDR if available
   if (exists(".posthoc_spatial_fdr", mode = "function")) {
-    register_posthoc("fdr:spatial", .posthoc_spatial_fdr(), requires = c("p"), provides = c("q"))
+    register_posthoc("fdr:spatial", .posthoc_spatial_fdr(), requires = c("p"), provides = c("q", "q_coef"))
   }
   # Register neurothresh-backed TFCE if optional dependency is available
   if (exists(".posthoc_neurothresh_tfce_fwer", mode = "function") &&

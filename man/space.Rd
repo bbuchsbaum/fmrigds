@@ -4,14 +4,20 @@
 \alias{space}
 \title{Extract space descriptor from a GDS object}
 \usage{
-space(x)
+space(x, ...)
 }
 \arguments{
-\item{x}{A GDS object}
+\item{x}{A GDS object, or any object with a \code{space} method (such as a
+\pkg{neuroim2} image).}
+
+\item{...}{Additional arguments passed to methods.}
 }
 \value{
 A space object
 }
 \description{
-Extract space descriptor from a GDS object
+For non-GDS objects (e.g. a \pkg{neuroim2} \code{NeuroVol}/\code{NeuroVec}) this
+generic falls back to \code{\link[neuroim2:space-methods]{neuroim2::space()}} when that package is available, so
+that attaching \pkg{fmrigds} does not mask \code{neuroim2::space()} on the search
+path.
 }
