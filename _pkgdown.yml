@@ -1,27 +1,29 @@
 url: https://bbuchsbaum.github.io/fmrigds/
 template:
   bootstrap: 5
-
+  package: albersdown
 navbar:
   structure:
-    left:  [intro, reference, articles]
-    right: [search, github]
+    left:
+    - intro
+    - reference
+    - articles
+    right:
+    - search
+    - github
   components:
     github:
       icon: fa-github
       aria-label: GitHub repository
       href: https://github.com/bbuchsbaum/fmrigds
-
 articles:
-  - title: Getting started
-    contents:
-      - fmrigds
-  - title: Workflows
-    contents:
-      - cli-workflows
-      - repeated-measures-lmm
-      - spatial-operations
-      - as-plan-and-spatial-fdr
-  - title: Data formats
-    contents:
-      - fmristore-ingestion
+- title: Getting started
+  contents: fmrigds
+- title: Workflows
+  contents:
+  - cli-workflows
+  - repeated-measures-lmm
+  - spatial-operations
+  - as-plan-and-spatial-fdr
+- title: Data formats
+  contents: fmristore-ingestion
