@@ -1,4 +1,6 @@
 ^_pkgdown\.yml$
+^pkgdown$
+^\.albersdown\.bak$
 ^\.claude$
 ^\.github$
 ^\.beads$
