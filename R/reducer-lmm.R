@@ -21,10 +21,19 @@
 #' - `theta_mode = "voxelwise"` for sample-specific variance parameters
 #' - no crossed random effects and no general `lmer()` random-effects grammar
 #'
-#' Output assays follow the same naming conventions as the regression reducers:
-#' `coef:<term>`, `se_coef:<term>`, `t_coef:<term>`, `p_coef:<term>`, plus
-#' variance-component assays such as `sigma2`, `vc_intercept`, `vc_slope`,
-#' `lambda_intercept`, and `lambda_slope`.
+#' @section Output assays:
+#' Both reducers expand fixed effects per model term (`<term>` = design-matrix
+#' column names of `formula`): `coef:<term>`, `se_coef:<term>`, `t_coef:<term>`,
+#' `p_coef:<term>`. In addition:
+#' - `lmm:ri` provides `sigma2`, `vc_intercept`, `vc_resid`, `df_res`, `logLik`,
+#'   `converged` (1/0), and `lambda` (random-intercept-to-residual variance
+#'   ratio).
+#' - `lmm:ri_slope1` provides `sigma2`, `vc_intercept`, `vc_slope`,
+#'   `vc_cov_intercept_slope`, `vc_resid`, `df_res`, `logLik`, `converged`,
+#'   `lambda_intercept`, `lambda_slope`, `lambda_cov_intercept_slope`, and
+#'   `corr_intercept_slope`.
+#' Pass these names verbatim (including the colon and any parentheses) to
+#' [write_nifti_assays()] / [write_out()].
 #'
 #' @section Usage:
 #' ```r
@@ -57,6 +66,8 @@
 #' assay(g, "coef:time")
 #' ```
 #'
+#' @return This is a documentation page (no return value); these reducers are
+#'   invoked via [reduce()].
 #' @name reducer-lmm
 #' @keywords models mixed-models reduce
 NULL

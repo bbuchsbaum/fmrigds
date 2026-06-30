@@ -3,6 +3,10 @@
 \name{reducer-lmm}
 \alias{reducer-lmm}
 \title{Restricted repeated-measures Gaussian LMM reducers}
+\value{
+This is a documentation page (no return value); these reducers are
+invoked via \code{\link[=reduce]{reduce()}}.
+}
 \description{
 \code{fmrigds} includes two specialized repeated-measures Gaussian mixed-model
 reducers that are optimized for the case where every sample shares the same
@@ -29,12 +33,25 @@ Supported contract:
 \item \code{theta_mode = "voxelwise"} for sample-specific variance parameters
 \item no crossed random effects and no general \code{lmer()} random-effects grammar
 }
-
-Output assays follow the same naming conventions as the regression reducers:
-\verb{coef:<term>}, \verb{se_coef:<term>}, \verb{t_coef:<term>}, \verb{p_coef:<term>}, plus
-variance-component assays such as \code{sigma2}, \code{vc_intercept}, \code{vc_slope},
-\code{lambda_intercept}, and \code{lambda_slope}.
 }
+\section{Output assays}{
+
+Both reducers expand fixed effects per model term (\verb{<term>} = design-matrix
+column names of \code{formula}): \verb{coef:<term>}, \verb{se_coef:<term>}, \verb{t_coef:<term>},
+\verb{p_coef:<term>}. In addition:
+\itemize{
+\item \code{lmm:ri} provides \code{sigma2}, \code{vc_intercept}, \code{vc_resid}, \code{df_res}, \code{logLik},
+\code{converged} (1/0), and \code{lambda} (random-intercept-to-residual variance
+ratio).
+\item \code{lmm:ri_slope1} provides \code{sigma2}, \code{vc_intercept}, \code{vc_slope},
+\code{vc_cov_intercept_slope}, \code{vc_resid}, \code{df_res}, \code{logLik}, \code{converged},
+\code{lambda_intercept}, \code{lambda_slope}, \code{lambda_cov_intercept_slope}, and
+\code{corr_intercept_slope}.
+Pass these names verbatim (including the colon and any parentheses) to
+\code{\link[=write_nifti_assays]{write_nifti_assays()}} / \code{\link[=write_out]{write_out()}}.
+}
+}
+
 \section{Usage}{
 
 

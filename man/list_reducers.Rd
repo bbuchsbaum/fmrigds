@@ -6,6 +6,12 @@
 \usage{
 list_reducers()
 }
+\value{
+A sorted character vector of registered reducer names.
+}
 \description{
 List registered reducers
+}
+\seealso{
+\code{\link[=list_assays]{list_assays()}} to preview a reducer's output assays.
 }

@@ -31,3 +31,6 @@ tmp <- tempfile(fileext = ".csv"); utils::write.csv(df, tmp, row.names = FALSE)
 plan <- gds(tmp) |> reduce(method = "fixed") |> posthoc("fdr:bh")
 # g <- compute(plan)  # returns q-values
 }
+\seealso{
+\link{posthoc-methods} for the built-in methods and the assays each adds.
+}

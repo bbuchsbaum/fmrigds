@@ -106,11 +106,19 @@ reduce <- function(x,
   # (beta/stat maps ingested without standard errors) would yield meaningless
   # group standard errors. Refuse rather than silently mislead.
   synthetic_var <- isTRUE(if (inherits(x, "gds")) x$metadata$synthetic_var else NULL) ||
-    isTRUE(tryCatch(metadata(plan)$synthetic_var, error = function(e) NULL))
+    isTRUE(tryCatch(metadata(plan)$synthetic_var, error = function(e) NULL)) ||
+    isTRUE(plan$source$probe$metadata$synthetic_var)
   if (synthetic_var) {
     red <- get_reducer(.normalize_reducer_name(method))
-    needs_var <- (!is.null(red) && "var" %in% (red$requires %||% character())) ||
+    # For a registered reducer, its declared inputs are authoritative: an
+    # unweighted reducer such as ols:voxelwise does not consume `var` and must
+    # not be blocked (the default weights = "1/var" is ignored by it). Only fall
+    # back to the weight scheme for unknown/legacy reducers.
+    needs_var <- if (!is.null(red)) {
+      "var" %in% (red$requires %||% character())
+    } else {
       weights %in% c("1/var", "n_eff")
+    }
     if (needs_var) {
       stop(sprintf(
         paste0(

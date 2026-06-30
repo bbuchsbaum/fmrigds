@@ -16,6 +16,19 @@ apply_reduce <- function(node, arrays, weights, subjects, col_data = NULL, contr
 
   # Ensure required inputs exist (derive z/p if necessary)
   req <- reducer$requires %||% character(0)
+  # Consumption-site backstop for direct apply_reduce() calls that pass a tagged
+  # `var` array (the array attribute does not survive pipeline slicing/masking,
+  # so realised plans are instead protected by the metadata-flag guard in the
+  # reduce() verb). Keyed on the attribute, not on values, so a legitimate real
+  # variance that happens to equal 1 is not falsely tripped.
+  if ("var" %in% req && isTRUE(attr(arrays$var, "synthetic_unit_variance"))) {
+    stop(sprintf(
+      paste0("Reducer '%s' is variance-weighted, but the `var` assay is a synthetic ",
+             "unit-variance placeholder (beta/stat maps ingested without standard errors), ",
+             "so the group standard errors would be meaningless. Use an unweighted reducer ",
+             "such as method = \"ols:voxelwise\", or supply real standard errors."),
+      node$method), call. = FALSE)
+  }
   arrays <- .ensure_required_arrays(arrays, req)
 
   if (identical(reducer$input_shape %||% "contrastwise", "joint_contrast")) {
@@ -262,7 +275,12 @@ apply_reduce <- function(node, arrays, weights, subjects, col_data = NULL, contr
   need_se <- ("se" %in% requires) && is.null(arrays$se) && !is.null(arrays$var)
   if (need_se) arrays$se <- derive_se(arrays)
   need_z <- ("z" %in% requires) && is.null(arrays$z)
-  need_p <- ("p" %in% requires) && is.null(arrays$p)
+  # A per-term `p_coef:<term>` family (regression/LMM output) satisfies the "p"
+  # requirement: the FDR post-hoc resolves it itself. Only derive a bare `p`
+  # when neither an exact `p` nor any `p_coef:<term>` is available, so that
+  # multi-term models do not error trying (and failing) to derive one `p`.
+  has_p <- !is.null(arrays[["p"]]) || any(grepl("^p_coef:", names(arrays)))
+  need_p <- ("p" %in% requires) && !has_p
   if (need_z) arrays$z <- derive_z(arrays)
   if (need_p) arrays$p <- derive_p(arrays)
   arrays

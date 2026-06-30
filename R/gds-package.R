@@ -25,6 +25,34 @@
 #' @useDynLib fmrigds, .registration = TRUE
 "_PACKAGE"
 
+# Internal mutable package state (once-per-session warning flags, etc.).
+.gds_state <- new.env(parent = emptyenv())
+
+# Emit the synthetic unit-variance warning. With `once = TRUE` it fires at most
+# once per session (used by the lazy NIfTI read path, which re-reads the `var`
+# assay on every compute()). The message keeps the legacy substring so existing
+# `fixed=` matchers still match, and points users at the unweighted path.
+.warn_synthetic_variance <- function(once = FALSE) {
+  if (once && isTRUE(.gds_state$warned_unit_variance)) {
+    return(invisible(FALSE))
+  }
+  if (once) .gds_state$warned_unit_variance <- TRUE
+  warning(
+    "No variance or SE provided; using unit variance as a synthetic placeholder. ",
+    "This is only valid for unweighted reducers such as method = \"ols:voxelwise\" ",
+    "(e.g. one_sample()/group_ols()); variance-weighted reducers (fixed/random/meta:*) ",
+    "will refuse it. Supply real SE (e.g. nifti_source(se = ...)) for meta-analysis.",
+    call. = FALSE
+  )
+  invisible(TRUE)
+}
+
+# Test/inspection helper: reset the once-per-session flag.
+.reset_synthetic_variance_warning <- function() {
+  .gds_state$warned_unit_variance <- NULL
+  invisible(NULL)
+}
+
 .onLoad <- function(libname, pkgname) { # nocov start
   .register_default_assays()
   register_builtin_adapters()

@@ -6,6 +6,12 @@
 \usage{
 list_posthoc()
 }
+\value{
+A sorted character vector of registered post-hoc method names.
+}
 \description{
 List registered post-hoc methods
+}
+\seealso{
+\link{posthoc-methods} for what each method outputs.
 }

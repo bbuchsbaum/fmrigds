@@ -313,7 +313,7 @@ gds_from_neurovols <- function(beta,
     stop("Provide either 'var' or 'se', not both", call. = FALSE)
   }
   if (!has_var && !has_se) {
-    warning("No variance or SE provided; using unit variance", call. = FALSE)
+    .warn_synthetic_variance(once = FALSE)
   }
 
   if (has_var) {
@@ -385,14 +385,25 @@ gds_from_neurovols <- function(beta,
     storage = storage
   )
 
-  new_gds(
+  # Tag the synthetic unit-variance placeholder so variance-weighted reducers
+  # can refuse it (issue #5), both at the array level (consumption-site
+  # backstop) and in metadata (reduce()-verb guard).
+  synthetic_var <- !has_var && !has_se
+  if (synthetic_var) attr(var_arr, "synthetic_unit_variance") <- TRUE
+
+  dots <- list(...)
+  meta <- dots$metadata %||% list()
+  if (synthetic_var) meta$synthetic_var <- TRUE
+  dots$metadata <- NULL
+
+  do.call(new_gds, c(list(
     assays = list(beta = beta_arr, var = var_arr),
     space = sp,
     subjects = subjects,
     contrasts = as.character(contrast),
     col_data = col_data,
-    ...
-  )
+    metadata = meta
+  ), dots))
 }
 
 # -----------------------------------------------------------------------------
@@ -521,8 +532,10 @@ gds_from_neurovol_nested <- function(beta,
   if (has_var && has_se) {
     stop("Provide either 'var' or 'se', not both", call. = FALSE)
   }
-  if (!has_var && !has_se) {
-    warning("No variance or SE provided; using unit variance", call. = FALSE)
+  synthetic_var <- !has_var && !has_se
+  if (synthetic_var) {
+    .warn_synthetic_variance(once = FALSE)
+    metadata$synthetic_var <- TRUE
   }
 
   # Get dimensions from first volume
@@ -612,6 +625,8 @@ gds_from_neurovol_nested <- function(beta,
     mask_idx = if (storage == "packed") mask_idx else NULL,
     storage = storage
   )
+
+  if (synthetic_var) attr(var_arr, "synthetic_unit_variance") <- TRUE
 
   new_gds(
     assays = list(beta = beta_arr, var = var_arr),

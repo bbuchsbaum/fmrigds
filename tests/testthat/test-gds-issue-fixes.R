@@ -59,6 +59,26 @@ test_that("#7 ols:voxelwise applies per-voxel listwise deletion for NaN subjects
   expect_equal(co[2L], mean(poison[2L, , 1L], na.rm = TRUE), tolerance = 1e-8)
 })
 
+test_that("#11 space() does not mask neuroim2::space() for NeuroVol", {
+  skip_if_not_installed("neuroim2")
+  v <- neuroim2::read_vol(
+    system.file("extdata", "global_mask_v4.nii", package = "neuroim2")
+  )
+  # fmrigds's space generic is on the search path, yet space() on a NeuroVol
+  # must delegate to neuroim2's S4 generic and return its NeuroSpace.
+  expect_identical(space(v), neuroim2::space(v))
+  expect_s4_class(space(v), "NeuroSpace")
+})
+
+test_that("#11 space() still dispatches for gds and gds_plan", {
+  g <- structure(list(space = "GDS_SPACE"), class = "gds")
+  expect_identical(space(g), "GDS_SPACE")
+
+  p <- structure(list(source = list(probe = list(space = "PLAN_SPACE"))),
+                 class = "gds_plan")
+  expect_identical(space(p), "PLAN_SPACE")
+})
+
 test_that("#6 write_nifti_assays preserves the spatial affine", {
   skip_if_not_installed("neuroim2")
   skip_if_not_installed("RNifti")
@@ -129,9 +149,168 @@ test_that("#5 beta-only NIfTI OLS does not materialize synthetic variance", {
     format = "nifti"
   )
 
+  fmrigds:::.reset_synthetic_variance_warning()
   expect_warning(compute(plan), "No variance or SE provided; using unit variance", fixed = TRUE)
   expect_silent(fit <- group_ols(plan, ~ 1) |> compute())
   expect_true("coef:(Intercept)" %in% names(assays(fit)))
+})
+
+test_that("#5 synthetic unit-variance warning fires at most once per session (lazy)", {
+  skip_if_not_installed("RNifti")
+
+  td <- tempfile("once-warn-"); dir.create(td)
+  on.exit(unlink(td, recursive = TRUE), add = TRUE)
+  files <- file.path(td, paste0("sub-", 1:3, "_beta.nii"))
+  for (i in 1:3) RNifti::writeNifti(array(as.numeric(i), c(2, 2, 2)), files[i])
+
+  plan <- gds(
+    nifti_source(beta = files, subject = paste0("s", 1:3), contrast = "metric"),
+    format = "nifti"
+  )
+
+  fmrigds:::.reset_synthetic_variance_warning()
+  expect_warning(compute(plan), "No variance or SE provided; using unit variance", fixed = TRUE)
+  # Second materialisation in the same session is de-noised.
+  expect_silent(compute(plan))
+})
+
+test_that("#5 eager beta-only constructors tag synthetic variance and reducers refuse it", {
+  skip_if_not_installed("neuroim2")
+  mk <- function(v) neuroim2::NeuroVol(array(v, c(3, 3, 3)), neuroim2::NeuroSpace(c(3, 3, 3)))
+  beta <- list(`sub-01` = mk(1), `sub-02` = mk(2), `sub-03` = mk(3))
+
+  g <- suppressWarnings(gds_from_neurovols(beta))
+  expect_true(isTRUE(g$metadata$synthetic_var))
+
+  expect_error(reduce(g, method = "fixed"),  "synthetic")
+  expect_error(reduce(g, method = "random"), "synthetic")
+  expect_error(reduce(g, method = "meta:fe"), "synthetic")
+  # Unweighted path stays open, including a direct reduce() with default weights
+  # (ols:voxelwise ignores variance and must not be blocked).
+  expect_s3_class(group_ols(g, ~ 1), "gds_plan")
+  expect_s3_class(reduce(g, method = "ols:voxelwise", formula = ~ 1), "gds_plan")
+})
+
+test_that("#5 reduce() guard catches a lazy beta-only NIfTI plan", {
+  skip_if_not_installed("RNifti")
+
+  td <- tempfile("lazy-guard-"); dir.create(td)
+  on.exit(unlink(td, recursive = TRUE), add = TRUE)
+  files <- file.path(td, paste0("sub-", 1:3, "_beta.nii"))
+  for (i in 1:3) RNifti::writeNifti(array(as.numeric(i), c(2, 2, 2)), files[i])
+
+  plan <- gds(
+    nifti_source(beta = files, subject = paste0("s", 1:3), contrast = "metric"),
+    format = "nifti"
+  )
+
+  expect_error(reduce(plan, method = "fixed"),  "synthetic")
+  expect_error(reduce(plan, method = "random"), "synthetic")
+})
+
+test_that("#5 apply_reduce backstop refuses attr-tagged synthetic var, not a plain array(1)", {
+  beta <- array(c(1, 2, 3, 4, 5, 6), dim = c(2L, 3L, 1L))
+  node <- op_reduce(method = "fixed", weights = "1/var", by = "contrast", options = list())
+
+  syn <- array(1, dim = dim(beta))
+  attr(syn, "synthetic_unit_variance") <- TRUE
+  expect_error(
+    apply_reduce(node, list(beta = beta, var = syn), weights = "1/var",
+                 subjects = paste0("s", 1:3)),
+    "synthetic"
+  )
+
+  # Untagged unit variance (a legitimate real var that happens to be 1) is allowed.
+  plain <- array(1, dim = dim(beta))
+  expect_silent(suppressWarnings(
+    apply_reduce(node, list(beta = beta, var = plain), weights = "1/var",
+                 subjects = paste0("s", 1:3))
+  ))
+})
+
+test_that("#4 list_assays() reports computed assays and previews reducer outputs", {
+  set.seed(3)
+  beta <- array(rnorm(4 * 6), dim = c(4L, 6L, 1L))
+  g <- new_gds(
+    list(beta = beta, var = array(1, dim = dim(beta))),
+    space_sample_labels(paste0("v", 1:4)),
+    paste0("s", 1:6),
+    "c1"
+  )
+  fit <- one_sample(g) |> compute()
+
+  tbl <- list_assays(fit)
+  expect_s3_class(tbl, "data.frame")
+  expect_true(all(c("assay", "role", "units") %in% names(tbl)))
+  expect_true("coef:(Intercept)" %in% tbl$assay)
+
+  # info = FALSE returns a plain character vector.
+  nm <- list_assays(fit, info = FALSE)
+  expect_type(nm, "character")
+  expect_true("t_coef:(Intercept)" %in% nm)
+
+  # reducer preview works without computing; alias resolves.
+  prov <- list_assays(reducer = "random", info = FALSE)
+  expect_true(all(c("beta_g", "se_g", "z_g", "p_g", "tau2") %in% prov))
+
+  # input assays on an unrealised plan.
+  plan_assays <- list_assays(group_ols(g, ~ 1), info = FALSE)
+  expect_true("beta" %in% plan_assays)
+
+  expect_error(list_assays(reducer = "not_a_reducer"), "Unknown reducer")
+})
+
+test_that("#14 multi-term FDR produces one q_coef:<term> per term", {
+  set.seed(7)
+  n_s <- 5L; n_subj <- 12L
+  beta <- array(rnorm(n_s * n_subj, 1), dim = c(n_s, n_subj, 1L))
+  g <- new_gds(
+    list(beta = beta, var = array(1, dim = dim(beta))),
+    space_sample_labels(paste0("v", seq_len(n_s))),
+    paste0("s", seq_len(n_subj)),
+    "c1"
+  )
+  cd <- data.frame(age = rnorm(n_subj), row.names = paste0("s", seq_len(n_subj)))
+
+  fit <- group_ols(g, ~ age, col_data = cd) |> posthoc("fdr:bh") |> compute()
+  nm <- names(assays(fit))
+  expect_true(all(c("q_coef:(Intercept)", "q_coef:age") %in% nm))
+  expect_false("q" %in% nm) # no ambiguous bare q for a regression model
+  expect_equal(
+    as.numeric(assay(fit, "q_coef:age")[, 1, 1]),
+    stats::p.adjust(as.numeric(assay(fit, "p_coef:age")[, 1, 1]), "BH"),
+    tolerance = 1e-8
+  )
+
+  # A genuine bare p (meta path) still yields a single q (back-compat).
+  gv <- new_gds(
+    list(beta = beta, var = array(0.5, dim = dim(beta))),
+    space_sample_labels(paste0("v", seq_len(n_s))),
+    paste0("s", seq_len(n_subj)),
+    "c1"
+  )
+  fit2 <- reduce(gv, method = "fixed") |> posthoc("fdr:bh") |> compute()
+  expect_true("q" %in% names(assays(fit2)))
+})
+
+test_that("#12 fdr:spatial gives an actionable error on a bare voxelwise GDS", {
+  n_s <- 12L; n_subj <- 8L
+  beta <- array(rnorm(n_s * n_subj), dim = c(n_s, n_subj, 1L))
+  g <- new_gds(
+    list(beta = beta, var = array(1, dim = dim(beta))),
+    space_voxel(c(2L, 2L, 3L), diag(4)),
+    paste0("s", seq_len(n_subj)),
+    "shape_old"
+  )
+  g2 <- reduce(g, method = "ols:voxelwise", formula = ~ 1)
+  err <- tryCatch(compute(posthoc(g2, "fdr:spatial")), error = function(e) conditionMessage(e))
+  expect_match(err, "parcel/cluster id per sample")
+  expect_match(err, "fdr:bh", fixed = TRUE)
+
+  # With an explicit grouping it runs and produces a q_coef assay (single term).
+  grp <- rep(1:3, length.out = n_s)
+  fit <- compute(posthoc(g2, "fdr:spatial", options = list(group = grp)))
+  expect_true(any(grepl("^q", names(assays(fit)))))
 })
 
 test_that("#7 meta reducers expose effective subject counts for finite inputs", {

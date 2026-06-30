@@ -90,6 +90,9 @@ find_maps <- function(root,
 #' @export
 #' @examples
 #' \dontrun{
+#' # NOTE: `contrast` is a single label here. gds_from_nifti_maps() is
+#' # single-contrast; to analyse several contrasts, subset `maps` and call
+#' # once per contrast (a multi-valued `contrast` column triggers a warning).
 #' maps <- data.frame(
 #'   file = c("1001_era_partition/maps/naive_diag_mean.nii.gz",
 #'            "1002_era_partition/maps/naive_diag_mean.nii.gz"),
@@ -119,6 +122,24 @@ gds_from_nifti_maps <- function(maps, mask = NULL, ...) { # nocov start
     stop("Some files in `maps$file` do not exist; first few missing: ",
          paste(utils::head(missing, 3L), collapse = ", "),
          call. = FALSE)
+  }
+
+  # Single-contrast collapse guard: surface silent mislabeling (issue #2).
+  # A multi-contrast `maps` table is NOT pivoted into a subject x contrast grid;
+  # every file is loaded onto one contrast axis, so distinct contrast labels
+  # would be silently dropped.
+  if (!is.null(maps$contrast)) {
+    uc <- unique(as.character(maps$contrast)[!is.na(maps$contrast)])
+    if (length(uc) > 1L) {
+      warning(sprintf(
+        paste0(
+          "gds_from_nifti_maps() is single-contrast, but `maps$contrast` has %d ",
+          "distinct values (%s). All files are loaded onto ONE contrast axis and the ",
+          "contrast labels are ignored. Call gds_from_nifti_maps() once per contrast ",
+          "(subset `maps`) and combine the results."),
+        length(uc), paste(utils::head(uc, 5L), collapse = ", ")
+      ), call. = FALSE)
+    }
   }
 
   src <- nifti_source(beta = files)

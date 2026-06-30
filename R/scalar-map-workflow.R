@@ -171,13 +171,24 @@ two_sample <- function(x,
 #' outputs. This is intended for model outputs such as `coef:*`, `t_coef:*`,
 #' and `p_coef:*` assays.
 #'
+#' Filenames are `[<prefix>_]contrast-<contrast>[_sub-<subject>]_<assay>.nii.gz`.
+#' The `contrast-` token is always included so that writing several contrasts to
+#' the same directory/prefix (e.g. one call per contrast) never silently
+#' overwrites; the `sub-` token is added when the GDS has more than one subject.
+#' Existing BIDS-style labels are not double-prefixed (a `"sub-01"` label stays
+#' `sub-01`, not `sub-sub-01`). A within-call collision (two distinct outputs
+#' resolving to the same path, e.g. via sanitisation) raises an error.
+#'
 #' @param g A realised [`gds`] with voxel space.
 #' @param out_dir Output directory.
 #' @param prefix Optional filename prefix.
 #' @param assays Character vector of assays to write. Defaults to all assays.
 #' @param subjects Optional subject labels to write. Defaults to all subjects.
 #' @param contrasts Optional contrast labels to write. Defaults to all contrasts.
-#' @param sanitize Logical; if `TRUE`, make filenames filesystem-friendly.
+#' @param sanitize Logical; if `TRUE` (default), make filename components
+#'   filesystem-friendly. Set `FALSE` only with trusted `prefix`/labels: raw
+#'   values are used verbatim, so path separators in them could write outside
+#'   `out_dir`.
 #' @param overwrite Logical; if `FALSE`, existing files are skipped.
 #'
 #' @return A data.frame manifest with `assay`, `subject`, `contrast`, `path`,
@@ -217,6 +228,8 @@ write_nifti_assays <- function(g,
 
   dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
   rows <- list()
+  planned_paths <- character(0)
+  planned_keys <- character(0)
   add_row <- function(assay_name, subject, contrast, path, written, skipped_reason) {
     rows[[length(rows) + 1L]] <<- data.frame(
       assay = assay_name,
@@ -246,11 +259,27 @@ write_nifti_assays <- function(g,
           subject = subject_labels[j],
           contrast = contrast_labels[k],
           prefix = prefix,
-          include_subject = length(subj_idx) > 1L,
-          include_contrast = length(con_idx) > 1L,
+          # Tag the subject whenever the GDS has more than one subject, so that
+          # exporting a multi-subject GDS one subject per call (subset `subjects`)
+          # does not collide across calls, mirroring the contrast token.
+          include_subject = length(subject_labels) > 1L,
+          include_contrast = TRUE,
           sanitize = sanitize
         )
         path <- file.path(out_dir, file_name)
+        # Key on axis indices (not labels) so distinct array slices that share a
+        # duplicate subject/contrast label are still detected as a collision.
+        key <- paste(nm, j, k, sep = "\r")
+        clash <- which(planned_paths == path & planned_keys != key)
+        if (length(clash)) {
+          stop(sprintf(
+            paste0("write_nifti_assays(): filename collision at '%s' for distinct ",
+                   "outputs. Use a unique `prefix` per call or distinct labels."),
+            path
+          ), call. = FALSE)
+        }
+        planned_paths <- c(planned_paths, path)
+        planned_keys <- c(planned_keys, key)
         if (file.exists(path) && !isTRUE(overwrite)) {
           add_row(nm, subject_labels[j], contrast_labels[k], path, FALSE, "file exists")
           next
@@ -376,13 +405,31 @@ write_nifti_assays <- function(g,
                                   contrast,
                                   prefix = NULL,
                                   include_subject = FALSE,
-                                  include_contrast = FALSE,
+                                  include_contrast = TRUE,
                                   sanitize = TRUE) {
-  parts <- c(prefix, assay)
-  if (include_subject) parts <- c(parts, subject)
-  if (include_contrast) parts <- c(parts, contrast)
-  parts <- parts[!is.na(parts) & nzchar(parts)]
-  if (sanitize) parts <- vapply(parts, .sanitize_filename_part, character(1))
+  san <- function(z) if (sanitize) .sanitize_filename_part(z) else z
+  # Add a BIDS-style key prefix unless the (sanitised) label already carries it,
+  # so BIDS-ingested labels like "sub-01" do not become "sub-sub-01".
+  with_key <- function(key, value) {
+    v <- san(value)
+    if (startsWith(v, key)) v else paste0(key, v)
+  }
+  parts <- character(0)
+  if (!is.null(prefix) && !is.na(prefix) && nzchar(prefix)) {
+    parts <- c(parts, san(prefix))
+  }
+  # The contrast token disambiguates maps that are otherwise named only by
+  # assay; including it by default prevents silent overwrites when multiple
+  # contrasts are written to the same dir/prefix (one call per contrast).
+  if (include_contrast && !is.na(contrast) && nzchar(contrast)) {
+    parts <- c(parts, with_key("contrast-", contrast))
+  }
+  if (include_subject && !is.na(subject) && nzchar(subject)) {
+    parts <- c(parts, with_key("sub-", subject))
+  }
+  if (!is.na(assay) && nzchar(assay)) {
+    parts <- c(parts, san(assay))
+  }
   paste0(paste(parts, collapse = "_"), ".nii.gz")
 }
 

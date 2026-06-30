@@ -74,6 +74,7 @@ test_that("gds_from_nifti_maps accepts beta-only maps with unit variance", {
     stringsAsFactors = FALSE
   )
 
+  fmrigds:::.reset_synthetic_variance_warning()
   expect_warning(
     g <- gds_from_nifti_maps(maps, mask = NULL),
     "No variance or SE provided; using unit variance",
@@ -87,6 +88,35 @@ test_that("gds_from_nifti_maps accepts beta-only maps with unit variance", {
   expect_equal(dim(assay(g, "beta")), c(8L, 2L, 1L))
 })
 
+test_that("#2 gds_from_nifti_maps warns when maps$contrast has >1 distinct value", {
+  skip_if_not_installed("RNifti")
+  skip_if_not_installed("neuroim2")
+
+  td <- tempfile("niftimaps-multi-")
+  dir.create(td)
+  on.exit(unlink(td, recursive = TRUE), add = TRUE)
+
+  f1 <- file.path(td, "sub-01_A.nii")
+  f2 <- file.path(td, "sub-02_B.nii")
+  RNifti::writeNifti(array(1, dim = c(2, 2, 2)), f1)
+  RNifti::writeNifti(array(2, dim = c(2, 2, 2)), f2)
+
+  maps <- data.frame(
+    file = c(f1, f2),
+    subject = c("1001", "1002"),
+    contrast = c("condA", "condB"),
+    stringsAsFactors = FALSE
+  )
+
+  fmrigds:::.reset_synthetic_variance_warning()
+  # Two warnings fire (multi-contrast collapse + beta-only unit variance);
+  # capture both and assert the collapse warning is present.
+  w <- testthat::capture_warnings(g <- gds_from_nifti_maps(maps, mask = NULL))
+  expect_match(w, "single-contrast", all = FALSE)
+  # Files are still loaded onto a single contrast axis (not pivoted).
+  expect_equal(length(contrasts(g)), 1L)
+})
+
 # Tests for BIDS-aware subject keying (adapter-nifti.R)
 
 test_that(".nifti_subject_key keys on the BIDS sub- entity (desc- infix names)", {
@@ -98,6 +128,22 @@ test_that(".nifti_subject_key keys on the BIDS sub- entity (desc- infix names)",
   # beta/se now pair (this errored before the BIDS-aware fix)
   al <- fmrigds:::.nifti_align_file_sets(beta, se)
   expect_equal(al$subjects, c("sub-01", "sub-02"))
+})
+
+test_that(".nifti_align_file_sets refuses beta/se sharing sub- but differing in other entities", {
+  # Same subject, but beta is task-A/run-1 and se is task-B/run-9: pairing on
+  # sub- alone would silently mismatch. The non-statistic context guard catches it.
+  beta <- c("sub-01_task-A_run-1_desc-beta_bold.nii.gz",
+            "sub-02_task-A_run-1_desc-beta_bold.nii.gz")
+  se <- c("sub-01_task-B_run-9_desc-se_bold.nii.gz",
+          "sub-02_task-B_run-9_desc-se_bold.nii.gz")
+  expect_error(
+    fmrigds:::.nifti_align_file_sets(beta, se),
+    "non-statistic filename entities"
+  )
+  # Explicit subjects bypass the filename pairing entirely.
+  al <- fmrigds:::.nifti_align_file_sets(beta, se, subjects = c("a", "b"))
+  expect_equal(al$subjects, c("a", "b"))
 })
 
 test_that(".nifti_subject_key falls back to legacy trailing-stat strip", {

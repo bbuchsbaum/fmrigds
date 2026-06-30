@@ -28,7 +28,10 @@ write_nifti_assays(
 
 \item{contrasts}{Optional contrast labels to write. Defaults to all contrasts.}
 
-\item{sanitize}{Logical; if \code{TRUE}, make filenames filesystem-friendly.}
+\item{sanitize}{Logical; if \code{TRUE} (default), make filename components
+filesystem-friendly. Set \code{FALSE} only with trusted \code{prefix}/labels: raw
+values are used verbatim, so path separators in them could write outside
+\code{out_dir}.}
 
 \item{overwrite}{Logical; if \code{FALSE}, existing files are skipped.}
 }
@@ -41,6 +44,15 @@ Writes each selected assay/subject/contrast image in a voxel-space GDS to a
 separate NIfTI file and returns a manifest describing written and skipped
 outputs. This is intended for model outputs such as \verb{coef:*}, \verb{t_coef:*},
 and \verb{p_coef:*} assays.
+}
+\details{
+Filenames are \verb{[<prefix>_]contrast-<contrast>[_sub-<subject>]_<assay>.nii.gz}.
+The \verb{contrast-} token is always included so that writing several contrasts to
+the same directory/prefix (e.g. one call per contrast) never silently
+overwrites; the \verb{sub-} token is added when the GDS has more than one subject.
+Existing BIDS-style labels are not double-prefixed (a \code{"sub-01"} label stays
+\code{sub-01}, not \code{sub-sub-01}). A within-call collision (two distinct outputs
+resolving to the same path, e.g. via sanitisation) raises an error.
 }
 \examples{
 \dontrun{

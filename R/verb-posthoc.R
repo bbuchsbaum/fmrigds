@@ -5,6 +5,7 @@
 #' @param options Optional list of method-specific options
 #'
 #' @return Updated `gds_plan`
+#' @seealso [posthoc-methods] for the built-in methods and the assays each adds.
 #' @export
 #' @examples
 #' df <- data.frame(
