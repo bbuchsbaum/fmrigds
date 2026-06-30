@@ -263,14 +263,28 @@ register_nifti_adapter <- function() {
 
 .nifti_subject_key <- function(files) {
   ids <- .nifti_subject_ids(files)
-  ids <- sub(
+  vapply(ids, .nifti_one_subject_key, character(1), USE.NAMES = FALSE)
+}
+
+# Derive a subject key from one filename stem. BIDS-named maps (e.g. from
+# fmrireg::write_results) carry the statistic in a `desc-` infix and end in a
+# suffix such as `_bold`, so the legacy "strip a trailing stat token" rule never
+# fires and beta/se files for the same subject get different keys. When a BIDS
+# `sub-<label>` entity is present, key on it; otherwise fall back to the legacy
+# trailing-token strip (preserving behaviour for non-BIDS inputs).
+.nifti_one_subject_key <- function(id) {
+  m <- regmatches(id, regexpr("sub-[A-Za-z0-9]+", id, perl = TRUE))
+  if (length(m) == 1L && nzchar(m)) {
+    return(m)
+  }
+  stripped <- sub(
     "([_.-](beta|cope|effect|se|stderr|sterr|sigma|std(err)?))+$",
     "",
-    ids,
+    id,
     ignore.case = TRUE,
     perl = TRUE
   )
-  sub("[_.-]+$", "", ids, perl = TRUE)
+  sub("[_.-]+$", "", stripped, perl = TRUE)
 }
 
 .nifti_align_file_sets <- function(files_beta, files_se, subjects = NULL) {

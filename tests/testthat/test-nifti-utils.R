@@ -86,3 +86,25 @@ test_that("gds_from_nifti_maps accepts beta-only maps with unit variance", {
   expect_true(all(assay(g, "var") == 1))
   expect_equal(dim(assay(g, "beta")), c(8L, 2L, 1L))
 })
+
+# Tests for BIDS-aware subject keying (adapter-nifti.R)
+
+test_that(".nifti_subject_key keys on the BIDS sub- entity (desc- infix names)", {
+  beta <- c("sub-01_task-stroop_space-MNI152NLin2009cAsym_desc-beta_bold.nii.gz",
+            "sub-02_task-stroop_space-MNI152NLin2009cAsym_desc-beta_bold.nii.gz")
+  se <- sub("desc-beta", "desc-se", beta)
+  expect_equal(fmrigds:::.nifti_subject_key(beta), c("sub-01", "sub-02"))
+  expect_equal(fmrigds:::.nifti_subject_key(se), c("sub-01", "sub-02"))
+  # beta/se now pair (this errored before the BIDS-aware fix)
+  al <- fmrigds:::.nifti_align_file_sets(beta, se)
+  expect_equal(al$subjects, c("sub-01", "sub-02"))
+})
+
+test_that(".nifti_subject_key falls back to legacy trailing-stat strip", {
+  expect_equal(
+    fmrigds:::.nifti_subject_key(c("subjA_beta.nii.gz", "subjB_se.nii.gz")),
+    c("subjA", "subjB")
+  )
+  # a BIDS sub- entity with a trailing stat token still keys on the entity
+  expect_equal(fmrigds:::.nifti_subject_key("sub-03_beta.nii.gz"), "sub-03")
+})
