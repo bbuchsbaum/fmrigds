@@ -301,18 +301,19 @@ make coverage
 
 ## Documentation
 
-Documentation is currently carried by the reference pages and source
-vignettes in this repository. After installation, run
-`browseVignettes("fmrigds")` to open the built articles locally.
+Browse the complete [fmrigds documentation website](https://bbuchsbaum.github.io/fmrigds/),
+read the source vignettes directly on GitHub, or run
+`browseVignettes("fmrigds")` after installation to open the built articles locally.
 
-- **Getting Started**: `vignette("fmrigds")` --- core pipeline tutorial
-- **CLI Workflows**: `vignette("cli-workflows")` --- probe, plan, preview, and run analyses from the shell
-- **Repeated Measures**: `vignette("repeated-measures-lmm")` --- restricted Gaussian LMM workflow
-- **Spatial Operations**: `vignette("spatial-operations")` --- masking, alignment, and space mapping
-- **Post-hoc Corrections**: `vignette("as-plan-and-spatial-fdr")` --- standard and spatial FDR
-- **fmristore Integration**: `vignette("fmristore-ingestion")` --- reading fmristore HDF5 files
-- **Technical Details**: See `notes/TECHNICAL_SPECIFICATION.md` for the full design specification
-- **Function Reference**: `?gds`, `?compute`, `?reduce`, `?align`, `?mask`, `?map_to`
+- [Getting started](vignettes/fmrigds.Rmd) --- core pipeline tutorial
+- [Command-line workflows](vignettes/cli-workflows.Rmd) --- probe, plan, preview, and run analyses from the shell
+- [Repeated-measures mixed models](vignettes/repeated-measures-lmm.Rmd) --- restricted Gaussian LMM workflow
+- [Spatial operations](vignettes/spatial-operations.Rmd) --- masking, alignment, and space mapping
+- [Post-hoc corrections and spatial FDR](vignettes/as-plan-and-spatial-fdr.Rmd) --- standard and spatial FDR
+- [Group examination](vignettes/group-examination.Rmd) --- model surprise, influence, residual geometry, and review reports
+- [fmristore HDF5 ingestion](vignettes/fmristore-ingestion.Rmd) --- reading fmristore HDF5 files
+- [Technical details](notes/TECHNICAL_SPECIFICATION.md) --- full design specification
+- **Function reference:** `?gds`, `?compute`, `?reduce`, `?align`, `?mask`, and `?map_to`
 
 ## Release Focus
 
