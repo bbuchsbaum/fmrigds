@@ -29,11 +29,25 @@ Supported contract:
 \item one grouping factor only
 \item Gaussian outcomes only
 \item shared observation layout and shared fixed/random design across samples
-\item \code{theta_mode = "pooled"} for one shared variance structure across samples
-\item \code{theta_mode = "voxelwise"} for sample-specific variance parameters
+\item \code{theta_mode = "pooled"} for one shared random-effect-to-residual covariance
+shape across samples, with a separate residual scale per sample
+\item \code{theta_mode = "voxelwise"} for sample-specific relative covariance
+parameters and residual scales
 \item no crossed random effects and no general \code{lmer()} random-effects grammar
 }
 }
+\section{Input variance contract}{
+
+These reducers require the \code{beta} assay only. An input \code{var} or \code{se} assay is
+not used as an observation-level precision weight. The returned \code{sigma2} and
+\verb{vc_*} assays are second-level variance components estimated from the supplied
+effects; they are not aggregations of first-level variance estimates.
+
+Fixed-effect standard errors use the fitted covariance as a plug-in estimate,
+and \verb{p_coef:*} uses residual degrees of freedom (\code{n - p}). Satterthwaite and
+Kenward--Roger corrections are not applied.
+}
+
 \section{Output assays}{
 
 Both reducers expand fixed effects per model term (\verb{<term>} = design-matrix
@@ -63,8 +77,7 @@ Pass these names verbatim (including the colon and any parentheses) to
   beta = c(
     0.40, 0.80, 1.20, 0.55, 0.95, 1.35, 0.65, 1.05, 1.45, 0.85, 1.25, 1.65,
     0.70, 1.20, 1.70, 0.85, 1.35, 1.85, 0.95, 1.45, 1.95, 1.15, 1.65, 2.15
-  ),
-  var = 0.04
+  )
 )
 
 g <- gds(rm_df, contrast_data_cols = "time") |>

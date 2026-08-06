@@ -54,15 +54,17 @@ cat(sprintf(
 Repeated-measures fMRI analyses are often statistically simple but operationally
 awkward. You have one effect estimate per ROI or voxel, per subject, per visit
 or condition, and you want a group model that respects the repeated structure
-without hand-writing a loop over `lmer()` calls. `fmrigds` gives you a narrow,
-fast path for that case.
+without hand-writing a loop over samples. `fmrigds` gives you a narrow, fast
+path for that case.
 
 This vignette shows the supported contract: one grouping factor, Gaussian
 responses, shared observation layout across samples, and either a random
 intercept or a random intercept plus one within-subject slope. By the end, you
 will have one model-level GDS containing fixed-effect estimates and
 variance-component assays that you can inspect or write out like any other
-group result.
+group result. Just as importantly, you will know what the variance components
+mean, what `pooled` actually pools, and why this reducer does **not** use a
+first-level variance or standard-error map.
 
 ## What does the input look like?
 
@@ -84,23 +86,70 @@ rm_df <- expand.grid(
 
 subject_intercept <- c(-0.25, -0.10, 0.00, 0.10, 0.20, 0.30)
 names(subject_intercept) <- subjects
-subject_slope <- c(-0.05, -0.02, 0.00, 0.01, 0.03, 0.05)
+subject_slope <- c(-0.10, -0.04, 0.00, 0.02, 0.06, 0.12)
 names(subject_slope) <- subjects
 sample_shift <- c(ROI_1 = 0.00, ROI_2 = 0.35)
 sample_slope <- c(ROI_1 = 0.45, ROI_2 = 0.70)
+sample_slope_scale <- c(ROI_1 = 0.5, ROI_2 = 2.0)
 
 rm_df$time <- time[match(rm_df$contrast, visits)]
 rm_df$beta <- 0.9 +
   sample_shift[rm_df$sample] +
   subject_intercept[rm_df$subject] +
-  (sample_slope[rm_df$sample] + subject_slope[rm_df$subject]) * rm_df$time
-rm_df$var <- 0.04
+  (sample_slope[rm_df$sample] +
+     sample_slope_scale[rm_df$sample] * subject_slope[rm_df$subject]) * rm_df$time +
+  rnorm(nrow(rm_df), sd = 0.06)
 
 knitr::kable(head(rm_df), row.names = FALSE)
 ```
 
 The `time` column is constant within each visit, so it can be collapsed into
-contrast-level metadata during ingestion.
+contrast-level metadata during ingestion. The two simulated ROIs deliberately
+have different amounts of subject-to-subject slope variation; that makes the
+pooled-versus-voxelwise assumption visible later.
+
+The response is `beta`. Despite the name, it need not be a raw regression
+coefficient: it can be any approximately Gaussian subject-level effect estimate
+with a consistent definition and scale across subjects and visits. A *t* or *z*
+statistic is usually not interchangeable with an effect estimate because its
+scale also depends on uncertainty and degrees of freedom.
+
+## What model is fitted?
+
+For sample $v$, subject $i$, and repeated-measure level $r$, the random
+intercept plus slope reducer fits
+
+\[
+y_{vir} = x_{ir}^{\mathsf T}\beta_v + b_{0iv} + t_r b_{1iv} + \epsilon_{vir}.
+\]
+
+Here, $x_{ir}$ is the row of the fixed-effects design built from `formula`,
+and $t_r$ is the numeric variable named by `options$slope`. The random effects
+and residuals are assumed Gaussian:
+
+\[
+\begin{aligned}
+(b_{0iv}, b_{1iv})^{\mathsf T} &\sim N(0,\;\sigma_v^2 \Lambda_v),\\
+\epsilon_{vir} &\sim N(0,\;\sigma_v^2).
+\end{aligned}
+\]
+
+This parameterization separates the sample-specific residual scale
+— `sigma2` or `vc_resid` — from relative random-effect variances in
+λ (`lambda_intercept`, `lambda_slope`, and, for a full covariance,
+`lambda_cov_intercept_slope`). The absolute random-effect variances reported as
+`vc_intercept` and `vc_slope` are λ multiplied by `sigma2`. The simpler
+`lmm:ri` reducer drops $b_{1iv}$ and estimates one intercept-to-residual
+variance ratio, `lambda`.
+
+`covariance = "diag"` fixes the intercept–slope covariance to zero.
+`covariance = "full"` estimates that covariance through a Cholesky
+parameterization and also reports `corr_intercept_slope`. The full model is more
+flexible, but it spends an additional variance parameter and can be weakly
+identified when there are few subjects or few repeated-measure levels. Centering
+the slope variable before ingestion makes the random intercept refer to a
+meaningful time point and usually makes the intercept–slope covariance easier
+to interpret.
 
 ## What is the fastest end-to-end path?
 
@@ -165,12 +214,149 @@ reducers (`coef:<term>`, `se_coef:<term>`, `t_coef:<term>`, `p_coef:<term>`),
 while variance components are exposed as ordinary assays such as
 `vc_intercept`, `vc_slope`, and `lambda_slope`.
 
+## How are the random effects estimated?
+
+The reducer stacks the subject-by-visit observations for every sample, builds
+one shared fixed-effects matrix and one shared random-effects design, and then:
+
+1. optimizes the relative covariance parameters λ by profile maximum
+   likelihood (`fit = "ML"`) or restricted maximum likelihood
+   (`fit = "REML"`);
+2. conditional on those fitted parameters, solves the generalized least-squares
+   problem for each sample's fixed effects; and
+3. estimates a residual scale for each sample, then converts the relative
+   covariance parameters into the absolute `vc_*` components.
+
+The subject-specific random intercepts and slopes are latent variables that are
+integrated out of this marginal likelihood. The reducer estimates their
+covariance, but it does not return subject-level conditional modes or BLUPs.
+
+REML is the default because it accounts for the fixed-effects degrees of
+freedom while estimating variance components. ML is mainly useful when models
+with different fixed-effects structures must be compared on the same data.
+For `lmm:ri`, the optimizer explicitly considers the zero random-intercept
+boundary. For `lmm:ri_slope1`, positive-definite covariance matrices are
+obtained from a Cholesky factor; near-zero components can occur at the numerical
+boundary.
+
+The reported fixed-effect standard errors are plug-in GLS standard errors:
+they condition on the fitted variance parameters. The reported *t* tests use
+`n_observations - n_fixed_effects` residual degrees of freedom. They do not use
+Satterthwaite or Kenward–Roger corrections and do not propagate uncertainty in
+the estimated variance components. With few subjects or weakly identified
+random slopes, treat `p_coef:*` as an approximate screening summary rather than
+small-sample-calibrated inference. The restricted implementation is designed
+for fast, common-design imaging fits; it is not a drop-in replacement for every
+inferential feature of `lmer()`. The `p_coef:*` assays are also uncorrected for
+the number of ROIs or voxels tested.
+
+## Does the reducer use first-level variance estimates?
+
+No. Both repeated-measures reducers require only the `beta` assay. If the input
+also contains a `var` or `se` assay, that assay is carried by the source GDS but
+is not used in the LMM likelihood, the fixed-effect estimates, or their weights.
+The `sigma2` and `vc_*` outputs are estimated from the across-subject and
+within-subject distribution of the supplied effects; they are not summaries of
+the first-level variance maps.
+
+The following check deliberately adds implausibly heterogeneous first-level
+variances. The LMM result is unchanged because `var` is outside this reducer's
+input contract:
+
+```{r first-level-variance-contract}
+rm_df_with_var <- rm_df
+rm_df_with_var$var <- rep(c(1e-6, 100), length.out = nrow(rm_df_with_var))
+
+g_var_probe <- gds(rm_df_with_var, contrast_data_cols = "time") |>
+  reduce(
+    method = "lmm:ri_slope1",
+    formula = ~ time,
+    options = list(
+      slope = "time",
+      covariance = "diag",
+      fit = "REML",
+      theta_mode = "voxelwise"
+    )
+  ) |>
+  compute()
+
+variance_probe <- data.frame(
+  output = c("time coefficient", "time standard error", "slope variance ratio"),
+  largest_absolute_change = c(
+    max(abs(assay(g_var_probe, "coef:time") - assay(g_rm, "coef:time"))),
+    max(abs(assay(g_var_probe, "se_coef:time") - assay(g_rm, "se_coef:time"))),
+    max(abs(assay(g_var_probe, "lambda_slope") - assay(g_rm, "lambda_slope")))
+  )
+)
+
+knitr::kable(
+  transform(variance_probe, largest_absolute_change = signif(largest_absolute_change, 3)),
+  row.names = FALSE
+)
+```
+
+```{r first-level-variance-contract-check, include = FALSE}
+stopifnot(all(variance_probe$largest_absolute_change < 1e-10))
+```
+
+This has two distinct implications:
+
+- A biased first-level variance estimate does **not** directly create an
+  excessive inverse-variance weight in these LMM reducers.
+- Differences in first-level precision are nevertheless unmodeled. Variation
+  due to scan duration, motion, censoring, design efficiency, or first-level
+  noise modeling is absorbed into the LMM residual and is not separated from
+  other within-subject variation. When precision differs materially across
+  observations, the homoscedastic residual assumption can be poor and the
+  nominal fixed-effect standard errors can be misleading.
+
+That distinction matters in fMRI. Under a correctly specified mean model with
+mean-zero errors unrelated to the regressors, ordinary least squares
+coefficients need not be biased merely because residuals are positively
+autocorrelated, but an IID variance calculation generally overstates the
+effective information and can make standard errors too small.
+Prewhitening choices can materially change first-level uncertainty and, in some
+settings, the resulting activation estimates. See
+[Woolrich et al. (2001)](https://ora.ox.ac.uk/objects/uuid%3Ae26cdb91-02a9-4252-b2f6-cc57a8e25844)
+and the multi-package evaluation by
+[Olszowy et al. (2019)](https://www.nature.com/articles/s41467-019-09230-w).
+
+Before treating a beta map as a comparable response, record how it was made:
+the first-level design and contrast, effect scaling, temporal autocorrelation
+model and prewhitening, censoring or nuisance regression, residual degrees of
+freedom, and any transformations. If first-level sampling variances need to
+enter the group model, use a method whose likelihood explicitly models them;
+this restricted repeated-measures reducer is not a measurement-error or
+inverse-variance meta-analytic LMM. For the distinction between ordinary and
+precision-weighted two-stage group analysis, see
+[Mumford and Nichols (2009)](https://pmc.ncbi.nlm.nih.gov/articles/PMC2719771/)
+and
+[Chen et al. (2012)](https://pmc.ncbi.nlm.nih.gov/articles/PMC3404516/).
+
 ## When should you use pooled vs voxelwise theta?
 
-`theta_mode = "pooled"` estimates one shared variance structure across all
-samples. `theta_mode = "voxelwise"` estimates variance parameters separately
-for each sample. Pooled mode reuses one variance structure, so it is typically
-faster; voxelwise mode is more flexible.
+The choice is a bias–variance tradeoff, not just a speed switch. In pooled mode,
+all complete samples contribute to one profile-likelihood estimate of the
+**relative** covariance λ. Each sample still gets its own residual variance
+`sigma2`, so its absolute `vc_intercept` and `vc_slope` may differ. In voxelwise
+mode, both the relative covariance and the residual scale are estimated
+separately for every sample.
+
+| Question | `theta_mode = "pooled"` | `theta_mode = "voxelwise"` |
+|---|---|---|
+| What is shared? | Random-effect-to-residual variance ratios, and the intercept–slope correlation for `covariance = "full"` | Nothing beyond the fixed/random design |
+| Main advantage | More stable covariance shape and much less optimization | Allows genuine spatial or ROI heterogeneity in covariance shape |
+| Main risk | A common shape can misrepresent regions with different longitudinal variability | Noisy or boundary variance estimates with small samples; spatially speckled component maps |
+| Effect on fixed effects | Shared covariance determines the within-subject GLS weighting | Sample-specific covariance gives sample-specific GLS weighting |
+| Sensible starting point | Whole-brain data with few repeats, or when covariance heterogeneity is not the scientific target | A modest number of ROIs, stronger replication, or a planned sensitivity analysis |
+
+Pooled mode is not spatial smoothing and does not shrink voxelwise estimates
+toward a mean; it fits one common covariance shape by summing profile-likelihood
+contributions across samples. It also does not model spatial correlation among
+samples. A large set of highly correlated voxels therefore supplies less
+independent information than its voxel count suggests, and a common λ can be a
+poor description when tissue classes or regions have genuinely different
+variance ratios.
 
 ```{r pooled-vs-voxelwise}
 g_pooled <- gds(rm_df, contrast_data_cols = "time") |>
@@ -188,13 +374,29 @@ g_pooled <- gds(rm_df, contrast_data_cols = "time") |>
 
 theta_compare <- data.frame(
   sample = sample_labels(g_rm),
-  pooled_lambda = round(as.numeric(assay(g_pooled, "lambda_slope")), 3),
-  voxelwise_lambda = round(as.numeric(assay(g_rm, "lambda_slope")), 3),
+  pooled_lambda_slope = as.numeric(assay(g_pooled, "lambda_slope")),
+  voxelwise_lambda_slope = as.numeric(assay(g_rm, "lambda_slope")),
+  pooled_vc_slope = as.numeric(assay(g_pooled, "vc_slope")),
+  voxelwise_vc_slope = as.numeric(assay(g_rm, "vc_slope")),
+  pooled_se_time = as.numeric(assay(g_pooled, "se_coef:time")),
+  voxelwise_se_time = as.numeric(assay(g_rm, "se_coef:time")),
   stringsAsFactors = FALSE
 )
 
-knitr::kable(theta_compare, row.names = FALSE)
+knitr::kable(
+  theta_compare,
+  digits = 3,
+  row.names = FALSE
+)
 ```
+
+The pooled λ is identical across rows by construction. The absolute pooled
+slope variance need not be identical because it is the shared λ multiplied by
+each ROI's residual variance. Differences between the final two columns show
+the inferential consequence of the choice: the fitted covariance changes the
+GLS standard error, not merely a diagnostic variance map. With only six
+subjects, the voxelwise covariance estimates in this toy example should be read
+as a sensitivity demonstration, not as trustworthy ROI-specific biology.
 
 ```{r pooled-vs-voxelwise-checks, include = FALSE}
 bench_subjects <- paste0("sub-", sprintf("%02d", 1:10))
@@ -224,9 +426,8 @@ bench_df$beta <- 0.8 +
   bench_sample_shift[bench_df$sample] +
   bench_subject_intercept[bench_df$subject] +
   (bench_sample_slope[bench_df$sample] + bench_subject_slope[bench_df$subject]) *
-    bench_df$time
-bench_df$var <- 0.04
-
+    bench_df$time +
+  rnorm(nrow(bench_df), sd = 0.05)
 bench_pooled_plan <- gds(bench_df, contrast_data_cols = "time") |>
   reduce(
     method = "lmm:ri_slope1",
@@ -271,6 +472,15 @@ stopifnot(
 knitr::kable(transform(bench_times, elapsed = round(elapsed, 3)), row.names = FALSE)
 ```
 
+Runtime is a practical reason to pool, but not a statistical justification.
+For a real analysis, start from the covariance assumption you can defend and
+then inspect sensitivity: compare coefficient and standard-error maps, the
+distribution of `lambda_*`, and the frequency of near-boundary components. The
+current `converged` assay distinguishes an available numerical fit from an
+unavailable one; it is not a rich optimizer-diagnostic code. A large change in
+scientific conclusions is evidence that the random-effects structure is
+consequential; it is not evidence that the more favorable mode is correct.
+
 ## What if your repeated-measure metadata is already separate?
 
 If your `time`, visit order, or other repeated-measure annotations already live
@@ -279,7 +489,7 @@ outside the long table, attach them explicitly with `with_contrast_data()`.
 ```{r attach-contrast-data}
 contrast_df <- data.frame(time = time, row.names = visits)
 
-g_attached <- gds(rm_df[c("sample", "subject", "contrast", "beta", "var")]) |>
+g_attached <- gds(rm_df[c("sample", "subject", "contrast", "beta")]) |>
   with_contrast_data(contrast_df) |>
   reduce(
     method = "lmm:ri_slope1",
@@ -342,12 +552,22 @@ The repeated-measures LMM reducers are deliberately narrower than `lmer()`:
 - Gaussian outcomes only
 - shared observation layout across all samples
 - random intercept only (`"lmm:ri"`) or random intercept plus one slope (`"lmm:ri_slope1"`)
+- one residual variance per sample, with no observation-level precision weights
+- complete observations within a sample; a non-finite subject-by-repeat value
+  makes that sample's model outputs unavailable
+- plug-in GLS inference with residual degrees of freedom, without
+  Satterthwaite or Kenward–Roger correction
 - no crossed random effects
 - no general random-effects formula grammar
+- no spatial covariance model or spatial regularization of voxelwise variance
+  components
 
 That restriction is the point: it lets `fmrigds` reuse one design across many
 responses and produce a whole-brain or whole-ROI result with one call to
-`reduce()`.
+`reduce()`. It also defines the boundary of the scientific claim: the reducer
+models dependence among repeated effect estimates from the same subject, but it
+does not model uncertainty attached to each effect estimate or dependence
+between neighboring samples.
 
 ## Where do you go next?
 
