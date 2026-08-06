@@ -17,6 +17,14 @@ lmm_lowrank_fit_cpp <- function(Y, X, U_block, fit = "REML") {
     .Call(`_fmrigds_lmm_lowrank_fit_cpp`, Y, X, U_block, fit)
 }
 
+lmm_knownvar_objective_cpp <- function(y, sampling_var, X, U_block, residual_var, fit = "REML") {
+    .Call(`_fmrigds_lmm_knownvar_objective_cpp`, y, sampling_var, X, U_block, residual_var, fit)
+}
+
+lmm_knownvar_fit_cpp <- function(y, sampling_var, X, U_block, residual_var, fit = "REML") {
+    .Call(`_fmrigds_lmm_knownvar_fit_cpp`, y, sampling_var, X, U_block, residual_var, fit)
+}
+
 set_omp_threads <- function(n) {
     invisible(.Call(`_fmrigds_set_omp_threads`, n))
 }

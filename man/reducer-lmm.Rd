@@ -8,7 +8,7 @@ This is a documentation page (no return value); these reducers are
 invoked via \code{\link[=reduce]{reduce()}}.
 }
 \description{
-\code{fmrigds} includes two specialized repeated-measures Gaussian mixed-model
+\code{fmrigds} includes four specialized repeated-measures Gaussian mixed-model
 reducers that are optimized for the case where every sample shares the same
 observation layout and the same fixed/random design.
 }
@@ -17,6 +17,9 @@ observation layout and the same fixed/random design.
 \item \code{method = "lmm:ri"} fits a random-intercept model.
 \item \code{method = "lmm:ri_slope1"} fits a random intercept plus one within-subject
 slope supplied through \code{options$slope}.
+\item \code{method = "lmm:ri_knownvar"} and \code{"lmm:ri_slope1_knownvar"} fit the
+corresponding variance-aware models using the input \code{var} assay as known
+diagonal sampling variance.
 }
 
 These reducers operate on the full contrast axis jointly. Repeated-measure
@@ -29,11 +32,35 @@ Supported contract:
 \item one grouping factor only
 \item Gaussian outcomes only
 \item shared observation layout and shared fixed/random design across samples
-\item \code{theta_mode = "pooled"} for one shared variance structure across samples
-\item \code{theta_mode = "voxelwise"} for sample-specific variance parameters
+\item unweighted reducers support \code{theta_mode = "pooled"} for one shared
+random-effect-to-residual covariance shape across samples or
+\code{theta_mode = "voxelwise"} for sample-specific parameters
+\item known-variance reducers currently support voxelwise covariance estimation
+only
 \item no crossed random effects and no general \code{lmer()} random-effects grammar
 }
 }
+\section{Input variance contract}{
+
+The unweighted \code{lmm:ri} and \code{lmm:ri_slope1} reducers require \code{beta} only. An
+input \code{var} or \code{se} assay is ignored by their likelihood. Their \code{sigma2} and
+\verb{vc_*} outputs are second-level variance components estimated from the
+supplied effects.
+
+The \verb{*_knownvar} reducers require aligned \code{beta} and strictly positive \code{var}
+assays. For each sample, they fit marginal covariance
+\verb{diag(var) + vc_resid * I + Z G Z'}. Thus, \code{var} is treated as known sampling
+variance, \code{vc_resid} (\code{sigma2}) is additional observation-level heterogeneity,
+and \code{G} contains the subject random-effect covariance. Only diagonal sampling
+covariance is currently accepted; correlated first-level estimates require a
+future full sampling-covariance input rather than pretending their marginal
+variances are independent.
+
+Fixed-effect standard errors use the fitted covariance as a plug-in estimate,
+and \verb{p_coef:*} uses residual degrees of freedom (\code{n - p}). Satterthwaite and
+Kenward--Roger corrections are not applied.
+}
+
 \section{Output assays}{
 
 Both reducers expand fixed effects per model term (\verb{<term>} = design-matrix
@@ -47,6 +74,11 @@ ratio).
 \code{vc_cov_intercept_slope}, \code{vc_resid}, \code{df_res}, \code{logLik}, \code{converged},
 \code{lambda_intercept}, \code{lambda_slope}, \code{lambda_cov_intercept_slope}, and
 \code{corr_intercept_slope}.
+\item \code{lmm:ri_knownvar} provides \code{sigma2}, \code{vc_intercept}, \code{vc_resid}, and
+\code{sampling_var_mean}; \code{lmm:ri_slope1_knownvar} additionally provides
+\code{vc_slope}, \code{vc_cov_intercept_slope}, and \code{corr_intercept_slope}. The
+relative \verb{lambda_*} assays are intentionally omitted because known sampling
+variance breaks the single residual-scale parameterization.
 Pass these names verbatim (including the colon and any parentheses) to
 \code{\link[=write_nifti_assays]{write_nifti_assays()}} / \code{\link[=write_out]{write_out()}}.
 }
@@ -63,8 +95,7 @@ Pass these names verbatim (including the colon and any parentheses) to
   beta = c(
     0.40, 0.80, 1.20, 0.55, 0.95, 1.35, 0.65, 1.05, 1.45, 0.85, 1.25, 1.65,
     0.70, 1.20, 1.70, 0.85, 1.35, 1.85, 0.95, 1.45, 1.95, 1.15, 1.65, 2.15
-  ),
-  var = 0.04
+  )
 )
 
 g <- gds(rm_df, contrast_data_cols = "time") |>
@@ -82,6 +113,15 @@ g <- gds(rm_df, contrast_data_cols = "time") |>
 
 names(assays(g))
 assay(g, "coef:time")
+
+rm_df_known <- transform(rm_df, var = 0.04)
+g_known <- gds(rm_df_known, contrast_data_cols = "time") |>
+  reduce(
+    method = "lmm:ri_slope1_knownvar",
+    formula = ~ time,
+    options = list(slope = "time", covariance = "diag", fit = "REML")
+  ) |>
+  compute()
 }\if{html}{\out{</div>}}
 }
 

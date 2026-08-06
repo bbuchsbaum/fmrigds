@@ -248,11 +248,16 @@ Available repeated-measures reducers:
 
 - `method = "lmm:ri"` for a random-intercept model
 - `method = "lmm:ri_slope1"` for a random intercept plus one within-subject slope
+- `method = "lmm:ri_knownvar"` and `"lmm:ri_slope1_knownvar"` to incorporate
+  known diagonal sampling variances from the `var` assay
 - `options$theta_mode = "pooled"` to share variance parameters across samples
 - `options$theta_mode = "voxelwise"` to fit variance parameters separately per sample
 
-This is intentionally narrower than `lmer()`: one grouping factor only,
-Gaussian outcomes only, and no general random-effects formula parser.
+The `*_knownvar` methods fit `diag(var) + vc_resid * I + Z G Z'` and currently
+use voxelwise variance components only. All four methods are intentionally
+narrower than `lmer()`: one grouping factor, Gaussian outcomes, and no general
+random-effects formula parser. See `vignette("repeated-measures-lmm")` for the
+weighting contract and guidance on first-level variance quality.
 
 ### Working with different formats
 

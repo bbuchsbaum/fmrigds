@@ -69,6 +69,38 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// lmm_knownvar_objective_cpp
+double lmm_knownvar_objective_cpp(const arma::vec& y, const arma::vec& sampling_var, const arma::mat& X, const arma::mat& U_block, const double residual_var, const std::string fit);
+RcppExport SEXP _fmrigds_lmm_knownvar_objective_cpp(SEXP ySEXP, SEXP sampling_varSEXP, SEXP XSEXP, SEXP U_blockSEXP, SEXP residual_varSEXP, SEXP fitSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const arma::vec& >::type y(ySEXP);
+    Rcpp::traits::input_parameter< const arma::vec& >::type sampling_var(sampling_varSEXP);
+    Rcpp::traits::input_parameter< const arma::mat& >::type X(XSEXP);
+    Rcpp::traits::input_parameter< const arma::mat& >::type U_block(U_blockSEXP);
+    Rcpp::traits::input_parameter< const double >::type residual_var(residual_varSEXP);
+    Rcpp::traits::input_parameter< const std::string >::type fit(fitSEXP);
+    rcpp_result_gen = Rcpp::wrap(lmm_knownvar_objective_cpp(y, sampling_var, X, U_block, residual_var, fit));
+    return rcpp_result_gen;
+END_RCPP
+}
+// lmm_knownvar_fit_cpp
+Rcpp::List lmm_knownvar_fit_cpp(const arma::vec& y, const arma::vec& sampling_var, const arma::mat& X, const arma::mat& U_block, const double residual_var, const std::string fit);
+RcppExport SEXP _fmrigds_lmm_knownvar_fit_cpp(SEXP ySEXP, SEXP sampling_varSEXP, SEXP XSEXP, SEXP U_blockSEXP, SEXP residual_varSEXP, SEXP fitSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const arma::vec& >::type y(ySEXP);
+    Rcpp::traits::input_parameter< const arma::vec& >::type sampling_var(sampling_varSEXP);
+    Rcpp::traits::input_parameter< const arma::mat& >::type X(XSEXP);
+    Rcpp::traits::input_parameter< const arma::mat& >::type U_block(U_blockSEXP);
+    Rcpp::traits::input_parameter< const double >::type residual_var(residual_varSEXP);
+    Rcpp::traits::input_parameter< const std::string >::type fit(fitSEXP);
+    rcpp_result_gen = Rcpp::wrap(lmm_knownvar_fit_cpp(y, sampling_var, X, U_block, residual_var, fit));
+    return rcpp_result_gen;
+END_RCPP
+}
 // set_omp_threads
 void set_omp_threads(const int n);
 RcppExport SEXP _fmrigds_set_omp_threads(SEXP nSEXP) {
@@ -212,6 +244,8 @@ static const R_CallMethodDef CallEntries[] = {
     {"_fmrigds_lmm_ri_fit_cpp", (DL_FUNC) &_fmrigds_lmm_ri_fit_cpp, 5},
     {"_fmrigds_lmm_lowrank_objective_cpp", (DL_FUNC) &_fmrigds_lmm_lowrank_objective_cpp, 4},
     {"_fmrigds_lmm_lowrank_fit_cpp", (DL_FUNC) &_fmrigds_lmm_lowrank_fit_cpp, 4},
+    {"_fmrigds_lmm_knownvar_objective_cpp", (DL_FUNC) &_fmrigds_lmm_knownvar_objective_cpp, 6},
+    {"_fmrigds_lmm_knownvar_fit_cpp", (DL_FUNC) &_fmrigds_lmm_knownvar_fit_cpp, 6},
     {"_fmrigds_set_omp_threads", (DL_FUNC) &_fmrigds_set_omp_threads, 1},
     {"_fmrigds_meta_fe_cpp", (DL_FUNC) &_fmrigds_meta_fe_cpp, 5},
     {"_fmrigds_meta_re_dl_cpp", (DL_FUNC) &_fmrigds_meta_re_dl_cpp, 5},

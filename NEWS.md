@@ -57,6 +57,10 @@
 
 ## Sprint 10 / Repeated-measures LMM polish
 - Added restricted repeated-measures Gaussian LMM reducers: `lmm:ri` and `lmm:ri_slope1`.
+- Added variance-aware `lmm:ri_knownvar` and `lmm:ri_slope1_knownvar`
+  reducers. They fit `diag(var) + vc_resid * I + Z G Z'`, reject synthetic or
+  nonpositive variances, and are numerically checked against
+  `metafor::rma.mv()`.
 - Added `theta_mode = "pooled"` and `theta_mode = "voxelwise"` for shared- vs sample-specific variance parameters.
 - Added long-table repeated-measures ingestion via `contrast_data_cols`, so contrast metadata can be extracted directly from tabular sources.
 - Hardened the low-rank LMM kernels against numerical asymmetry in intermediate SPD matrices.
