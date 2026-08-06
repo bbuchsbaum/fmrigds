@@ -1,5 +1,11 @@
 # fmrigds 0.1.0.9000
 
+## Documentation
+
+- Standardized every vignette and pkgdown article on the red `interaction`
+  Albers theme, restored theme activation in the fmristore article, and added
+  a post-build check that prevents article theme drift.
+
 ## Model-conditioned group examination
 
 - Added `examine_group()` as a terminal branch from subject-level plans. It
