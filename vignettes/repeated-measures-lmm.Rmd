@@ -62,9 +62,9 @@ responses, shared observation layout across samples, and either a random
 intercept or a random intercept plus one within-subject slope. By the end, you
 will have one model-level GDS containing fixed-effect estimates and
 variance-component assays that you can inspect or write out like any other
-group result. Just as importantly, you will know what the variance components
-mean, what `pooled` actually pools, and why this reducer does **not** use a
-first-level variance or standard-error map.
+group result. You will also know when to use an unweighted model, when to treat
+first-level variances as known sampling variances, what `pooled` actually
+pools, and which claims the available summary statistics can support.
 
 ## What does the input look like?
 
@@ -93,12 +93,12 @@ sample_slope <- c(ROI_1 = 0.45, ROI_2 = 0.70)
 sample_slope_scale <- c(ROI_1 = 0.5, ROI_2 = 2.0)
 
 rm_df$time <- time[match(rm_df$contrast, visits)]
-rm_df$beta <- 0.9 +
+rm_signal <- 0.9 +
   sample_shift[rm_df$sample] +
   subject_intercept[rm_df$subject] +
   (sample_slope[rm_df$sample] +
-     sample_slope_scale[rm_df$sample] * subject_slope[rm_df$subject]) * rm_df$time +
-  rnorm(nrow(rm_df), sd = 0.06)
+     sample_slope_scale[rm_df$sample] * subject_slope[rm_df$subject]) * rm_df$time
+rm_df$beta <- rm_signal + rnorm(nrow(rm_df), sd = 0.06)
 
 knitr::kable(head(rm_df), row.names = FALSE)
 ```
@@ -110,22 +110,45 @@ pooled-versus-voxelwise assumption visible later.
 
 The response is `beta`. Despite the name, it need not be a raw regression
 coefficient: it can be any approximately Gaussian subject-level effect estimate
-with a consistent definition and scale across subjects and visits. A *t* or *z*
-statistic is usually not interchangeable with an effect estimate because its
-scale also depends on uncertainty and degrees of freedom.
+with a consistent definition and scale across subjects and visits. Choose the
+reducer from the information that is actually available:
+
+| Available input | Recommended reducer | What the model can claim |
+|---|---|---|
+| Effect estimate only | `lmm:ri` or `lmm:ri_slope1` | Models the empirical second-level covariance, without separating first-level sampling error |
+| Effect estimate plus variance or standard error | Matching `*_knownvar` reducer | Treats the supplied marginal sampling variance as known and estimates additional heterogeneity |
+| Effect estimate plus *t* or *z* | Derive or supply `var` only when the effect-scale standard error can be recovered | Same interpretation as `*_knownvar`; the test statistic alone is not the variance |
+| *t* or *z* only | No effect-scale repeated-measures LMM | The effect magnitude and its sampling variance cannot generally be recovered from a standardized statistic alone |
+
+A *t* or *z* statistic is therefore not interchangeable with an effect
+estimate: its scale also depends on uncertainty and, for *t*, degrees of
+freedom. When an unthresholded *t* map was computed exactly as `beta / se` for
+the same contrast, the effect-scale variance can be recovered as
+`(beta / t)^2`; verify that provenance before using it. A *z* map may instead be
+a signed transformation of a *p* value, in which case `beta / z` is not the
+first-level standard error. If a trustworthy `se` assay is available, the
+known-variance reducers derive `var` from it automatically.
+
+If the scientific target is evidence combination rather than an effect-scale
+repeated-measures model, a method such as `combine:stouffer` may be appropriate
+after accounting for dependence. Repeated observations from the same subject
+are not independent inputs to an ordinary Stouffer combination.
 
 ## What model is fitted?
 
-For sample $v$, subject $i$, and repeated-measure level $r$, the random
-intercept plus slope reducer fits
+For sample $v$, subject $i$, and repeated-measure level $r$, every random
+intercept plus slope reducer uses the same conditional mean:
 
 \[
 y_{vir} = x_{ir}^{\mathsf T}\beta_v + b_{0iv} + t_r b_{1iv} + \epsilon_{vir}.
 \]
 
 Here, $x_{ir}$ is the row of the fixed-effects design built from `formula`,
-and $t_r$ is the numeric variable named by `options$slope`. The random effects
-and residuals are assumed Gaussian:
+and $t_r$ is the numeric variable named by `options$slope`. The simpler
+random-intercept reducers drop $b_{1iv}$.
+
+The two reducer families differ in their marginal covariance. The unweighted
+methods assume
 
 \[
 \begin{aligned}
@@ -142,6 +165,21 @@ This parameterization separates the sample-specific residual scale
 `lmm:ri` reducer drops $b_{1iv}$ and estimates one intercept-to-residual
 variance ratio, `lambda`.
 
+The `*_knownvar` methods instead use the supplied sampling-variance vector
+$d_v$:
+
+\[
+V_v = \operatorname{diag}(d_v) + \sigma_{\text{resid},v}^2 I
+      + ZG_vZ^{\mathsf T}.
+\]
+
+Here, $G_v$ contains absolute random-effect variances and
+$\sigma_{\text{resid},v}^2$ is additional observation-level heterogeneity. The
+known sampling variances establish an absolute scale, so these reducers report
+`vc_intercept`, `vc_slope`, and `vc_resid` but not relative `lambda_*` assays.
+They treat `var` as fixed input rather than estimating a common multiplier for
+it.
+
 `covariance = "diag"` fixes the intercept–slope covariance to zero.
 `covariance = "full"` estimates that covariance through a Cholesky
 parameterization and also reports `corr_intercept_slope`. The full model is more
@@ -155,7 +193,8 @@ to interpret.
 
 Use `gds(..., contrast_data_cols = "time")` to put the repeated-measure
 metadata on the contrast axis, then call `reduce()` with one of the restricted
-LMM reducers:
+LMM reducers. The first example has effect estimates but no sampling variances,
+so it uses the unweighted method:
 
 ```{r quick-win}
 g_rm <- gds(rm_df, contrast_data_cols = "time") |>
@@ -216,28 +255,37 @@ while variance components are exposed as ordinary assays such as
 
 ## How are the random effects estimated?
 
-The reducer stacks the subject-by-visit observations for every sample, builds
-one shared fixed-effects matrix and one shared random-effects design, and then:
+All four reducers stack the subject-by-visit observations for every sample,
+build one shared fixed-effects matrix and one shared random-effects design, and
+integrate the subject-specific random effects out of the Gaussian marginal
+likelihood. They estimate the covariance of the random effects; they do not
+return subject-level conditional modes or BLUPs.
 
-1. optimizes the relative covariance parameters λ by profile maximum
+The unweighted reducers then:
+
+1. optimize the relative covariance parameters λ by profile maximum
    likelihood (`fit = "ML"`) or restricted maximum likelihood
    (`fit = "REML"`);
-2. conditional on those fitted parameters, solves the generalized least-squares
+2. conditional on those fitted parameters, solve the generalized least-squares
    problem for each sample's fixed effects; and
-3. estimates a residual scale for each sample, then converts the relative
+3. estimate a residual scale for each sample, then convert the relative
    covariance parameters into the absolute `vc_*` components.
 
-The subject-specific random intercepts and slopes are latent variables that are
-integrated out of this marginal likelihood. The reducer estimates their
-covariance, but it does not return subject-level conditional modes or BLUPs.
+For a known-variance reducer, `diag(var)` remains fixed while the optimizer
+estimates the absolute random-effect covariance $G$ and the additional residual
+variance `vc_resid`. At every trial covariance, the reducer profiles out the
+fixed effects with generalized least squares. There is no single residual scale
+that can be factored out of the whole covariance, which is why these methods do
+not report relative `lambda_*` components.
 
 REML is the default because it accounts for the fixed-effects degrees of
 freedom while estimating variance components. ML is mainly useful when models
 with different fixed-effects structures must be compared on the same data.
 For `lmm:ri`, the optimizer explicitly considers the zero random-intercept
-boundary. For `lmm:ri_slope1`, positive-definite covariance matrices are
-obtained from a Cholesky factor; near-zero components can occur at the numerical
-boundary.
+boundary. With `covariance = "full"`, the slope methods obtain
+positive-definite covariance matrices from a Cholesky factor. Any of the fitted
+variance components can be near zero at the numerical boundary, especially
+with few subjects or little replication.
 
 The reported fixed-effect standard errors are plug-in GLS standard errors:
 they condition on the fitted variance parameters. The reported *t* tests use
@@ -250,14 +298,12 @@ for fast, common-design imaging fits; it is not a drop-in replacement for every
 inferential feature of `lmer()`. The `p_coef:*` assays are also uncorrected for
 the number of ROIs or voxels tested.
 
-## Does the reducer use first-level variance estimates?
+## How do first-level variance estimates enter the model?
 
-No. Both repeated-measures reducers require only the `beta` assay. If the input
-also contains a `var` or `se` assay, that assay is carried by the source GDS but
-is not used in the LMM likelihood, the fixed-effect estimates, or their weights.
-The `sigma2` and `vc_*` outputs are estimated from the across-subject and
-within-subject distribution of the supplied effects; they are not summaries of
-the first-level variance maps.
+The original `lmm:ri` and `lmm:ri_slope1` reducers are unweighted: they require
+only `beta`. If the input also contains `var` or `se`, it is carried by the
+source GDS but is not used in their likelihood, estimates, or weights. Their
+`sigma2` and `vc_*` outputs are estimated entirely from the supplied effects.
 
 The following check deliberately adds implausibly heterogeneous first-level
 variances. The LMM result is unchanged because `var` is outside this reducer's
@@ -299,16 +345,126 @@ knitr::kable(
 stopifnot(all(variance_probe$largest_absolute_change < 1e-10))
 ```
 
-This has two distinct implications:
+For an unweighted fit, this has two distinct implications:
 
 - A biased first-level variance estimate does **not** directly create an
-  excessive inverse-variance weight in these LMM reducers.
+  excessive inverse-variance weight.
 - Differences in first-level precision are nevertheless unmodeled. Variation
   due to scan duration, motion, censoring, design efficiency, or first-level
   noise modeling is absorbed into the LMM residual and is not separated from
   other within-subject variation. When precision differs materially across
   observations, the homoscedastic residual assumption can be poor and the
   nominal fixed-effect standard errors can be misleading.
+
+Use `lmm:ri_knownvar` or `lmm:ri_slope1_knownvar` when the input variances
+should enter the model. For each sample, these reducers fit
+
+\[
+V = \operatorname{diag}(v) + \sigma_{\text{resid}}^2 I + ZGZ^{\mathsf T},
+\]
+
+where $v$ is the supplied `var` assay, $G$ is the subject random-effect
+covariance, and `vc_resid` is additional observation-level heterogeneity not
+explained by the reported sampling variance. The supplied variances are treated
+as known: they are not multiplied by a fitted calibration factor.
+
+This is the same covariance contract accepted by
+[`metafor::rma.mv()`](https://wviechtb.github.io/metafor/reference/rma.mv.html)
+when `V` contains the known sampling variances and random effects represent the
+subject and observation-level heterogeneity. It is not equivalent to passing
+`weights = 1 / var` to `lme4::lmer()`: in `lmer()`, the inverse weights are still
+multiplied by an estimated common residual scale.
+
+The next example makes the variance contract part of the data-generating
+process. Subjects have different first-level standard errors, visits differ
+slightly in precision, and every observation also contains residual variation
+with variance 0.0064 that is not included in `var`.
+
+```{r known-variance-fit}
+rm_df_knownvar <- rm_df
+subject_se <- c(0.02, 0.03, 0.05, 0.07, 0.09, 0.12)
+names(subject_se) <- subjects
+visit_precision_factor <- c(pre = 1.15, mid = 0.85, post = 1.00)
+
+rm_df_knownvar$var <- (
+  subject_se[rm_df_knownvar$subject] *
+    visit_precision_factor[rm_df_knownvar$contrast]
+)^2
+
+true_extra_residual_var <- 0.0064
+set.seed(11)
+rm_df_knownvar$beta <- rm_signal +
+  rnorm(nrow(rm_df_knownvar), sd = sqrt(rm_df_knownvar$var)) +
+  rnorm(nrow(rm_df_knownvar), sd = sqrt(true_extra_residual_var))
+
+g_knownvar_unweighted <- gds(rm_df_knownvar, contrast_data_cols = "time") |>
+  reduce(
+    method = "lmm:ri_slope1",
+    formula = ~ time,
+    options = list(
+      slope = "time",
+      covariance = "diag",
+      fit = "REML",
+      theta_mode = "voxelwise"
+    )
+  ) |>
+  compute()
+
+g_knownvar <- gds(rm_df_knownvar, contrast_data_cols = "time") |>
+  reduce(
+    method = "lmm:ri_slope1_knownvar",
+    formula = ~ time,
+    options = list(
+      slope = "time",
+      covariance = "diag",
+      fit = "REML"
+    )
+  ) |>
+  compute()
+
+knownvar_compare <- data.frame(
+  sample = sample_labels(g_knownvar),
+  unweighted_time = as.numeric(assay(g_knownvar_unweighted, "coef:time")),
+  knownvar_time = as.numeric(assay(g_knownvar, "coef:time")),
+  unweighted_se = as.numeric(assay(g_knownvar_unweighted, "se_coef:time")),
+  knownvar_se = as.numeric(assay(g_knownvar, "se_coef:time")),
+  mean_sampling_var = as.numeric(assay(g_knownvar, "sampling_var_mean")),
+  fitted_extra_residual_var = as.numeric(assay(g_knownvar, "vc_resid"))
+)
+
+knitr::kable(knownvar_compare, digits = 4, row.names = FALSE)
+```
+
+```{r known-variance-fit-check, include = FALSE}
+stopifnot(
+  all(is.finite(as.matrix(knownvar_compare[-1]))),
+  any(abs(knownvar_compare$knownvar_se - knownvar_compare$unweighted_se) > 1e-6),
+  all(knownvar_compare$fitted_extra_residual_var > 0)
+)
+```
+
+Both fits use exactly the same effect estimates. Their coefficients and
+standard errors differ because the known-variance fit recognizes that some
+observations are measured less precisely. `fitted_extra_residual_var` estimates
+the simulated 0.0064 component; with a data set this small it need not recover
+that value exactly. A near-zero estimate in real data can mean either that the
+reported sampling variances explain the remaining observation-level variation
+or that the component is weakly identified.
+
+There are two important limits. First, `var` must contain strictly positive
+sampling variances on the squared scale of `beta`; if the input supplies a
+standard error, square it during ingestion or map it to `se` so that `fmrigds`
+can derive `var`. Second, this version assumes the sampling-error covariance is
+diagonal. Contrasts estimated from the same first-level GLM can have correlated
+errors. Marginal variance maps alone cannot recover that covariance, so do not
+interpret the diagonal model as a full solution for dependent first-level
+contrasts.
+
+Because the variances are treated as known, their accuracy now matters
+directly. A variance biased downward gives that observation too much precision;
+`vc_resid` can absorb general excess heterogeneity but cannot repair an
+observation-specific miscalibration. Inspect the distribution and provenance of
+`var`, and use sensitivity analyses when first-level noise modeling is doubtful.
 
 That distinction matters in fMRI. Under a correctly specified mean model with
 mean-zero errors unrelated to the regressors, ordinary least squares
@@ -325,15 +481,21 @@ Before treating a beta map as a comparable response, record how it was made:
 the first-level design and contrast, effect scaling, temporal autocorrelation
 model and prewhitening, censoring or nuisance regression, residual degrees of
 freedom, and any transformations. If first-level sampling variances need to
-enter the group model, use a method whose likelihood explicitly models them;
-this restricted repeated-measures reducer is not a measurement-error or
-inverse-variance meta-analytic LMM. For the distinction between ordinary and
+enter the group model, use a `*_knownvar` method and audit the variance model;
+the unweighted methods are not measurement-error or inverse-variance
+meta-analytic LMMs. For the distinction between ordinary and
 precision-weighted two-stage group analysis, see
 [Mumford and Nichols (2009)](https://pmc.ncbi.nlm.nih.gov/articles/PMC2719771/)
 and
 [Chen et al. (2012)](https://pmc.ncbi.nlm.nih.gov/articles/PMC3404516/).
 
-## When should you use pooled vs voxelwise theta?
+## Should variance components be pooled or fitted voxelwise?
+
+This choice currently applies to the unweighted reducers. The known-variance
+reducers are voxelwise only: sharing an absolute random-effect covariance across
+voxels would usually be scientifically indefensible, while sharing a relative
+covariance requires an explicit cross-voxel scaling rule that is not yet part of
+the API.
 
 The choice is a bias–variance tradeoff, not just a speed switch. In pooled mode,
 all complete samples contribute to one profile-likelihood estimate of the
@@ -551,8 +713,13 @@ The repeated-measures LMM reducers are deliberately narrower than `lmer()`:
 - one grouping factor only
 - Gaussian outcomes only
 - shared observation layout across all samples
-- random intercept only (`"lmm:ri"`) or random intercept plus one slope (`"lmm:ri_slope1"`)
-- one residual variance per sample, with no observation-level precision weights
+- random intercept only or random intercept plus one slope, each available as
+  an unweighted method or a `*_knownvar` method
+- unweighted methods estimate one residual variance per sample and ignore
+  observation-level precision
+- known-variance methods add `diag(var)` to the marginal covariance and estimate
+  additional residual heterogeneity; they currently assume diagonal sampling
+  covariance and voxelwise variance components
 - complete observations within a sample; a non-finite subject-by-repeat value
   makes that sample's model outputs unavailable
 - plug-in GLS inference with residual degrees of freedom, without
@@ -565,9 +732,10 @@ The repeated-measures LMM reducers are deliberately narrower than `lmer()`:
 That restriction is the point: it lets `fmrigds` reuse one design across many
 responses and produce a whole-brain or whole-ROI result with one call to
 `reduce()`. It also defines the boundary of the scientific claim: the reducer
-models dependence among repeated effect estimates from the same subject, but it
-does not model uncertainty attached to each effect estimate or dependence
-between neighboring samples.
+models dependence among repeated effect estimates from the same subject. The
+known-variance variants additionally model reported marginal sampling
+uncertainty, but none of these reducers models dependence between neighboring
+samples or sampling-error covariance between contrasts.
 
 ## Where do you go next?
 
@@ -576,3 +744,5 @@ between neighboring samples.
   separate from the long table.
 - See `inst/examples/fmrigds_lmm_benchmark.R` for a benchmark harness that
   compares pooled and voxelwise theta modes.
+- See `inst/examples/fmrigds_lmm_knownvar_benchmark.R` for a benchmark of the
+  variance-aware random-slope reducer.

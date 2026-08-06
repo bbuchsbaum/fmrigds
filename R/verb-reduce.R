@@ -4,14 +4,15 @@
 #' @param method Reduction method. Built-ins include `"fixed"`, `"random"`,
 #'   `"stouffer"`, and `"fisher"`. Registry-backed reducers include
 #'   meta-analytic regression reducers such as `"meta:fe_reg"` and the
-#'   restricted repeated-measures Gaussian LMM reducers `"lmm:ri"` and
-#'   `"lmm:ri_slope1"`, plus permutation reducers `"perm:onesample"` and
-#'   `"perm:twosample"`.
+#'   restricted repeated-measures Gaussian LMM reducers `"lmm:ri"`,
+#'   `"lmm:ri_slope1"`, `"lmm:ri_knownvar"`, and
+#'   `"lmm:ri_slope1_knownvar"`, plus permutation reducers
+#'   `"perm:onesample"` and `"perm:twosample"`.
 #' @param weights Weighting scheme (`"1/var"`, `"n_eff"`, `"equal"`, `"custom"`)
 #' @param by Grouping variable (e.g., `"contrast"`)
 #' @param formula Optional model formula. For meta-regression reducers the design
-#'   is built from subject-level `col_data`. For `"lmm:ri"` and
-#'   `"lmm:ri_slope1"`, the formula specifies fixed effects at the
+#'   is built from subject-level `col_data`. For repeated-measures LMM reducers,
+#'   the formula specifies fixed effects at the
 #'   subject-by-repeat level and must not contain `lmer`-style random-effects
 #'   syntax.
 #' @param data Optional subject-keyed data frame to attach as `col_data` before
@@ -48,9 +49,12 @@
 #' Restricted repeated-measures LMM contract:
 #' - `"lmm:ri"` fits a Gaussian random-intercept model.
 #' - `"lmm:ri_slope1"` fits a Gaussian random intercept plus one within-subject slope.
+#' - The corresponding `*_knownvar` methods add the known diagonal sampling
+#'   variance from `var` plus an estimated residual heterogeneity component.
 #' - Repeated-measure metadata must live on the contrast axis via [with_contrast_data()]
 #'   or tabular ingestion with `gds(..., contrast_data_cols = ...)`.
-#' - `options$theta_mode` can be `"pooled"` or `"voxelwise"`.
+#' - Unweighted methods allow `theta_mode = "pooled"` or `"voxelwise"`;
+#'   known-variance methods currently require `"voxelwise"`.
 #' - The supported family is intentionally narrow: one grouping factor only,
 #'   Gaussian responses only, and no general random-effects formula grammar.
 #'

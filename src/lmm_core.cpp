@@ -39,6 +39,17 @@ struct LmmLowRankStats {
   int df_res;
 };
 
+struct LmmKnownVarStats {
+  bool ok;
+  double logdetV;
+  double logdetA;
+  arma::mat Ainv;
+  arma::vec XtVinvY;
+  double yVinvY;
+  int n_obs;
+  int df_res;
+};
+
 LmmRiStats lmm_ri_stats(const arma::mat& Y, const arma::mat& X, const int n_repeat, const double lambda) {
   const uword n_obs = Y.n_rows;
   const uword B = Y.n_cols;
@@ -149,6 +160,88 @@ LmmLowRankStats lmm_lowrank_stats(const arma::mat& Y, const arma::mat& X, const 
 
   const double logdetV = static_cast<double>(n_subject) * logdetK;
   return {true, logdetV, logdetA, Ainv, XtVinvY, yVinvY, static_cast<int>(n_obs), static_cast<int>(n_obs - p)};
+}
+
+LmmKnownVarStats lmm_knownvar_stats(const arma::vec& y,
+                                    const arma::vec& sampling_var,
+                                    const arma::mat& X,
+                                    const arma::mat& U_block,
+                                    const double residual_var) {
+  const uword n_obs = y.n_elem;
+  const uword p = X.n_cols;
+  const uword n_repeat = U_block.n_rows;
+  const uword q = U_block.n_cols;
+
+  if (sampling_var.n_elem != n_obs || X.n_rows != n_obs || n_repeat == 0 ||
+      (n_obs % n_repeat) != 0 || !sampling_var.is_finite() ||
+      arma::any(sampling_var <= 0.0) || !finite_lmm(residual_var) ||
+      residual_var < 0.0) {
+    return {false, NA_REAL, NA_REAL, arma::mat(), arma::vec(), NA_REAL,
+            static_cast<int>(n_obs), NA_INTEGER};
+  }
+
+  const uword n_subject = n_obs / n_repeat;
+  arma::mat XtVinvX(p, p, arma::fill::zeros);
+  arma::vec XtVinvY(p, arma::fill::zeros);
+  double yVinvY = 0.0;
+  double logdetV = 0.0;
+
+  for (uword s = 0; s < n_subject; ++s) {
+    const uword start = s * n_repeat;
+    const uword end = start + n_repeat - 1;
+    arma::mat Xb = X.rows(start, end);
+    arma::vec yb = y.subvec(start, end);
+    arma::vec db = sampling_var.subvec(start, end) + residual_var;
+    if (!db.is_finite() || arma::any(db <= 0.0)) {
+      return {false, NA_REAL, NA_REAL, arma::mat(), arma::vec(), NA_REAL,
+              static_cast<int>(n_obs), NA_INTEGER};
+    }
+
+    arma::vec dinv = 1.0 / db;
+    arma::mat VinvXb = Xb.each_col() % dinv;
+    arma::vec Vinvyb = yb % dinv;
+    logdetV += arma::accu(arma::log(db));
+
+    if (q > 0) {
+      arma::mat DinvU = U_block.each_col() % dinv;
+      arma::mat K = arma::eye(q, q) + U_block.t() * DinvU;
+      arma::mat K_sym = symmetrize_pd_input(K);
+      arma::mat Kinv;
+      if (!arma::inv_sympd(Kinv, K_sym)) {
+        return {false, NA_REAL, NA_REAL, arma::mat(), arma::vec(), NA_REAL,
+                static_cast<int>(n_obs), NA_INTEGER};
+      }
+      double logdetK = NA_REAL, signK = NA_REAL;
+      arma::log_det(logdetK, signK, K_sym);
+      if (!finite_lmm(logdetK) || signK <= 0.0) {
+        return {false, NA_REAL, NA_REAL, arma::mat(), arma::vec(), NA_REAL,
+                static_cast<int>(n_obs), NA_INTEGER};
+      }
+      VinvXb -= DinvU * (Kinv * (U_block.t() * VinvXb));
+      Vinvyb -= DinvU * (Kinv * (U_block.t() * Vinvyb));
+      logdetV += logdetK;
+    }
+
+    XtVinvX += Xb.t() * VinvXb;
+    XtVinvY += Xb.t() * Vinvyb;
+    yVinvY += arma::dot(yb, Vinvyb);
+  }
+
+  arma::mat XtVinvX_sym = symmetrize_pd_input(XtVinvX);
+  arma::mat Ainv;
+  if (!arma::inv_sympd(Ainv, XtVinvX_sym)) {
+    return {false, NA_REAL, NA_REAL, arma::mat(), arma::vec(), NA_REAL,
+            static_cast<int>(n_obs), NA_INTEGER};
+  }
+  double logdetA = NA_REAL, signA = NA_REAL;
+  arma::log_det(logdetA, signA, XtVinvX_sym);
+  if (!finite_lmm(logdetA) || signA <= 0.0 || !finite_lmm(logdetV)) {
+    return {false, NA_REAL, NA_REAL, arma::mat(), arma::vec(), NA_REAL,
+            static_cast<int>(n_obs), NA_INTEGER};
+  }
+
+  return {true, logdetV, logdetA, Ainv, XtVinvY, yVinvY,
+          static_cast<int>(n_obs), static_cast<int>(n_obs - p)};
 }
 
 } // namespace
@@ -308,5 +401,57 @@ Rcpp::List lmm_lowrank_fit_cpp(const arma::mat& Y,
     _["df_res"] = df_res,
     _["logLik"] = logLik,
     _["converged"] = converged
+  );
+}
+
+// [[Rcpp::export]]
+double lmm_knownvar_objective_cpp(const arma::vec& y,
+                                  const arma::vec& sampling_var,
+                                  const arma::mat& X,
+                                  const arma::mat& U_block,
+                                  const double residual_var,
+                                  const std::string fit = "REML") {
+  LmmKnownVarStats stats = lmm_knownvar_stats(
+    y, sampling_var, X, U_block, residual_var
+  );
+  if (!stats.ok) return R_PosInf;
+
+  arma::vec beta = stats.Ainv * stats.XtVinvY;
+  const double rss = std::max(
+    stats.yVinvY - arma::dot(beta, stats.XtVinvY), 0.0
+  );
+  if (fit == "ML") return stats.logdetV + rss;
+  return stats.logdetV + stats.logdetA + rss;
+}
+
+// [[Rcpp::export]]
+Rcpp::List lmm_knownvar_fit_cpp(const arma::vec& y,
+                                const arma::vec& sampling_var,
+                                const arma::mat& X,
+                                const arma::mat& U_block,
+                                const double residual_var,
+                                const std::string fit = "REML") {
+  LmmKnownVarStats stats = lmm_knownvar_stats(
+    y, sampling_var, X, U_block, residual_var
+  );
+  if (!stats.ok) {
+    stop("lmm_knownvar_fit_cpp failed: covariance or design matrix is invalid");
+  }
+
+  arma::vec coef = stats.Ainv * stats.XtVinvY;
+  const double rss = std::max(
+    stats.yVinvY - arma::dot(coef, stats.XtVinvY), 0.0
+  );
+  arma::vec se = arma::sqrt(arma::clamp(stats.Ainv.diag(), 0.0, arma::datum::inf));
+  const double log_2pi = std::log(2.0 * arma::datum::pi);
+  const double ll = (fit == "ML")
+    ? -0.5 * (static_cast<double>(stats.n_obs) * log_2pi + stats.logdetV + rss)
+    : -0.5 * (static_cast<double>(stats.df_res) * log_2pi + stats.logdetV + stats.logdetA + rss);
+
+  return Rcpp::List::create(
+    _["coef"] = coef,
+    _["se_coef"] = se,
+    _["df_res"] = stats.df_res,
+    _["logLik"] = ll
   );
 }

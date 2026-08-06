@@ -20,9 +20,10 @@ reduce(
 \item{method}{Reduction method. Built-ins include \code{"fixed"}, \code{"random"},
 \code{"stouffer"}, and \code{"fisher"}. Registry-backed reducers include
 meta-analytic regression reducers such as \code{"meta:fe_reg"} and the
-restricted repeated-measures Gaussian LMM reducers \code{"lmm:ri"} and
-\code{"lmm:ri_slope1"}, plus permutation reducers \code{"perm:onesample"} and
-\code{"perm:twosample"}.}
+restricted repeated-measures Gaussian LMM reducers \code{"lmm:ri"},
+\code{"lmm:ri_slope1"}, \code{"lmm:ri_knownvar"}, and
+\code{"lmm:ri_slope1_knownvar"}, plus permutation reducers
+\code{"perm:onesample"} and \code{"perm:twosample"}.}
 
 \item{weights}{Weighting scheme (\code{"1/var"}, \code{"n_eff"}, \code{"equal"}, \code{"custom"})}
 
@@ -41,9 +42,12 @@ Restricted repeated-measures LMM contract:
 \itemize{
 \item \code{"lmm:ri"} fits a Gaussian random-intercept model.
 \item \code{"lmm:ri_slope1"} fits a Gaussian random intercept plus one within-subject slope.
+\item The corresponding \verb{*_knownvar} methods add the known diagonal sampling
+variance from \code{var} plus an estimated residual heterogeneity component.
 \item Repeated-measure metadata must live on the contrast axis via \code{\link[=with_contrast_data]{with_contrast_data()}}
 or tabular ingestion with \code{gds(..., contrast_data_cols = ...)}.
-\item \code{options$theta_mode} can be \code{"pooled"} or \code{"voxelwise"}.
+\item Unweighted methods allow \code{theta_mode = "pooled"} or \code{"voxelwise"};
+known-variance methods currently require \code{"voxelwise"}.
 \item The supported family is intentionally narrow: one grouping factor only,
 Gaussian responses only, and no general random-effects formula grammar.
 }
@@ -62,8 +66,8 @@ max-|t| family-wise \code{p_fwer}.
 }}
 
 \item{formula}{Optional model formula. For meta-regression reducers the design
-is built from subject-level \code{col_data}. For \code{"lmm:ri"} and
-\code{"lmm:ri_slope1"}, the formula specifies fixed effects at the
+is built from subject-level \code{col_data}. For repeated-measures LMM reducers,
+the formula specifies fixed effects at the
 subject-by-repeat level and must not contain \code{lmer}-style random-effects
 syntax.}
 

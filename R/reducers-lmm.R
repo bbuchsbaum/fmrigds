@@ -46,9 +46,13 @@
   rep_df$contrast <- contrasts
 
   slope_name <- opts$slope %||% NULL
-  if (identical(reducer$name, "lmm:ri_slope1")) {
+  slope_reducer <- reducer$name %in% c("lmm:ri_slope1", "lmm:ri_slope1_knownvar")
+  if (slope_reducer) {
     if (is.null(slope_name) || !nzchar(slope_name)) {
-      stop("`options$slope` is required for method = 'lmm:ri_slope1'", call. = FALSE)
+      stop(
+        "`options$slope` is required for method = '", reducer$name, "'",
+        call. = FALSE
+      )
     }
     if (!slope_name %in% names(rep_df)) {
       stop("Slope variable '", slope_name, "' is not present in contrast_data", call. = FALSE)
@@ -95,7 +99,7 @@
     observation_data = obs_data,
     X = unname(X),
     X_colnames = colnames(X),
-    W_block = if (identical(reducer$name, "lmm:ri_slope1")) {
+    W_block = if (slope_reducer) {
       unname(cbind(Intercept = 1, slope = rep_df[[slope_name]]))
     } else {
       NULL
@@ -683,5 +687,50 @@ register_lmm_reducers <- function() {
       covariance = c("diag", "full")
     ),
     input_shape = "joint_contrast"
+  )
+  register_reducer(
+    name = "lmm:ri_knownvar",
+    fun = .fit_lmm_ri_knownvar_reducer,
+    requires = c("beta", "var"),
+    provides = c(
+      "coef", "se_coef", "t_coef", "p_coef", "sigma2",
+      "vc_intercept", "vc_resid", "sampling_var_mean",
+      "df_res", "logLik", "converged"
+    ),
+    options_schema = list(fit = c("REML", "ML"), theta_mode = "voxelwise"),
+    input_shape = "joint_contrast",
+    model_contract = list(
+      uses_X = TRUE,
+      estimands = "linear",
+      weight_mode = "model_specific",
+      missingness = "complete_case",
+      synthetic_variance = "forbid",
+      deletion = "unsupported"
+    )
+  )
+  register_reducer(
+    name = "lmm:ri_slope1_knownvar",
+    fun = .fit_lmm_ri_slope1_knownvar_reducer,
+    requires = c("beta", "var"),
+    provides = c(
+      "coef", "se_coef", "t_coef", "p_coef", "sigma2",
+      "vc_intercept", "vc_slope", "vc_cov_intercept_slope", "vc_resid",
+      "corr_intercept_slope", "sampling_var_mean",
+      "df_res", "logLik", "converged"
+    ),
+    options_schema = list(
+      fit = c("REML", "ML"),
+      theta_mode = "voxelwise",
+      covariance = c("diag", "full")
+    ),
+    input_shape = "joint_contrast",
+    model_contract = list(
+      uses_X = TRUE,
+      estimands = "linear",
+      weight_mode = "model_specific",
+      missingness = "complete_case",
+      synthetic_variance = "forbid",
+      deletion = "unsupported"
+    )
   )
 }

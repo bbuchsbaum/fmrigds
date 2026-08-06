@@ -55,16 +55,18 @@ cat(sprintf(
 
 ## Why fmrigds?
 
-Group-level fMRI analysis follows a predictable pattern: you load first-level
-results (effect estimates, variances) for each subject, compute any missing
-statistics, run a group model, and correct for multiple comparisons. The
-statistical operations are well-understood, but the code ends up different
-every time because the input format varies---CSV, NIfTI, HDF5---and the
-bookkeeping around subjects, contrasts, and spatial locations is tedious.
+Group-level fMRI analysis follows a predictable pattern: you load one or more
+subject-level summaries---effect estimates, standardized effects, t-statistics,
+z-scores, or p-values---run a group model or combine evidence, and correct for
+multiple comparisons. The statistical operations are well-understood, but the
+code ends up different every time because the available summaries and input
+format vary---CSV, NIfTI, HDF5---and the bookkeeping around subjects,
+contrasts, and spatial locations is tedious.
 
 fmrigds gives you a single pipeline interface that works regardless of input
-format. You describe *what* you want (derive t-statistics, run a fixed-effects
-model, apply FDR correction) and fmrigds handles the rest.
+format. You describe *what* you want (fit an unweighted group model, pool
+effects with known uncertainty, combine evidence, apply FDR correction) and
+fmrigds handles the rest.
 
 ## What is a GDS?
 
@@ -86,6 +88,24 @@ keeps all of these arrays aligned along the same axes.
 A GDS also carries a **space** descriptor that records what the sample axis
 represents (voxel coordinates, parcel labels, etc.), so spatial information
 is never lost.
+
+### Which path fits the summaries you have?
+
+You do not need a variance or standard error to start. Choose the reducer by
+what each subject contributes:
+
+| Subject-level input | Ingest as | Group path | What the result means |
+|---|---|---|---|
+| Effect estimate plus `var` or `se` | `beta` plus `var`/`se` | `"fixed"`, `"random"`, or meta-regression | A pooled effect with first-level precision |
+| Beta, standardized effect, or another commensurate signed metric without uncertainty | `beta` | `one_sample()`, `group_ols()`, or `"perm:onesample"` | An unweighted model of the subject-level values |
+| z-score | `z` | `"stouffer"` | Combined signed evidence; no pooled effect size |
+| t-statistic plus degrees of freedom | `t` plus `df`, then `derive("z")` | `"stouffer"` | Combined signed evidence after calibrating each t-statistic |
+| p-value | `p` | `"fisher"` or `"combine:lancaster"` | Combined unsigned evidence; no effect direction |
+
+These paths answer different questions. In particular, a z-score or p-value
+does not contain enough information to reconstruct an effect estimate and its
+sampling variance. Do not invent unit variance and feed it to a
+variance-weighted reducer.
 
 ## Plan first, compute later
 
@@ -312,11 +332,86 @@ Here are the available derivations:
 | `se`   | var             | `sqrt(var)` (standard error)     |
 | `var`  | se              | `se^2` (variance)                |
 
+Derivation only follows mathematically identified relationships. It cannot
+recover a missing effect estimate or sampling variance from a z-score,
+t-statistic, or p-value alone.
+
 ## Group-level analysis with reduce()
 
 The `reduce()` verb is where the group-level analysis happens. It combines
 data across subjects into a single summary, much like a meta-analysis
 combines results across studies.
+
+### Effects without first-level variance
+
+If every subject contributes the same kind of signed, commensurate quantity
+but no standard error---a beta, standardized effect, AUC contrast, or another
+scalar map---fit an unweighted model. Map the value column to the GDS `beta`
+assay, which is the response slot used by the group-model reducers:
+
+```{r reduce-effect-only}
+effect_only <- data.frame(
+  sample = rep(c("ROI_1", "ROI_2"), 3),
+  subject = rep(c("sub-01", "sub-02", "sub-03"), each = 2),
+  contrast = "faces",
+  effect_size = c(0.5, 0.8, 1.0, 1.2, 0.7, 0.9)
+)
+
+g_effect <- gds(effect_only, effect_cols = list(beta = "effect_size")) |>
+  one_sample() |>
+  compute()
+
+assay(g_effect, "coef:(Intercept)")
+```
+
+Here, uncertainty is estimated from between-subject variation. Use
+`group_ols()` instead when you need subject covariates, or
+`reduce(method = "perm:onesample")` for the sign-flip permutation path. If
+your effect size has a valid sampling standard error, ingest it as `se`, derive
+`var`, and use a meta-analytic reducer instead, for example
+`gds(data, effect_cols = list(beta = "effect_size", se = "se")) |>
+derive("var") |> reduce("random")`.
+
+### z, t, or p summary statistics
+
+When you have test statistics rather than effects, combine evidence directly.
+For z-scores, name the input assay explicitly and use Stouffer's method:
+
+```{r reduce-z-only}
+z_only <- transform(
+  effect_only[c("sample", "subject", "contrast")],
+  z = c(1.5, 2.0, 2.1, 2.4, 1.8, 2.2)
+)
+
+g_z <- gds(z_only, effect_cols = list(z = "z")) |>
+  reduce(method = "stouffer", weights = "equal") |>
+  compute()
+
+assay(g_z, "z")
+assay(g_z, "p")
+```
+
+A t-statistic needs its degrees of freedom before it can be calibrated as a
+z-score. Once both columns are present, the rest of the path is the same:
+
+```{r reduce-t-only}
+t_only <- transform(
+  z_only[c("sample", "subject", "contrast")],
+  t = z_only$z,
+  df = 30
+)
+
+g_t <- gds(t_only, effect_cols = list(t = "t", df = "df")) |>
+  derive("z") |>
+  reduce(method = "stouffer", weights = "equal") |>
+  compute()
+
+assay(g_t, "p")
+```
+
+For p-values, use `effect_cols = list(p = "p")` with `method = "fisher"`
+or `method = "combine:lancaster"`. Fisher's method does not retain effect
+direction; prefer Stouffer's method when signed evidence matters.
 
 ### Fixed-effects
 
@@ -445,13 +540,12 @@ rm_df$var <- 0.04
 
 g_rm <- gds(rm_df, contrast_data_cols = "time") |>
   reduce(
-    method = "lmm:ri_slope1",
+    method = "lmm:ri_slope1_knownvar",
     formula = ~ time,
     options = list(
       slope = "time",
       covariance = "diag",
-      fit = "REML",
-      theta_mode = "voxelwise"
+      fit = "REML"
     )
   ) |>
   compute()
@@ -462,18 +556,22 @@ names(assays(g_rm))
 The fixed-effect outputs follow the same `coef:*`, `se_coef:*`, `t_coef:*`,
 and `p_coef:*` naming pattern as the regression reducers. Additional assays
 report variance components such as `vc_intercept`, `vc_slope`,
-`lambda_intercept`, and `lambda_slope`.
+`vc_resid`, and `sampling_var_mean`.
 
-Two restricted mixed-model reducers are available:
+Four restricted mixed-model reducers are available:
 
 - `method = "lmm:ri"` for a random intercept only
 - `method = "lmm:ri_slope1"` for a random intercept plus one within-subject slope
+- `method = "lmm:ri_knownvar"` and `"lmm:ri_slope1_knownvar"` for the same
+  random-effects structures with `var` included as known diagonal sampling
+  variance
 
-Set `options$theta_mode = "pooled"` when you want one shared variance structure
-across all samples, or `options$theta_mode = "voxelwise"` when you want each
-sample to estimate its own variance parameters. This is intentionally narrower
-than `lmer()`: one grouping factor only, Gaussian outcomes only, and no general
-random-effects formula grammar.
+The unweighted methods support pooled or voxelwise variance parameters. The
+known-variance methods are currently voxelwise only and fit
+`diag(var) + vc_resid * I + Z G Z'`. If only effect estimates are available,
+use an unweighted method; do not manufacture unit variances. See
+`vignette("repeated-measures-lmm")` for implications and variance-quality
+checks. This family remains intentionally narrower than `lmer()`.
 
 ## Post-hoc corrections
 
@@ -529,11 +627,15 @@ Supported formats:
 |-------------|-----------|-----------------------------------|
 | `"csv"`     | .csv      | Sharing, inspection in Excel      |
 | `"parquet"` | .parquet  | Fast columnar storage             |
-| `"h5"`      | .h5       | Archiving with full metadata      |
+| `"h5"`      | .h5       | Native fmrigds archive (`/gds`)   |
 | `"nifti"`   | .nii.gz   | Voxelwise maps for neuroimaging tools |
 
-For archiving with full provenance, use HDF5. These files round-trip
-perfectly---reading them back with `gds()` recovers all metadata:
+HDF5 is a container, not a synonym for the legacy fmristore schema.
+`write_out(..., format = "h5")` writes the current native fmrigds `/gds`
+layout. The writer stores assays, axes, spatial structure, axis tables,
+registered map families, metadata, and provenance records. The current reader
+restores the supported GDS data model; it does not promise that every arbitrary
+custom metadata field will be reconstructed by every fmrigds version.
 
 ```{r write-h5, eval = FALSE}
 gds(tmp) |>
@@ -541,9 +643,16 @@ gds(tmp) |>
   write_out("group_results.h5", format = "h5") |>
   compute()
 
-# Later: read back with full fidelity
+# Later: read the native /gds archive (not a legacy fmristore layout)
 plan <- gds("group_results.h5")
+restored <- compute(plan)
 ```
+
+If exact preservation of an application-specific metadata field matters,
+verify that field after reading with the fmrigds version used by your workflow.
+The legacy label in `vignette("fmristore-ingestion")` applies only to older
+fmristore layouts such as LabeledVolumeSet, H5ParcellatedScan, and
+LatentNeuroVec.
 
 ## Working with NIfTI files
 
@@ -579,7 +688,7 @@ filenames to assay types.
 
 ## The pipeline at a glance
 
-Here is the typical fmrigds pipeline from start to finish:
+Here is the beta-plus-variance branch from start to finish:
 
 ```
   gds("data.csv")
@@ -587,14 +696,17 @@ Here is the typical fmrigds pipeline from start to finish:
     |> mask()
     |> reduce(method = "fixed")
     |> posthoc("fdr:bh")
-    |> write_out("results.h5")
+    |> write_out("results.csv", format = "csv")
     |> compute()
 ```
 
-Each verb adds one node to the plan. `compute()` executes them all in
-sequence. With `r 2` ROIs this runs instantly; in a typical whole-brain
-analysis with 100,000+ voxels, the same pipeline scales because fmrigds
-reads data lazily and streams through each step.
+For effect-only inputs, replace `derive("t") |> reduce(method = "fixed")`
+with `one_sample()`. For z-scores, replace it with
+`reduce(method = "stouffer", weights = "equal")`. Each verb adds one node to
+the plan, and `compute()` executes them in sequence. With `r 2` ROIs this runs
+instantly; in a typical whole-brain analysis with 100,000+ voxels, the same
+pipeline scales because fmrigds reads data lazily and streams through each
+step.
 
 ## Next steps
 
@@ -605,8 +717,8 @@ Now that you understand the core pipeline, you might want to explore:
   representations
 - `vignette("as-plan-and-spatial-fdr")` --- chaining operations on realised
   GDS objects and spatially-aware FDR correction
-- `vignette("fmristore-ingestion")` --- reading fmristore HDF5 files
-  (labeled volumes, parcellated data, latent bases)
+- `vignette("fmristore-ingestion")` --- reading native fmrigds HDF5 archives
+  and older fmristore layouts (labeled volumes, parcellated data, latent bases)
 - `?reduce` for the full list of reduction methods, including OLS, Stouffer,
   Fisher, and Lancaster
 
