@@ -1,0 +1,15 @@
+pandoc: 3.8.3
+pkgdown: 2.2.1
+pkgdown_sha: ~
+articles:
+  as-plan-and-spatial-fdr: as-plan-and-spatial-fdr.html
+  cli-workflows: cli-workflows.html
+  fmrigds: fmrigds.html
+  fmristore-ingestion: fmristore-ingestion.html
+  group-examination: group-examination.html
+  repeated-measures-lmm: repeated-measures-lmm.html
+  spatial-operations: spatial-operations.html
+last_built: 2026-08-06T02:03Z
+urls:
+  reference: https://bbuchsbaum.github.io/fmrigds/reference
+  article: https://bbuchsbaum.github.io/fmrigds/articles
