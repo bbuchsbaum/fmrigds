@@ -5,6 +5,7 @@
 ^\.github$
 ^\.beads$
 ^\.omc$
+^\.mote$
 ^\.covr_result\.rds$
 ^\.rcmdcheck_result\.rds$
 ^.*\.Rcheck$

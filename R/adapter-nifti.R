@@ -39,7 +39,16 @@ register_nifti_adapter <- function() {
     open = .nifti_open,
     probe = .nifti_probe,
     read = .nifti_read,
-    close = .nifti_close
+    close = .nifti_close,
+    capabilities = list(
+      sample_blocks = TRUE,
+      subject_blocks = FALSE,
+      contrast_blocks = FALSE,
+      persistent_handle = TRUE,
+      preferred_axis = "sample",
+      cheap_revisit = FALSE,
+      requires_staging = TRUE
+    )
   )
 }
 

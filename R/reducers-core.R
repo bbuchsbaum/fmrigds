@@ -12,6 +12,18 @@
   }
 }
 
+.add_meta_reg_z_p <- function(result, alternative = "two.sided") {
+  if (is.null(result$coef) || is.null(result$se_coef)) return(result)
+  z <- result$coef / result$se_coef
+  z[!is.finite(result$se_coef) | result$se_coef <= 0] <- NA_real_
+  p <- .p_from_z(as.numeric(z), alternative = alternative)
+  dim(p) <- dim(z)
+  dimnames(p) <- dimnames(z)
+  result$z_coef <- z
+  result$p_coef <- p
+  result
+}
+
 .meta_effective_n <- function(beta, var) {
   colSums(is.finite(beta) & is.finite(var) & var > 0)
 }
@@ -114,6 +126,103 @@ core_meta_re_dl_kernel <- function(beta, var, X = NULL, df = NULL, opts = list()
   } # nocov end
   out$n_eff <- as.numeric(n_eff)
   out
+}
+
+.validate_meta_reg_inputs <- function(beta, var, X) {
+  if (!is.matrix(beta) || !is.matrix(var) || !is.matrix(X)) {
+    stop("`beta`, `var`, and `X` must be matrices.", call. = FALSE)
+  }
+  if (!identical(dim(beta), dim(var))) {
+    stop("`beta` and `var` must have identical dimensions.", call. = FALSE)
+  }
+  if (nrow(X) != nrow(beta)) {
+    stop("`X` must have one row per subject in `beta`.", call. = FALSE)
+  }
+  if (ncol(X) < 1L) {
+    stop("`X` must contain at least one design column.", call. = FALSE)
+  }
+  invisible(NULL)
+}
+
+.meta_re_reg_dl_r <- function(beta,
+                              var,
+                              X,
+                              min_subj = 2L,
+                              eps = 1e-12) {
+  .validate_meta_reg_inputs(beta, var, X)
+
+  n_sample <- ncol(beta)
+  n_coef <- ncol(X)
+  required <- max(as.integer(min_subj), n_coef + 1L)
+  finite_design <- rowSums(!is.finite(X)) == 0L
+
+  coef <- matrix(NA_real_, nrow = n_coef, ncol = n_sample)
+  se <- matrix(NA_real_, nrow = n_coef, ncol = n_sample)
+  tau2 <- rep(NA_real_, n_sample)
+  Q <- rep(NA_real_, n_sample)
+  df_res <- rep(NA_real_, n_sample)
+
+  for (b in seq_len(n_sample)) {
+    y <- beta[, b]
+    v <- var[, b]
+    ok <- is.finite(y) & is.finite(v) & v > 0 & finite_design
+    k <- sum(ok)
+    if (k < required) next
+
+    Xok <- X[ok, , drop = FALSE]
+    yok <- y[ok]
+    vok <- pmax(v[ok], eps)
+    wok <- 1 / vok
+
+    if (qr(Xok)$rank < n_coef) next
+
+    G <- crossprod(Xok * sqrt(wok))
+    A <- tryCatch(chol2inv(chol(G)), error = function(e) NULL)
+    if (is.null(A)) next
+
+    beta_fe <- A %*% crossprod(Xok, wok * yok)
+    residual <- yok - drop(Xok %*% beta_fe)
+    Qb <- sum(wok * residual^2)
+    dfb <- k - n_coef
+
+    # P = W - W X (X' W X)^-1 X' W.  The second W matters:
+    # tr(P) = sum(w_i) - sum(w_i^2 x_i' A x_i).
+    x_A_x <- rowSums((Xok %*% A) * Xok)
+    trace_P <- sum(wok) - sum(wok^2 * x_A_x)
+    if (!is.finite(trace_P) || trace_P <= 0) next
+
+    t2 <- max(0, (Qb - dfb) / trace_P)
+    wstar <- 1 / (vok + t2)
+    Gstar <- crossprod(Xok * sqrt(wstar))
+    Astar <- tryCatch(chol2inv(chol(Gstar)), error = function(e) NULL)
+    if (is.null(Astar)) next
+
+    coef[, b] <- drop(Astar %*% crossprod(Xok, wstar * yok))
+    se[, b] <- sqrt(pmax(diag(Astar), 0))
+    tau2[b] <- t2
+    Q[b] <- Qb
+    df_res[b] <- dfb
+  }
+
+  list(coef = coef, se_coef = se, tau2 = tau2, Q = Q, df_res = df_res)
+}
+
+core_meta_re_reg_dl_kernel <- function(beta,
+                                       var,
+                                       X,
+                                       df = NULL,
+                                       opts = list()) {
+  if (is.null(X)) {
+    stop("meta:re_reg requires X (subjects x p) in options$X", call. = FALSE)
+  }
+  .validate_meta_reg_inputs(beta, var, X)
+  min_subj <- opts$min_subjects %||% 2L
+  eps <- opts$eps %||% 1e-12
+  if (exists("meta_re_reg_dl_cpp", mode = "function")) { # nocov start
+    meta_re_reg_dl_cpp(beta, var, X, min_subj = min_subj, eps = eps)
+  } else {
+    .meta_re_reg_dl_r(beta, var, X, min_subj = min_subj, eps = eps)
+  } # nocov end
 }
 
 .stouffer_fallback <- function(z, weights = NULL, min_subj = 1L) {
@@ -328,14 +437,40 @@ register_core_reducers <- function() {
     name = "meta:fe",
     fun = function(beta, var, X, z, p, df, df1, df2, opts) core_meta_fe_kernel(beta, var, X, df, opts),
     requires = c("beta", "var"),
-    provides = c("beta_g", "var_g", "se_g", "z_g", "p_g", "Q", "I2", "n_eff")
+    provides = c("beta_g", "var_g", "se_g", "z_g", "p_g", "Q", "I2", "n_eff"),
+    model_contract = list(
+      uses_X = FALSE,
+      estimands = "intercept",
+      weight_mode = "inverse_variance",
+      missingness = "samplewise",
+      synthetic_variance = "forbid",
+      deletion = "closed_form"
+    ),
+    diagnostics = list(
+      fun = .diagnose_meta_fe_block,
+      capabilities = c("prediction", "surprise", "coefficient_deletion", "statistic_deletion"),
+      modes = "exact"
+    )
   )
   register_reducer(
     name = "meta:re",
     fun = function(beta, var, X, z, p, df, df1, df2, opts) core_meta_re_dl_kernel(beta, var, X, df, opts),
     requires = c("beta", "var"),
     provides = c("beta_g", "var_g", "se_g", "z_g", "p_g", "tau2", "Q", "I2", "n_eff"),
-    options_schema = list(tau2 = c("DL"))
+    options_schema = list(tau2 = c("DL")),
+    model_contract = list(
+      uses_X = FALSE,
+      estimands = "intercept",
+      weight_mode = "inverse_variance",
+      missingness = "samplewise",
+      synthetic_variance = "forbid",
+      deletion = "tau2_fixed_full"
+    ),
+    diagnostics = list(
+      fun = .diagnose_meta_re_block,
+      capabilities = c("prediction", "surprise", "coefficient_deletion", "statistic_deletion"),
+      modes = c("tau2_fixed_full", "tau2_refit_exact")
+    )
   )
   register_reducer(
     name = "meta:fe_reg",
@@ -345,13 +480,16 @@ register_core_reducers <- function() {
       S <- nrow(beta); B <- ncol(beta); pcols <- ncol(X)
       coef <- matrix(NA_real_, pcols, B)
       se   <- matrix(NA_real_, pcols, B)
-      Q    <- numeric(B)
-      df_res <- numeric(B)
+      Q    <- rep(NA_real_, B)
+      df_res <- rep(NA_real_, B)
       for (b in seq_len(B)) {
-        w <- 1 / pmax(var[, b], eps); y <- beta[, b]
-        ok <- is.finite(y) & is.finite(w)
+        y <- beta[, b]
+        ok <- is.finite(y) & is.finite(var[, b]) & var[, b] > 0 &
+          rowSums(!is.finite(X)) == 0L
         if (sum(ok) < (pcols + 1)) next
-        Xok <- X[ok, , drop = FALSE]; wok <- w[ok]; yok <- y[ok]
+        Xok <- X[ok, , drop = FALSE]
+        wok <- 1 / pmax(var[ok, b], eps)
+        yok <- y[ok]
         G <- crossprod(Xok * sqrt(wok), Xok * sqrt(wok))
         A <- tryCatch(solve(G), error = function(e) NULL)
         if (is.null(A)) next
@@ -363,69 +501,88 @@ register_core_reducers <- function() {
         coef[, b] <- as.vector(bh)
         se[, b] <- sqrt(pmax(diag(A), 0))
       }
-      list(coef = coef, se_coef = se, Q = Q, df_res = df_res)
+      .add_meta_reg_z_p(
+        list(coef = coef, se_coef = se, Q = Q, df_res = df_res)
+      )
     },
     requires = c("beta", "var", "X"),
-    provides = c("coef", "se_coef", "Q", "df_res")
+    provides = c("coef", "se_coef", "z_coef", "p_coef", "Q", "df_res"),
+    model_contract = list(
+      uses_X = TRUE,
+      estimands = "linear",
+      weight_mode = "inverse_variance",
+      missingness = "samplewise",
+      synthetic_variance = "forbid",
+      deletion = "hat_matrix"
+    ),
+    diagnostics = list(
+      fun = .diagnose_meta_fe_reg_block,
+      capabilities = c("prediction", "surprise", "leverage", "coefficient_deletion", "statistic_deletion"),
+      modes = "exact"
+    )
   )
   register_reducer(
     name = "meta:re_reg",
     fun = function(beta, var, X, z, p, df, df1, df2, opts) {
-      if (is.null(X)) stop("meta:re_reg requires X (subjects x p) in options$X", call. = FALSE)
-      eps <- opts$eps %||% 1e-12
-      S <- nrow(beta); B <- ncol(beta); pcols <- ncol(X)
-      coef <- matrix(NA_real_, pcols, B)
-      se   <- matrix(NA_real_, pcols, B)
-      tau2 <- numeric(B); Q <- numeric(B); df_res <- numeric(B)
-      for (b in seq_len(B)) {
-        w <- 1 / pmax(var[, b], eps); y <- beta[, b]
-        ok <- is.finite(y) & is.finite(w)
-        if (sum(ok) < (pcols + 1)) next
-        Xok <- X[ok, , drop = FALSE]; wok <- w[ok]; yok <- y[ok]
-        # FE step
-        G <- crossprod(Xok * sqrt(wok), Xok * sqrt(wok))
-        A <- tryCatch(solve(G), error = function(e) NULL)
-        if (is.null(A)) next
-        bh_fe <- A %*% crossprod(Xok * wok, yok)
-        r <- yok - as.vector(Xok %*% bh_fe)
-        Qb <- sum(wok * r * r)
-        # DL tau2 (regression): C = sum w - tr(H), df = n - p
-        trH <- sum(wok * rowSums((Xok %*% A) * Xok))
-        C <- sum(wok) - trH
-        dfb <- sum(ok) - pcols
-        t2 <- max((Qb - dfb) / max(C, .Machine$double.eps), 0)
-        # RE step
-        wstar <- 1 / (1 / wok + t2)
-        Gs <- crossprod(Xok * sqrt(wstar), Xok * sqrt(wstar))
-        As <- tryCatch(solve(Gs), error = function(e) NULL)
-        if (is.null(As)) next
-        bh <- As %*% crossprod(Xok * wstar, yok)
-        coef[, b] <- as.vector(bh)
-        se[, b] <- sqrt(pmax(diag(As), 0))
-        tau2[b] <- t2; Q[b] <- Qb; df_res[b] <- dfb
-      }
-      list(coef = coef, se_coef = se, tau2 = tau2, Q = Q, df_res = df_res)
+      .add_meta_reg_z_p(core_meta_re_reg_dl_kernel(beta, var, X, df, opts))
     },
     requires = c("beta", "var", "X"),
-    provides = c("coef", "se_coef", "tau2", "Q", "df_res")
+    provides = c("coef", "se_coef", "z_coef", "p_coef", "tau2", "Q", "df_res"),
+    model_contract = list(
+      uses_X = TRUE,
+      estimands = "linear",
+      weight_mode = "inverse_variance",
+      missingness = "samplewise",
+      synthetic_variance = "forbid",
+      deletion = "tau2_fixed_full"
+    ),
+    diagnostics = list(
+      fun = .diagnose_meta_re_reg_block,
+      capabilities = c("prediction", "surprise", "leverage", "coefficient_deletion", "statistic_deletion"),
+      modes = c("tau2_fixed_full", "tau2_refit_exact")
+    )
   )
   register_reducer(
     name = "combine:stouffer",
     fun = function(beta, var, X, z, p, df, df1, df2, opts) core_stouffer_kernel(beta, var, X, df, opts, z = z),
     requires = c("z"),
-    provides = c("z_g", "p_g")
+    provides = c("z_g", "p_g"),
+    model_contract = list(
+      uses_X = FALSE,
+      estimands = "none",
+      weight_mode = "evidence",
+      missingness = "samplewise",
+      synthetic_variance = "allow_effect_only",
+      deletion = "unsupported"
+    )
   )
   register_reducer(
     name = "combine:fisher",
     fun = function(beta, var, X, z, p, df, df1, df2, opts) core_fisher_kernel(beta, var, X, df, opts, p = p),
     requires = c("p"),
-    provides = c("p_g", "chi2", "df")
+    provides = c("p_g", "chi2", "df"),
+    model_contract = list(
+      uses_X = FALSE,
+      estimands = "none",
+      weight_mode = "evidence",
+      missingness = "samplewise",
+      synthetic_variance = "allow_effect_only",
+      deletion = "unsupported"
+    )
   )
   register_reducer(
     name = "combine:lancaster",
     fun = function(beta, var, X, z, p, df, df1, df2, opts) core_lancaster_kernel(beta, var, X, df, opts, p = p, dfw = opts$dfw),
     requires = c("p"),
-    provides = c("p_g", "chi2", "df")
+    provides = c("p_g", "chi2", "df"),
+    model_contract = list(
+      uses_X = FALSE,
+      estimands = "none",
+      weight_mode = "evidence",
+      missingness = "samplewise",
+      synthetic_variance = "allow_effect_only",
+      deletion = "unsupported"
+    )
   )
 
   register_reducer(
@@ -433,7 +590,15 @@ register_core_reducers <- function() {
     fun = function(beta, var, X, z, p, df, df1, df2, opts) core_perm_onesample_kernel(beta, var, X, df, opts),
     requires = c("beta"),
     provides = c("beta_g", "se_g", "t_g", "df", "p_g", "p_perm", "p_fwer"),
-    options_schema = list(alternative = c("two.sided", "less", "greater"))
+    options_schema = list(alternative = c("two.sided", "less", "greater")),
+    model_contract = list(
+      uses_X = FALSE,
+      estimands = "intercept",
+      weight_mode = "unweighted",
+      missingness = "samplewise",
+      synthetic_variance = "allow_effect_only",
+      deletion = "unsupported"
+    )
   )
 
   register_reducer(
@@ -444,6 +609,14 @@ register_core_reducers <- function() {
     options_schema = list(
       alternative = c("two.sided", "less", "greater"),
       variance = c("welch", "pooled")
+    ),
+    model_contract = list(
+      uses_X = TRUE,
+      estimands = "linear",
+      weight_mode = "unweighted",
+      missingness = "samplewise",
+      synthetic_variance = "allow_effect_only",
+      deletion = "unsupported"
     )
   )
 
@@ -469,7 +642,20 @@ register_core_reducers <- function() {
     },
     requires = c("beta", "X"),
     provides = c("coef", "se_coef", "t_coef", "p_coef", "sigma2", "df_res", "n_obs", "cov_tri"),
-    options_schema = list(return_cov = c("none", "tri"))
+    options_schema = list(return_cov = c("none", "tri")),
+    model_contract = list(
+      uses_X = TRUE,
+      estimands = "linear",
+      weight_mode = "unweighted",
+      missingness = "samplewise",
+      synthetic_variance = "allow_effect_only",
+      deletion = "hat_matrix"
+    ),
+    diagnostics = list(
+      fun = .diagnose_ols_block,
+      capabilities = c("prediction", "surprise", "leverage", "coefficient_deletion", "statistic_deletion"),
+      modes = "exact"
+    )
   )
 }
 

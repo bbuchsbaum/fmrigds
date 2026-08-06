@@ -85,12 +85,9 @@
 #' Plan optimizer applying rewrite rules
 #' @keywords internal
 optimize_plan <- function(plan) {
-  nodes <- plan$nodes
-  if (!length(nodes)) return(plan)
-  nodes <- .combine_subsets(nodes)
-  nodes <- .coalesce_derives(nodes)
-  nodes <- .fuse_masks(nodes)
-  nodes <- .reorder_nodes(nodes)
-  plan$nodes <- nodes
-  plan
+  # Operation order is semantic: positional subsets compose on the realised
+  # axis at that point, and map/alignment/mask nodes can change that axis.
+  # Until an individual rewrite has an executable equivalence proof, preserve
+  # the authored order exactly.
+  .ensure_plan_node_ids(plan)
 }

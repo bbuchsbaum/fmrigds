@@ -20,6 +20,51 @@ test_that("register_reducer() registers custom reducers", {
   expect_true(is.function(reducer$fun))
   expect_equal(reducer$requires, c("beta", "var"))
   expect_equal(reducer$provides, c("beta_g", "var_g"))
+  expect_null(reducer$model_contract)
+  expect_null(reducer$diagnostics)
+})
+
+test_that("register_reducer stores validated model and diagnostic contracts", {
+  fun <- function(beta, var, X, z, p, df, df1, df2, opts) {
+    list(beta_g = colMeans(beta))
+  }
+  register_reducer(
+    "test:contract",
+    fun,
+    requires = "beta",
+    provides = "beta_g",
+    model_contract = list(
+      uses_X = TRUE,
+      estimands = "linear",
+      weight_mode = "unweighted",
+      missingness = "samplewise",
+      synthetic_variance = "allow_effect_only",
+      deletion = "hat_matrix"
+    ),
+    diagnostics = list(
+      fun = NULL,
+      capabilities = c("prediction", "coefficient_deletion"),
+      modes = "exact"
+    )
+  )
+
+  reducer <- get_reducer("test:contract")
+  expect_true(reducer$model_contract$uses_X)
+  expect_identical(reducer$model_contract$weight_mode, "unweighted")
+  expect_identical(
+    reducer$diagnostics$capabilities,
+    c("prediction", "coefficient_deletion")
+  )
+  expect_error(
+    register_reducer(
+      "test:bad-contract",
+      fun,
+      "beta",
+      "beta_g",
+      model_contract = list(weight_mode = "mystery")
+    ),
+    "weight_mode"
+  )
 })
 
 test_that("get_reducer() retrieves registered reducers", {

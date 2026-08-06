@@ -1,5 +1,6 @@
 docs/
 .beads/
+.mote/
 .omc/
 .covr_result.rds
 coverage.html

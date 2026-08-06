@@ -4,7 +4,14 @@
 \alias{register_posthoc}
 \title{Register a post-hoc method}
 \usage{
-register_posthoc(name, fun, requires, provides, overwrite = TRUE)
+register_posthoc(
+  name,
+  fun,
+  requires,
+  provides,
+  overwrite = TRUE,
+  case_deletion = NULL
+)
 }
 \arguments{
 \item{name}{String identifier, e.g., "fdr:bh"}
@@ -16,6 +23,9 @@ register_posthoc(name, fun, requires, provides, overwrite = TRUE)
 \item{provides}{Character vector of output assay names, e.g., c("q")}
 
 \item{overwrite}{Logical; if FALSE and a handler with \code{name} exists, error}
+
+\item{case_deletion}{Optional declaration of whether and how the post-hoc
+conclusion can be recomputed for selected case deletions.}
 }
 \value{
 Invisibly, the registered post-hoc method \code{name}.

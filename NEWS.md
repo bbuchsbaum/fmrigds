@@ -1,5 +1,18 @@
 # fmrigds 0.1.0.9000
 
+## Model-conditioned group examination
+
+- Added `examine_group()` as a terminal branch from subject-level plans. It
+  reports data validity, cross-fitted model surprise, deletion influence on
+  named estimands, and model-adjusted residual geometry without changing the
+  source analysis.
+- Added exact fixed-effect, meta-regression, and voxelwise OLS diagnostics,
+  plus fixed-`tau2` random-effects screening and exact retained-subject refits.
+- Added deterministic block scanning and staging, action-plane and drill-down
+  plots, selected post-hoc sensitivity analyses, and self-contained HTML reports.
+- Corrected the DerSimonian-Laird meta-regression denominator to use
+  `tr(W - W X (X' W X)^-1 X' W)` and aligned R/C++ variance-validity rules.
+
 ## Bug fixes (reported issues #1, #5, #6, #7)
 - `write_nifti_assays()` and `write_out(format = "nifti")` now preserve the
   input spatial affine (spacing, origin, orientation) and write `scl_slope = 1`

@@ -67,7 +67,8 @@ is built from subject-level \code{col_data}. For \code{"lmm:ri"} and
 subject-by-repeat level and must not contain \code{lmer}-style random-effects
 syntax.}
 
-\item{data}{Optional data frame for building \code{X} when \code{x} is not a realised GDS.}
+\item{data}{Optional subject-keyed data frame to attach as \code{col_data} before
+execution-time construction of the model matrix.}
 }
 \value{
 Updated plan
@@ -108,8 +109,13 @@ realised GDS, retrievable with \code{\link[=assays]{assays()}}/\code{\link[=assa
 \code{se_g}, \code{z_g}, \code{p_g}, \code{Q}, \code{I2}, \code{n_eff} (random-effects also adds
 \code{tau2}). \code{n_eff} is the number of finite subject-level inputs used for
 each sample and contrast.
-\item \code{"meta:fe_reg"}/\code{"meta:re_reg"}: per-term \verb{coef:<term>}/\verb{se_coef:<term>}
-plus \code{Q}, \code{df_res} (random-effects also adds \code{tau2}).
+\item \code{"meta:fe_reg"}/\code{"meta:re_reg"}: per-term \verb{coef:<term>},
+\verb{se_coef:<term>}, normal-approximation \verb{z_coef:<term>} and
+\verb{p_coef:<term>}, plus \code{Q}, \code{df_res} (random-effects also adds \code{tau2}).
+\code{"meta:re_reg"}
+uses the DerSimonian--Laird meta-regression denominator
+\eqn{\mathrm{tr}\{W - WX(X^T W X)^{-1}X^T W\}} and excludes rows with
+non-finite effects/design values or non-finite, nonpositive variances.
 \item \code{"stouffer"}/\code{"combine:stouffer"}: \code{z_g}, \code{p_g}.
 \item \code{"fisher"}/\code{"combine:fisher"} and \code{"combine:lancaster"}: \code{chi2}, \code{df},
 \code{p_g}.

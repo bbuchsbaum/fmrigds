@@ -23,3 +23,30 @@ test_that("h5 adapter rejects vector sources with a clear single-file error", {
     fixed = TRUE
   )
 })
+
+test_that("h5 adapter honors all block axes and preserves selected labels", {
+  skip_if_not_installed("hdf5r")
+  tmp <- tempfile(fileext = ".h5")
+  on.exit(unlink(tmp), add = TRUE)
+  beta <- array(seq_len(4 * 3 * 2), c(4, 3, 2))
+  g <- new_gds(
+    assays = list(beta = beta, var = array(1, dim(beta))),
+    space = space_parcels(paste0("roi", 1:4)),
+    subjects = paste0("s", 1:3),
+    contrasts = paste0("c", 1:2)
+  )
+  write_gds_h5(g, tmp)
+
+  adapter <- get_adapter("h5")
+  handle <- adapter$open(tmp)
+  on.exit(adapter$close(handle), add = TRUE)
+  observed <- adapter$read(
+    handle,
+    assays = "beta",
+    block = list(sample = c(2L, 4L), subject = 2L, contrast = 2L)
+  )$beta
+
+  expect_equal(dim(observed), c(2L, 1L, 1L))
+  expect_equal(unname(drop(observed)), beta[c(2L, 4L), 2L, 2L])
+  expect_equal(dimnames(observed), list(c("roi2", "roi4"), "s2", "c2"))
+})

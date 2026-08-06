@@ -1,0 +1,294 @@
+---
+title: "Examine subjects under a group model"
+output:
+  rmarkdown::html_vignette:
+    toc: yes
+    toc_depth: 2
+    css: albers.css
+    includes:
+      in_header: albers-header.html
+params:
+  family: lapis
+  preset: study
+resource_files:
+- albers.css
+- albers.js
+- albers-header.html
+- fonts
+vignette: |
+  %\VignetteIndexEntry{Examine subjects under a group model}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+if (requireNamespace("ragg", quietly = TRUE)) knitr::opts_chunk$set(dev = "ragg_png")
+if (requireNamespace("albersdown", quietly = TRUE)) {
+  if (requireNamespace("systemfonts", quietly = TRUE)) try(albersdown::albers_register_fonts(), silent = TRUE)
+  if (requireNamespace("ggplot2", quietly = TRUE)) try(ggplot2::theme_set(albersdown::theme_albers(family = params$family, preset = params$preset)), silent = TRUE)
+}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  message = FALSE,
+  warning = FALSE,
+  fig.width = 8,
+  fig.height = 5
+)
+library(fmrigds)
+set.seed(20260805)
+```
+
+```{r albers-classes, echo=FALSE, results='asis'}
+cat(sprintf(
+  paste0(
+    '<script>document.addEventListener("DOMContentLoaded",function(){',
+    'document.body.classList.remove("palette-red","palette-lapis","palette-ochre","palette-teal","palette-green","palette-violet","preset-homage","preset-study","preset-structural","preset-adobe","preset-midnight");',
+    'document.body.classList.add("palette-%s","preset-%s");',
+    '});</script>'
+  ),
+  params$family,
+  params$preset
+))
+```
+
+You have fitted a group model, but its average alone cannot tell you whether a
+participant is unexpected for their age, group, or site, or whether that
+participant materially changes the scientific result. These are different
+questions. A noisy estimate can look unusual and carry little weight; a precise,
+otherwise conventional estimate can have substantial influence.
+
+`examine_group()` evaluates those questions against the model already present
+in an fmrigds plan. It returns subject summaries, group diagnostic maps, a
+model-adjusted residual geometry, retained-subject maps, sensitivity results,
+and explicit availability states. It never changes the source analysis.
+
+## What data do you need?
+
+The most informative examination starts from subject effect estimates and
+genuine first-level variances. Subject covariates and first-level quality
+metrics belong in `col_data`. The example below has two task contrasts, a group
+effect, an age term, two acquisition sites, one unusually precise subject, and
+one subject whose first contrast is reversed.
+
+```{r make-example, include=FALSE}
+n_subject <- 16L
+n_sample <- 72L
+subject_id <- sprintf("sub-%03d", seq_len(n_subject))
+group <- factor(rep(c("control", "patient"), each = n_subject / 2))
+site <- factor(rep(c("site-a", "site-b"), length.out = n_subject))
+age <- seq(21, 62, length.out = n_subject)
+mean_fd <- c(runif(n_subject - 1L, 0.08, 0.22), 0.56)
+participants <- data.frame(group, age, site, mean_fd, row.names = subject_id)
+
+feature <- seq(0, 2 * pi, length.out = n_sample)
+patterns <- cbind(sin(feature), cos(feature))
+beta <- array(NA_real_, c(n_sample, n_subject, 2L))
+for (i in seq_len(n_subject)) {
+  group_shift <- if (group[i] == "patient") 0.35 else 0
+  age_shift <- 0.006 * (age[i] - mean(age))
+  site_shift <- if (site[i] == "site-b") 0.12 else 0
+  beta[, i, ] <- patterns + group_shift + age_shift + site_shift +
+    matrix(rnorm(n_sample * 2L, sd = 0.12), n_sample, 2L)
+}
+beta[, 15L, 1L] <- -patterns[, 1L] + rnorm(n_sample, sd = 0.05)
+variance <- array(0.08, dim(beta))
+variance[, 8L, ] <- 0.006
+
+subject_maps <- new_gds(
+  assays = list(beta = beta, var = variance),
+  space = space_sample_labels(sprintf("feature-%03d", seq_len(n_sample))),
+  subjects = subject_id,
+  contrasts = c("faces>places", "tools>faces"),
+  col_data = participants
+)
+```
+
+```{r inspect-input}
+subject_maps
+head(col_data(subject_maps))
+```
+
+## How do you run the examination?
+
+Build the scientific analysis first. The example uses random-effects
+meta-regression because its formula contains subject covariates. The
+intercept-only `meta:re` reducer does not consume a formula; use
+`meta:re_reg` when the expected response depends on group, age, site, or other
+subject variables.
+
+```{r build-analysis}
+analysis <- as_plan(subject_maps) |>
+  reduce(
+    method = "meta:re_reg",
+    formula = ~ group + age + site
+  ) |>
+  posthoc("fdr:bh")
+```
+
+`examine_group()` locates that reducer, executes only its subject-level prefix,
+and inherits its formula, options, and weighting rules. You name the group
+estimand once. Quality variables are descriptive unless you also give them an
+absolute direction and threshold in `examination_control()`.
+
+```{r run-examination}
+exam <- examine_group(
+  analysis,
+  estimands = "grouppatient",
+  quality = "mean_fd",
+  control = examination_control(
+    review = list(
+      quality = list(
+        mean_fd = list(direction = "high", threshold = 0.5)
+      )
+    )
+  )
+)
+
+summary(exam)
+```
+
+```{r validate-examination, include=FALSE}
+stopifnot(
+  inherits(exam, "gds_examination"),
+  identical(exam$cohort$model, "meta:re_reg"),
+  identical(unique(exam$estimand_data$estimand), "grouppatient"),
+  all(exam$subject_data$review_status %in% c("none", "review", "insufficient")),
+  identical(exam$subject_data$subject[exam$subject_data$retained], exam$config$retained_subjects),
+  is.finite(exam$embedding$captured_energy),
+  exam$embedding$captured_energy > 0,
+  exam$embedding$captured_energy <= 1
+)
+```
+
+## How do you read the action plane?
+
+The default plot keeps surprise and influence on separate axes. The dashed
+lines show the configured absolute review gates. Point opacity records the
+split-feature stability estimate. Only subjects that meet a gate receive a
+label; all subjects remain in the result.
+
+```{r action-plane, fig.cap="The action plane separates model surprise from influence on the patient-control estimand."}
+plot(exam, group_by = "site")
+```
+
+A point on the right has a large externally predictive residual pattern after
+adjustment for group, age, and site. A high point changes the requested group
+statistic when deleted. Neither position supplies a diagnosis or a removal
+rule. Use `exam$subject_data$review_reason` and the contrast- and
+estimand-specific tables to see which component set the review status.
+
+```{r review-table}
+review <- exam$subject_data[
+  exam$subject_data$review_status != "none",
+  c("subject", "review_source", "review_priority", "review_reason")
+]
+review
+```
+
+```{r validate-review, include=FALSE}
+stopifnot(
+  nrow(review) > 0,
+  any(review$review_source == "surprise"),
+  any(review$review_source == "quality")
+)
+```
+
+## What does the residual geometry add?
+
+The embedding summarizes model-adjusted residual patterns. It can reveal a
+stable subgroup, a site-associated gradient, or an isolated pattern, but it is
+not a clustering result. The caption reports how much residual energy the
+retained dimensions capture, and opacity reports stability under deterministic
+feature splits.
+
+```{r residual-geometry, fig.cap="Low-rank geometry of signed, model-adjusted predictive residuals."}
+plot(exam, type = "embedding", group_by = "site")
+```
+
+The heatmap keeps contrast-specific surprise, signed map gain, and
+estimand-specific influence visible without collapsing them into one score.
+
+```{r diagnostic-heatmap, fig.width=9, fig.height=4.5, fig.cap="Subject summaries across contrasts and the requested estimand."}
+plot(exam, type = "heatmap")
+```
+
+## How do you inspect one retained subject?
+
+The second pass retains maps only for the review queue, explicitly requested
+subjects, and the configured highest-priority cases. Choose one of those IDs to
+compare the observed map, leave-one-out expectation, standardized residual,
+and change in the group statistic.
+
+```{r choose-subject}
+selected_subject <- exam$config$retained_subjects[1]
+selected_subject
+```
+
+```{r selected-subject, fig.width=9, fig.height=7, fig.cap="Linked profiles for one retained subject."}
+plot(exam, subject = selected_subject)
+```
+
+For a random-effects model, the opening ranking uses analytic deletion with
+the full-data heterogeneity estimate held fixed. Retained subjects also receive
+an exact refit that re-estimates heterogeneity. The `mode` and `ranking_stage`
+columns keep those results distinguishable; exact refits do not recursively
+change the review queue.
+
+```{r sensitivity-modes}
+unique(exam$estimand_data[c("mode", "ranking_stage")])
+```
+
+```{r validate-random-effects, include=FALSE}
+stopifnot(
+  "tau2_fixed_full" %in% exam$estimand_data$mode,
+  "tau2_refit_exact" %in% exam$estimand_data$mode,
+  all(exam$estimand_data$ranking_stage %in% c("screening", "selected_refit"))
+)
+```
+
+## What happens to the post-hoc conclusion?
+
+Because the analysis includes BH FDR, the examination recomputes that
+threshold-dependent conclusion for retained subjects only. These counts and
+maps live under `exam$conclusion`, separate from the continuous influence
+metrics. A custom post-hoc method without a case-deletion contract remains
+available for the full fit but is reported as unavailable for deleted cases.
+
+```{r conclusion-summary}
+head(exam$conclusion$results)
+```
+
+```{r validate-conclusion, include=FALSE}
+stopifnot(
+  inherits(exam$conclusion$full_maps, "gds"),
+  inherits(exam$conclusion$deleted_maps, "gds"),
+  all(exam$conclusion$results$status == "available"),
+  all(exam$conclusion$results$mode == "tau2_refit_exact")
+)
+```
+
+## How do you share the examination?
+
+`write_report()` creates one HTML file with inline CSS and SVG. The action
+plane and geometry link to retained-subject sections. The file has no external
+font, image, script, or stylesheet dependency.
+
+```{r write-report}
+report_file <- file.path(tempdir(), "group-examination.html")
+write_report(exam, report_file, overwrite = TRUE)
+report_file
+```
+
+The examination and the population fit remain separate branches. Compute the
+fit when you are ready to interpret the group result:
+
+```{r compute-fit}
+fit <- compute(analysis)
+names(assays(fit))
+```
+
+If only effect maps are available, use `ols:voxelwise`. The examination labels
+that route as effect-only and does not interpret synthetic unit variance as
+measured precision. For configuration details, see `?examine_group` and
+`?examination_control`.

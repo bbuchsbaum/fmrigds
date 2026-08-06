@@ -36,6 +36,7 @@ load_plan <- function(file) {
   )
   plan <- gds_plan(src, meta = .deserialize_plan_meta(data$meta %||% list()))
   plan$nodes <- lapply(data$nodes, .deserialize_node)
+  plan <- .ensure_plan_node_ids(plan)
   if (!is.null(src$probe$dims)) {
     plan$metadata <- list(dims = src$probe$dims)
   }
@@ -43,71 +44,93 @@ load_plan <- function(file) {
 }
 
 .serialize_node <- function(node) {
+  node_id <- node$node_id %||% NULL
+  node$node_id <- NULL
+  finish <- function(out) {
+    if (!is.null(node_id)) out$node_id <- node_id
+    out
+  }
   op <- node$op
   if (op == "subset_axis") {
     out <- list(op = op)
     if (!.is_empty_json_field(node$sample %||% NULL)) out$sample <- node$sample
     if (!.is_empty_json_field(node$subject %||% NULL)) out$subject <- node$subject
     if (!.is_empty_json_field(node$contrast %||% NULL)) out$contrast <- node$contrast
-    return(out)
+    return(finish(out))
   }
   if (op == "derive") {
-    return(node)
+    return(finish(node))
   }
   if (op == "map") {
     if (is.matrix(node$map)) {
       node$map <- list(matrix = as.matrix(node$map))
       node$uncertainty <- .serialize_uncertainty(node$uncertainty)
       node$target_space <- .serialize_space(node$target_space)
-      return(node)
+      return(finish(node))
     }
   }
   if (op == "align_to_group") {
     fam_name <- node$family_name %||% node$family$name %||% NA_character_
     fam_type <- node$family$type %||% node$type %||% NA_character_
-    return(list(op = op, family_name = fam_name, type = fam_type))
+    return(finish(list(op = op, family_name = fam_name, type = fam_type)))
   }
   if (op == "mask_policy") {
-    return(list(op = op, scope = node$policy$scope, rule = node$policy$rule, threshold = node$policy$threshold))
+    return(finish(list(op = op, scope = node$policy$scope, rule = node$policy$rule, threshold = node$policy$threshold)))
   }
   if (op == "reduce") {
-    return(list(
+    return(finish(list(
       op = op,
       method = node$method,
       weights = node$weights,
       by = node$by,
       options = node$options %||% list(),
       formula = node$formula %||% NULL
-    ))
+    )))
   }
   if (op == "posthoc") {
-    return(list(op = op, method = node$method, options = node$options %||% list()))
+    return(finish(list(op = op, method = node$method, options = node$options %||% list())))
   }
   if (op == "write") {
-    return(list(op = op, path = node$path, format = node$format, options = node$options %||% list()))
+    return(finish(list(op = op, path = node$path, format = node$format, options = node$options %||% list())))
   }
-  node
+  finish(node)
 }
 
 .deserialize_node <- function(node) {
+  node_id <- node$node_id %||% NULL
+  node$node_id <- NULL
+  finish <- function(out) {
+    if (!is.null(node_id)) out$node_id <- as.character(node_id)
+    out
+  }
   op <- node$op
   if (op == "subset_axis") {
     args <- node[names(node) != "op"]
     args <- lapply(args, function(x) if (.is_empty_json_field(x)) NULL else x)
-    return(do.call(op_subset_axis, args))
+    return(finish(do.call(op_subset_axis, args)))
   }
-  if (op == "derive") return(do.call(op_derive, node[names(node) != "op"]))
+  if (op == "derive") return(finish(do.call(op_derive, node[names(node) != "op"])))
   if (op == "map" && !is.null(node$map$matrix)) {
     mat <- as.matrix(node$map$matrix)
     uncertainty <- .deserialize_uncertainty(node$uncertainty)
     target_space <- .deserialize_space(node$target_space)
-    return(op_map(target_space, mat, uncertainty, node$combine))
+    return(finish(op_map(target_space, mat, uncertainty, node$combine)))
   }
-  if (op == "reduce") return(op_reduce(node$method, node$weights, node$by, node$options %||% list(), formula = node$formula %||% NULL))
-  if (op == "mask_policy") return(op_mask_policy(MaskPolicy(scope = node$scope %||% "group", rule = node$rule %||% "intersection", threshold = node$threshold %||% 0.95)))
-  if (op == "align_to_group") return(op_align_to_group(family = NULL, family_name = node$family_name))
-  if (op == "posthoc") return(list(op = "posthoc", method = node$method, options = node$options %||% list()))
-  if (op == "write") return(op_write(path = node$path, format = node$format, options = node$options %||% list()))
+  if (op == "reduce") {
+    formula <- node$formula %||% NULL
+    if (.is_empty_json_field(formula)) formula <- NULL
+    return(finish(op_reduce(
+      node$method,
+      node$weights,
+      node$by,
+      node$options %||% list(),
+      formula = formula
+    )))
+  }
+  if (op == "mask_policy") return(finish(op_mask_policy(MaskPolicy(scope = node$scope %||% "group", rule = node$rule %||% "intersection", threshold = node$threshold %||% 0.95))))
+  if (op == "align_to_group") return(finish(op_align_to_group(family = NULL, family_name = node$family_name)))
+  if (op == "posthoc") return(finish(list(op = "posthoc", method = node$method, options = node$options %||% list())))
+  if (op == "write") return(finish(op_write(path = node$path, format = node$format, options = node$options %||% list())))
   stop("Cannot deserialize node of type ", op, call. = FALSE)
 }
 

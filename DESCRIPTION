@@ -40,7 +40,9 @@ Suggests:
     covr,
     pkgdown,
     albersdown,
+    metafor,
     ggplot2,
+    ps,
     ragg,
     systemfonts
 VignetteBuilder: knitr

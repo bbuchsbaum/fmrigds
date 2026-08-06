@@ -271,7 +271,7 @@ Rcpp::List meta_re_reg_dl_cpp(const arma::mat& beta, const arma::mat& var,
 
   arma::mat coef(p, B, arma::fill::value(NA_REAL));
   arma::mat se  (p, B, arma::fill::value(NA_REAL));
-  NumericVector tau2(B), Q(B), df_res(B);
+  NumericVector tau2(B, NA_REAL), Q(B, NA_REAL), df_res(B, NA_REAL);
 
   #ifdef _OPENMP
   #pragma omp parallel for schedule(static)
@@ -298,24 +298,31 @@ Rcpp::List meta_re_reg_dl_cpp(const arma::mat& beta, const arma::mat& var,
       }
     }
     if (k < std::max<int>(min_subj, p + 1)) { tau2[b] = Q[b] = df_res[b] = NA_REAL; continue; }
+    if (arma::rank(G) < p) { tau2[b] = Q[b] = df_res[b] = NA_REAL; continue; }
     arma::mat A;
     bool ok = arma::inv_sympd(A, G);
     if (!ok) { tau2[b] = Q[b] = df_res[b] = NA_REAL; continue; }
     arma::vec bh_fe = A * g;
 
-    double Qb = 0.0, sw = 0.0, trH = 0.0;
+    double Qb = 0.0, sw = 0.0, trace_correction = 0.0;
     for (uword i = 0; i < S; ++i) {
       double w = w_save[i];
       if (w <= 0.0) continue;
       sw += w;
       double r = beta(i, b) - arma::dot(X.row(i), bh_fe);
       Qb += w * r * r;
-      double hi = w * arma::as_scalar(X.row(i) * A * X.row(i).t());
-      trH += hi;
+      double xAx = arma::as_scalar(X.row(i) * A * X.row(i).t());
+      trace_correction += w * w * xAx;
     }
-    double C = sw - trH;
+    // P = W - W X (X' W X)^-1 X' W, hence
+    // tr(P) = sum(w_i) - sum(w_i^2 x_i' A x_i).
+    double C = sw - trace_correction;
     double dfb = static_cast<double>(k - static_cast<int>(p));
-    double t2 = std::max(0.0, (Qb - dfb) / std::max(C, eps));
+    if (!finite_(C) || C <= 0.0) {
+      tau2[b] = Q[b] = df_res[b] = NA_REAL;
+      continue;
+    }
+    double t2 = std::max(0.0, (Qb - dfb) / C);
 
     arma::mat Gs(p, p, arma::fill::zeros);
     arma::vec gs(p, arma::fill::zeros);
