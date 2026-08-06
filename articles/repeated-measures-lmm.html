@@ -65,14 +65,17 @@
 operationally awkward. You have one effect estimate per ROI or voxel,
 per subject, per visit or condition, and you want a group model that
 respects the repeated structure without hand-writing a loop over
-<code>lmer()</code> calls. <code>fmrigds</code> gives you a narrow, fast
-path for that case.</p>
+samples. <code>fmrigds</code> gives you a narrow, fast path for that
+case.</p>
 <p>This vignette shows the supported contract: one grouping factor,
 Gaussian responses, shared observation layout across samples, and either
 a random intercept or a random intercept plus one within-subject slope.
 By the end, you will have one model-level GDS containing fixed-effect
 estimates and variance-component assays that you can inspect or write
-out like any other group result.</p>
+out like any other group result. You will also know when to use an
+unweighted model, when to treat first-level variances as known sampling
+variances, what <code>pooled</code> actually pools, and which claims the
+available summary statistics can support.</p>
 <div class="section level2">
 <h2 id="what-does-the-input-look-like">What does the input look like?<a class="anchor" aria-label="anchor" href="#what-does-the-input-look-like"></a>
 </h2>
@@ -94,17 +97,19 @@ with three visits:</p>
 <span></span>
 <span><span class="va">subject_intercept</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="op">-</span><span class="fl">0.25</span>, <span class="op">-</span><span class="fl">0.10</span>, <span class="fl">0.00</span>, <span class="fl">0.10</span>, <span class="fl">0.20</span>, <span class="fl">0.30</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/names.html" class="external-link">names</a></span><span class="op">(</span><span class="va">subject_intercept</span><span class="op">)</span> <span class="op">&lt;-</span> <span class="va">subjects</span></span>
-<span><span class="va">subject_slope</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="op">-</span><span class="fl">0.05</span>, <span class="op">-</span><span class="fl">0.02</span>, <span class="fl">0.00</span>, <span class="fl">0.01</span>, <span class="fl">0.03</span>, <span class="fl">0.05</span><span class="op">)</span></span>
+<span><span class="va">subject_slope</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="op">-</span><span class="fl">0.10</span>, <span class="op">-</span><span class="fl">0.04</span>, <span class="fl">0.00</span>, <span class="fl">0.02</span>, <span class="fl">0.06</span>, <span class="fl">0.12</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/names.html" class="external-link">names</a></span><span class="op">(</span><span class="va">subject_slope</span><span class="op">)</span> <span class="op">&lt;-</span> <span class="va">subjects</span></span>
 <span><span class="va">sample_shift</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>ROI_1 <span class="op">=</span> <span class="fl">0.00</span>, ROI_2 <span class="op">=</span> <span class="fl">0.35</span><span class="op">)</span></span>
 <span><span class="va">sample_slope</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>ROI_1 <span class="op">=</span> <span class="fl">0.45</span>, ROI_2 <span class="op">=</span> <span class="fl">0.70</span><span class="op">)</span></span>
+<span><span class="va">sample_slope_scale</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>ROI_1 <span class="op">=</span> <span class="fl">0.5</span>, ROI_2 <span class="op">=</span> <span class="fl">2.0</span><span class="op">)</span></span>
 <span></span>
 <span><span class="va">rm_df</span><span class="op">$</span><span class="va">time</span> <span class="op">&lt;-</span> <span class="va">time</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/match.html" class="external-link">match</a></span><span class="op">(</span><span class="va">rm_df</span><span class="op">$</span><span class="va">contrast</span>, <span class="va">visits</span><span class="op">)</span><span class="op">]</span></span>
-<span><span class="va">rm_df</span><span class="op">$</span><span class="va">beta</span> <span class="op">&lt;-</span> <span class="fl">0.9</span> <span class="op">+</span></span>
+<span><span class="va">rm_signal</span> <span class="op">&lt;-</span> <span class="fl">0.9</span> <span class="op">+</span></span>
 <span>  <span class="va">sample_shift</span><span class="op">[</span><span class="va">rm_df</span><span class="op">$</span><span class="va">sample</span><span class="op">]</span> <span class="op">+</span></span>
 <span>  <span class="va">subject_intercept</span><span class="op">[</span><span class="va">rm_df</span><span class="op">$</span><span class="va">subject</span><span class="op">]</span> <span class="op">+</span></span>
-<span>  <span class="op">(</span><span class="va">sample_slope</span><span class="op">[</span><span class="va">rm_df</span><span class="op">$</span><span class="va">sample</span><span class="op">]</span> <span class="op">+</span> <span class="va">subject_slope</span><span class="op">[</span><span class="va">rm_df</span><span class="op">$</span><span class="va">subject</span><span class="op">]</span><span class="op">)</span> <span class="op">*</span> <span class="va">rm_df</span><span class="op">$</span><span class="va">time</span></span>
-<span><span class="va">rm_df</span><span class="op">$</span><span class="va">var</span> <span class="op">&lt;-</span> <span class="fl">0.04</span></span>
+<span>  <span class="op">(</span><span class="va">sample_slope</span><span class="op">[</span><span class="va">rm_df</span><span class="op">$</span><span class="va">sample</span><span class="op">]</span> <span class="op">+</span></span>
+<span>     <span class="va">sample_slope_scale</span><span class="op">[</span><span class="va">rm_df</span><span class="op">$</span><span class="va">sample</span><span class="op">]</span> <span class="op">*</span> <span class="va">subject_slope</span><span class="op">[</span><span class="va">rm_df</span><span class="op">$</span><span class="va">subject</span><span class="op">]</span><span class="op">)</span> <span class="op">*</span> <span class="va">rm_df</span><span class="op">$</span><span class="va">time</span></span>
+<span><span class="va">rm_df</span><span class="op">$</span><span class="va">beta</span> <span class="op">&lt;-</span> <span class="va">rm_signal</span> <span class="op">+</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">rm_df</span><span class="op">)</span>, sd <span class="op">=</span> <span class="fl">0.06</span><span class="op">)</span></span>
 <span></span>
 <span><span class="fu">knitr</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/pkg/knitr/man/kable.html" class="external-link">kable</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="va">rm_df</span><span class="op">)</span>, row.names <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span></code></pre></div>
 <table class="table">
@@ -114,7 +119,6 @@ with three visits:</p>
 <th align="left">contrast</th>
 <th align="right">time</th>
 <th align="right">beta</th>
-<th align="right">var</th>
 </tr></thead>
 <tbody>
 <tr class="odd">
@@ -122,60 +126,190 @@ with three visits:</p>
 <td align="left">sub-01</td>
 <td align="left">pre</td>
 <td align="right">-1</td>
-<td align="right">0.25</td>
-<td align="right">0.04</td>
+<td align="right">0.2124128</td>
 </tr>
 <tr class="even">
 <td align="left">ROI_2</td>
 <td align="left">sub-01</td>
 <td align="left">pre</td>
 <td align="right">-1</td>
-<td align="right">0.35</td>
-<td align="right">0.04</td>
+<td align="right">0.5110186</td>
 </tr>
 <tr class="odd">
 <td align="left">ROI_1</td>
 <td align="left">sub-02</td>
 <td align="left">pre</td>
 <td align="right">-1</td>
-<td align="right">0.37</td>
-<td align="right">0.04</td>
+<td align="right">0.3198623</td>
 </tr>
 <tr class="even">
 <td align="left">ROI_2</td>
 <td align="left">sub-02</td>
 <td align="left">pre</td>
 <td align="right">-1</td>
-<td align="right">0.47</td>
-<td align="right">0.04</td>
+<td align="right">0.6257168</td>
 </tr>
 <tr class="odd">
 <td align="left">ROI_1</td>
 <td align="left">sub-03</td>
 <td align="left">pre</td>
 <td align="right">-1</td>
-<td align="right">0.45</td>
-<td align="right">0.04</td>
+<td align="right">0.4697705</td>
 </tr>
 <tr class="even">
 <td align="left">ROI_2</td>
 <td align="left">sub-03</td>
 <td align="left">pre</td>
 <td align="right">-1</td>
-<td align="right">0.55</td>
-<td align="right">0.04</td>
+<td align="right">0.5007719</td>
 </tr>
 </tbody>
 </table>
 <p>The <code>time</code> column is constant within each visit, so it can
-be collapsed into contrast-level metadata during ingestion.</p>
+be collapsed into contrast-level metadata during ingestion. The two
+simulated ROIs deliberately have different amounts of subject-to-subject
+slope variation; that makes the pooled-versus-voxelwise assumption
+visible later.</p>
+<p>The response is <code>beta</code>. Despite the name, it need not be a
+raw regression coefficient: it can be any approximately Gaussian
+subject-level effect estimate with a consistent definition and scale
+across subjects and visits. Choose the reducer from the information that
+is actually available:</p>
+<table class="table">
+<colgroup>
+<col width="33%">
+<col width="33%">
+<col width="33%">
+</colgroup>
+<thead><tr class="header">
+<th>Available input</th>
+<th>Recommended reducer</th>
+<th>What the model can claim</th>
+</tr></thead>
+<tbody>
+<tr class="odd">
+<td>Effect estimate only</td>
+<td>
+<code>lmm:ri</code> or <code>lmm:ri_slope1</code>
+</td>
+<td>Models the empirical second-level covariance, without separating
+first-level sampling error</td>
+</tr>
+<tr class="even">
+<td>Effect estimate plus variance or standard error</td>
+<td>Matching <code>*_knownvar</code> reducer</td>
+<td>Treats the supplied marginal sampling variance as known and
+estimates additional heterogeneity</td>
+</tr>
+<tr class="odd">
+<td>Effect estimate plus <em>t</em> or <em>z</em>
+</td>
+<td>Derive or supply <code>var</code> only when the effect-scale
+standard error can be recovered</td>
+<td>Same interpretation as <code>*_knownvar</code>; the test statistic
+alone is not the variance</td>
+</tr>
+<tr class="even">
+<td>
+<em>t</em> or <em>z</em> only</td>
+<td>No effect-scale repeated-measures LMM</td>
+<td>The effect magnitude and its sampling variance cannot generally be
+recovered from a standardized statistic alone</td>
+</tr>
+</tbody>
+</table>
+<p>A <em>t</em> or <em>z</em> statistic is therefore not interchangeable
+with an effect estimate: its scale also depends on uncertainty and, for
+<em>t</em>, degrees of freedom. When an unthresholded <em>t</em> map was
+computed exactly as <code>beta / se</code> for the same contrast, the
+effect-scale variance can be recovered as <code>(beta / t)^2</code>;
+verify that provenance before using it. A <em>z</em> map may instead be
+a signed transformation of a <em>p</em> value, in which case
+<code>beta / z</code> is not the first-level standard error. If a
+trustworthy <code>se</code> assay is available, the known-variance
+reducers derive <code>var</code> from it automatically.</p>
+<p>If the scientific target is evidence combination rather than an
+effect-scale repeated-measures model, a method such as
+<code>combine:stouffer</code> may be appropriate after accounting for
+dependence. Repeated observations from the same subject are not
+independent inputs to an ordinary Stouffer combination.</p>
+</div>
+<div class="section level2">
+<h2 id="what-model-is-fitted">What model is fitted?<a class="anchor" aria-label="anchor" href="#what-model-is-fitted"></a>
+</h2>
+<p>For sample
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>v</mi><annotation encoding="application/x-tex">v</annotation></semantics></math>,
+subject
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>i</mi><annotation encoding="application/x-tex">i</annotation></semantics></math>,
+and repeated-measure level
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>r</mi><annotation encoding="application/x-tex">r</annotation></semantics></math>,
+every random intercept plus slope reducer uses the same conditional
+mean:</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>y</mi><mrow><mi>v</mi><mi>i</mi><mi>r</mi></mrow></msub><mo>=</mo><msubsup><mi>x</mi><mrow><mi>i</mi><mi>r</mi></mrow><mi>𝖳</mi></msubsup><msub><mi>β</mi><mi>v</mi></msub><mo>+</mo><msub><mi>b</mi><mrow><mn>0</mn><mi>i</mi><mi>v</mi></mrow></msub><mo>+</mo><msub><mi>t</mi><mi>r</mi></msub><msub><mi>b</mi><mrow><mn>1</mn><mi>i</mi><mi>v</mi></mrow></msub><mo>+</mo><msub><mi>ϵ</mi><mrow><mi>v</mi><mi>i</mi><mi>r</mi></mrow></msub><mi>.</mi></mrow><annotation encoding="application/x-tex">
+y_{vir} = x_{ir}^{\mathsf T}\beta_v + b_{0iv} + t_r b_{1iv} + \epsilon_{vir}.
+</annotation></semantics></math></p>
+<p>Here,
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>x</mi><mrow><mi>i</mi><mi>r</mi></mrow></msub><annotation encoding="application/x-tex">x_{ir}</annotation></semantics></math>
+is the row of the fixed-effects design built from <code>formula</code>,
+and
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>t</mi><mi>r</mi></msub><annotation encoding="application/x-tex">t_r</annotation></semantics></math>
+is the numeric variable named by <code>options$slope</code>. The simpler
+random-intercept reducers drop
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>b</mi><mrow><mn>1</mn><mi>i</mi><mi>v</mi></mrow></msub><annotation encoding="application/x-tex">b_{1iv}</annotation></semantics></math>.</p>
+<p>The two reducer families differ in their marginal covariance. The
+unweighted methods assume</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mtable><mtr><mtd columnalign="right" style="text-align: right; padding-right: 0"><mo stretchy="false" form="prefix">(</mo><msub><mi>b</mi><mrow><mn>0</mn><mi>i</mi><mi>v</mi></mrow></msub><mo>,</mo><msub><mi>b</mi><mrow><mn>1</mn><mi>i</mi><mi>v</mi></mrow></msub><msup><mo stretchy="false" form="postfix">)</mo><mi>𝖳</mi></msup></mtd><mtd columnalign="left" style="text-align: left; padding-left: 0"><mo>∼</mo><mi>N</mi><mo stretchy="false" form="prefix">(</mo><mn>0</mn><mo>,</mo><mspace width="0.278em"></mspace><msubsup><mi>σ</mi><mi>v</mi><mn>2</mn></msubsup><msub><mi mathvariant="normal">Λ</mi><mi>v</mi></msub><mo stretchy="false" form="postfix">)</mo><mo>,</mo></mtd></mtr><mtr><mtd columnalign="right" style="text-align: right; padding-right: 0"><msub><mi>ϵ</mi><mrow><mi>v</mi><mi>i</mi><mi>r</mi></mrow></msub></mtd><mtd columnalign="left" style="text-align: left; padding-left: 0"><mo>∼</mo><mi>N</mi><mo stretchy="false" form="prefix">(</mo><mn>0</mn><mo>,</mo><mspace width="0.278em"></mspace><msubsup><mi>σ</mi><mi>v</mi><mn>2</mn></msubsup><mo stretchy="false" form="postfix">)</mo><mi>.</mi></mtd></mtr></mtable><annotation encoding="application/x-tex">
+\begin{aligned}
+(b_{0iv}, b_{1iv})^{\mathsf T} &amp;\sim N(0,\;\sigma_v^2 \Lambda_v),\\
+\epsilon_{vir} &amp;\sim N(0,\;\sigma_v^2).
+\end{aligned}
+</annotation></semantics></math></p>
+<p>This parameterization separates the sample-specific residual scale —
+<code>sigma2</code> or <code>vc_resid</code> — from relative
+random-effect variances in λ (<code>lambda_intercept</code>,
+<code>lambda_slope</code>, and, for a full covariance,
+<code>lambda_cov_intercept_slope</code>). The absolute random-effect
+variances reported as <code>vc_intercept</code> and
+<code>vc_slope</code> are λ multiplied by <code>sigma2</code>. The
+simpler <code>lmm:ri</code> reducer drops
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>b</mi><mrow><mn>1</mn><mi>i</mi><mi>v</mi></mrow></msub><annotation encoding="application/x-tex">b_{1iv}</annotation></semantics></math>
+and estimates one intercept-to-residual variance ratio,
+<code>lambda</code>.</p>
+<p>The <code>*_knownvar</code> methods instead use the supplied
+sampling-variance vector
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>d</mi><mi>v</mi></msub><annotation encoding="application/x-tex">d_v</annotation></semantics></math>:</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>V</mi><mi>v</mi></msub><mo>=</mo><mrow><mi mathvariant="normal">diag</mi><mo>⁡</mo></mrow><mo stretchy="false" form="prefix">(</mo><msub><mi>d</mi><mi>v</mi></msub><mo stretchy="false" form="postfix">)</mo><mo>+</mo><msubsup><mi>σ</mi><mrow><mtext mathvariant="normal">resid</mtext><mo>,</mo><mi>v</mi></mrow><mn>2</mn></msubsup><mi>I</mi><mo>+</mo><mi>Z</mi><msub><mi>G</mi><mi>v</mi></msub><msup><mi>Z</mi><mi>𝖳</mi></msup><mi>.</mi></mrow><annotation encoding="application/x-tex">
+V_v = \operatorname{diag}(d_v) + \sigma_{\text{resid},v}^2 I
+      + ZG_vZ^{\mathsf T}.
+</annotation></semantics></math></p>
+<p>Here,
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>G</mi><mi>v</mi></msub><annotation encoding="application/x-tex">G_v</annotation></semantics></math>
+contains absolute random-effect variances and
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msubsup><mi>σ</mi><mrow><mtext mathvariant="normal">resid</mtext><mo>,</mo><mi>v</mi></mrow><mn>2</mn></msubsup><annotation encoding="application/x-tex">\sigma_{\text{resid},v}^2</annotation></semantics></math>
+is additional observation-level heterogeneity. The known sampling
+variances establish an absolute scale, so these reducers report
+<code>vc_intercept</code>, <code>vc_slope</code>, and
+<code>vc_resid</code> but not relative <code>lambda_*</code> assays.
+They treat <code>var</code> as fixed input rather than estimating a
+common multiplier for it.</p>
+<p><code>covariance = "diag"</code> fixes the intercept–slope covariance
+to zero. <code>covariance = "full"</code> estimates that covariance
+through a Cholesky parameterization and also reports
+<code>corr_intercept_slope</code>. The full model is more flexible, but
+it spends an additional variance parameter and can be weakly identified
+when there are few subjects or few repeated-measure levels. Centering
+the slope variable before ingestion makes the random intercept refer to
+a meaningful time point and usually makes the intercept–slope covariance
+easier to interpret.</p>
 </div>
 <div class="section level2">
 <h2 id="what-is-the-fastest-end-to-end-path">What is the fastest end-to-end path?<a class="anchor" aria-label="anchor" href="#what-is-the-fastest-end-to-end-path"></a>
 </h2>
 <p>Use <code>gds(..., contrast_data_cols = "time")</code> to put the
 repeated-measure metadata on the contrast axis, then call
-<code><a href="../reference/reduce.html">reduce()</a></code> with one of the restricted LMM reducers:</p>
+<code><a href="../reference/reduce.html">reduce()</a></code> with one of the restricted LMM reducers. The first
+example has effect estimates but no sampling variances, so it uses the
+unweighted method:</p>
 <div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">g_rm</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/gds.html">gds</a></span><span class="op">(</span><span class="va">rm_df</span>, contrast_data_cols <span class="op">=</span> <span class="st">"time"</span><span class="op">)</span> <span class="op">|&gt;</span></span>
 <span>  <span class="fu"><a href="../reference/reduce.html">reduce</a></span><span class="op">(</span></span>
@@ -206,19 +340,19 @@ read than printing individual assay arrays:</p>
 <tbody>
 <tr class="odd">
 <td align="left">ROI_1</td>
-<td align="right">0.942</td>
-<td align="right">0.453</td>
-<td align="right">0.025</td>
-<td align="right">0.001</td>
-<td align="right">793553955</td>
+<td align="right">0.955</td>
+<td align="right">0.450</td>
+<td align="right">0.046</td>
+<td align="right">0.000</td>
+<td align="right">0.022</td>
 </tr>
 <tr class="even">
 <td align="left">ROI_2</td>
-<td align="right">1.292</td>
+<td align="right">1.286</td>
 <td align="right">0.703</td>
+<td align="right">0.041</td>
 <td align="right">0.025</td>
-<td align="right">0.001</td>
-<td align="right">793766066</td>
+<td align="right">5.493</td>
 </tr>
 </tbody>
 </table>
@@ -230,14 +364,361 @@ as ordinary assays such as <code>vc_intercept</code>,
 <code>vc_slope</code>, and <code>lambda_slope</code>.</p>
 </div>
 <div class="section level2">
-<h2 id="when-should-you-use-pooled-vs-voxelwise-theta">When should you use pooled vs voxelwise theta?<a class="anchor" aria-label="anchor" href="#when-should-you-use-pooled-vs-voxelwise-theta"></a>
+<h2 id="how-are-the-random-effects-estimated">How are the random effects estimated?<a class="anchor" aria-label="anchor" href="#how-are-the-random-effects-estimated"></a>
 </h2>
-<p><code>theta_mode = "pooled"</code> estimates one shared variance
-structure across all samples. <code>theta_mode = "voxelwise"</code>
-estimates variance parameters separately for each sample. Pooled mode
-reuses one variance structure, so it is typically faster; voxelwise mode
-is more flexible.</p>
+<p>All four reducers stack the subject-by-visit observations for every
+sample, build one shared fixed-effects matrix and one shared
+random-effects design, and integrate the subject-specific random effects
+out of the Gaussian marginal likelihood. They estimate the covariance of
+the random effects; they do not return subject-level conditional modes
+or BLUPs.</p>
+<p>The unweighted reducers then:</p>
+<ol style="list-style-type: decimal">
+<li>optimize the relative covariance parameters λ by profile maximum
+likelihood (<code>fit = "ML"</code>) or restricted maximum likelihood
+(<code>fit = "REML"</code>);</li>
+<li>conditional on those fitted parameters, solve the generalized
+least-squares problem for each sample’s fixed effects; and</li>
+<li>estimate a residual scale for each sample, then convert the relative
+covariance parameters into the absolute <code>vc_*</code>
+components.</li>
+</ol>
+<p>For a known-variance reducer, <code>diag(var)</code> remains fixed
+while the optimizer estimates the absolute random-effect covariance
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>G</mi><annotation encoding="application/x-tex">G</annotation></semantics></math>
+and the additional residual variance <code>vc_resid</code>. At every
+trial covariance, the reducer profiles out the fixed effects with
+generalized least squares. There is no single residual scale that can be
+factored out of the whole covariance, which is why these methods do not
+report relative <code>lambda_*</code> components.</p>
+<p>REML is the default because it accounts for the fixed-effects degrees
+of freedom while estimating variance components. ML is mainly useful
+when models with different fixed-effects structures must be compared on
+the same data. For <code>lmm:ri</code>, the optimizer explicitly
+considers the zero random-intercept boundary. With
+<code>covariance = "full"</code>, the slope methods obtain
+positive-definite covariance matrices from a Cholesky factor. Any of the
+fitted variance components can be near zero at the numerical boundary,
+especially with few subjects or little replication.</p>
+<p>The reported fixed-effect standard errors are plug-in GLS standard
+errors: they condition on the fitted variance parameters. The reported
+<em>t</em> tests use <code>n_observations - n_fixed_effects</code>
+residual degrees of freedom. They do not use Satterthwaite or
+Kenward–Roger corrections and do not propagate uncertainty in the
+estimated variance components. With few subjects or weakly identified
+random slopes, treat <code>p_coef:*</code> as an approximate screening
+summary rather than small-sample-calibrated inference. The restricted
+implementation is designed for fast, common-design imaging fits; it is
+not a drop-in replacement for every inferential feature of
+<code>lmer()</code>. The <code>p_coef:*</code> assays are also
+uncorrected for the number of ROIs or voxels tested.</p>
+</div>
+<div class="section level2">
+<h2 id="how-do-first-level-variance-estimates-enter-the-model">How do first-level variance estimates enter the model?<a class="anchor" aria-label="anchor" href="#how-do-first-level-variance-estimates-enter-the-model"></a>
+</h2>
+<p>The original <code>lmm:ri</code> and <code>lmm:ri_slope1</code>
+reducers are unweighted: they require only <code>beta</code>. If the
+input also contains <code>var</code> or <code>se</code>, it is carried
+by the source GDS but is not used in their likelihood, estimates, or
+weights. Their <code>sigma2</code> and <code>vc_*</code> outputs are
+estimated entirely from the supplied effects.</p>
+<p>The following check deliberately adds implausibly heterogeneous
+first-level variances. The LMM result is unchanged because
+<code>var</code> is outside this reducer’s input contract:</p>
 <div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">rm_df_with_var</span> <span class="op">&lt;-</span> <span class="va">rm_df</span></span>
+<span><span class="va">rm_df_with_var</span><span class="op">$</span><span class="va">var</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">1e-6</span>, <span class="fl">100</span><span class="op">)</span>, length.out <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">rm_df_with_var</span><span class="op">)</span><span class="op">)</span></span>
+<span></span>
+<span><span class="va">g_var_probe</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/gds.html">gds</a></span><span class="op">(</span><span class="va">rm_df_with_var</span>, contrast_data_cols <span class="op">=</span> <span class="st">"time"</span><span class="op">)</span> <span class="op">|&gt;</span></span>
+<span>  <span class="fu"><a href="../reference/reduce.html">reduce</a></span><span class="op">(</span></span>
+<span>    method <span class="op">=</span> <span class="st">"lmm:ri_slope1"</span>,</span>
+<span>    formula <span class="op">=</span> <span class="op">~</span> <span class="va">time</span>,</span>
+<span>    options <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span></span>
+<span>      slope <span class="op">=</span> <span class="st">"time"</span>,</span>
+<span>      covariance <span class="op">=</span> <span class="st">"diag"</span>,</span>
+<span>      fit <span class="op">=</span> <span class="st">"REML"</span>,</span>
+<span>      theta_mode <span class="op">=</span> <span class="st">"voxelwise"</span></span>
+<span>    <span class="op">)</span></span>
+<span>  <span class="op">)</span> <span class="op">|&gt;</span></span>
+<span>  <span class="fu"><a href="../reference/compute.html">compute</a></span><span class="op">(</span><span class="op">)</span></span>
+<span></span>
+<span><span class="va">variance_probe</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span></span>
+<span>  output <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"time coefficient"</span>, <span class="st">"time standard error"</span>, <span class="st">"slope variance ratio"</span><span class="op">)</span>,</span>
+<span>  largest_absolute_change <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span></span>
+<span>    <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html" class="external-link">max</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/MathFun.html" class="external-link">abs</a></span><span class="op">(</span><span class="fu"><a href="../reference/assay.html">assay</a></span><span class="op">(</span><span class="va">g_var_probe</span>, <span class="st">"coef:time"</span><span class="op">)</span> <span class="op">-</span> <span class="fu"><a href="../reference/assay.html">assay</a></span><span class="op">(</span><span class="va">g_rm</span>, <span class="st">"coef:time"</span><span class="op">)</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>    <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html" class="external-link">max</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/MathFun.html" class="external-link">abs</a></span><span class="op">(</span><span class="fu"><a href="../reference/assay.html">assay</a></span><span class="op">(</span><span class="va">g_var_probe</span>, <span class="st">"se_coef:time"</span><span class="op">)</span> <span class="op">-</span> <span class="fu"><a href="../reference/assay.html">assay</a></span><span class="op">(</span><span class="va">g_rm</span>, <span class="st">"se_coef:time"</span><span class="op">)</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>    <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html" class="external-link">max</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/MathFun.html" class="external-link">abs</a></span><span class="op">(</span><span class="fu"><a href="../reference/assay.html">assay</a></span><span class="op">(</span><span class="va">g_var_probe</span>, <span class="st">"lambda_slope"</span><span class="op">)</span> <span class="op">-</span> <span class="fu"><a href="../reference/assay.html">assay</a></span><span class="op">(</span><span class="va">g_rm</span>, <span class="st">"lambda_slope"</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
+<span>  <span class="op">)</span></span>
+<span><span class="op">)</span></span>
+<span></span>
+<span><span class="fu">knitr</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/pkg/knitr/man/kable.html" class="external-link">kable</a></span><span class="op">(</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/transform.html" class="external-link">transform</a></span><span class="op">(</span><span class="va">variance_probe</span>, largest_absolute_change <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">signif</a></span><span class="op">(</span><span class="va">largest_absolute_change</span>, <span class="fl">3</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>  row.names <span class="op">=</span> <span class="cn">FALSE</span></span>
+<span><span class="op">)</span></span></code></pre></div>
+<table class="table">
+<thead><tr class="header">
+<th align="left">output</th>
+<th align="right">largest_absolute_change</th>
+</tr></thead>
+<tbody>
+<tr class="odd">
+<td align="left">time coefficient</td>
+<td align="right">0</td>
+</tr>
+<tr class="even">
+<td align="left">time standard error</td>
+<td align="right">0</td>
+</tr>
+<tr class="odd">
+<td align="left">slope variance ratio</td>
+<td align="right">0</td>
+</tr>
+</tbody>
+</table>
+<p>For an unweighted fit, this has two distinct implications:</p>
+<ul>
+<li>A biased first-level variance estimate does <strong>not</strong>
+directly create an excessive inverse-variance weight.</li>
+<li>Differences in first-level precision are nevertheless unmodeled.
+Variation due to scan duration, motion, censoring, design efficiency, or
+first-level noise modeling is absorbed into the LMM residual and is not
+separated from other within-subject variation. When precision differs
+materially across observations, the homoscedastic residual assumption
+can be poor and the nominal fixed-effect standard errors can be
+misleading.</li>
+</ul>
+<p>Use <code>lmm:ri_knownvar</code> or
+<code>lmm:ri_slope1_knownvar</code> when the input variances should
+enter the model. For each sample, these reducers fit</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>V</mi><mo>=</mo><mrow><mi mathvariant="normal">diag</mi><mo>⁡</mo></mrow><mo stretchy="false" form="prefix">(</mo><mi>v</mi><mo stretchy="false" form="postfix">)</mo><mo>+</mo><msubsup><mi>σ</mi><mtext mathvariant="normal">resid</mtext><mn>2</mn></msubsup><mi>I</mi><mo>+</mo><mi>Z</mi><mi>G</mi><msup><mi>Z</mi><mi>𝖳</mi></msup><mo>,</mo></mrow><annotation encoding="application/x-tex">
+V = \operatorname{diag}(v) + \sigma_{\text{resid}}^2 I + ZGZ^{\mathsf T},
+</annotation></semantics></math></p>
+<p>where
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>v</mi><annotation encoding="application/x-tex">v</annotation></semantics></math>
+is the supplied <code>var</code> assay,
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>G</mi><annotation encoding="application/x-tex">G</annotation></semantics></math>
+is the subject random-effect covariance, and <code>vc_resid</code> is
+additional observation-level heterogeneity not explained by the reported
+sampling variance. The supplied variances are treated as known: they are
+not multiplied by a fitted calibration factor.</p>
+<p>This is the same covariance contract accepted by <a href="https://wviechtb.github.io/metafor/reference/rma.mv.html" class="external-link"><code>metafor::rma.mv()</code></a>
+when <code>V</code> contains the known sampling variances and random
+effects represent the subject and observation-level heterogeneity. It is
+not equivalent to passing <code>weights = 1 / var</code> to
+<code><a href="https://rdrr.io/pkg/lme4/man/lmer.html" class="external-link">lme4::lmer()</a></code>: in <code>lmer()</code>, the inverse weights
+are still multiplied by an estimated common residual scale.</p>
+<p>The next example makes the variance contract part of the
+data-generating process. Subjects have different first-level standard
+errors, visits differ slightly in precision, and every observation also
+contains residual variation with variance 0.0064 that is not included in
+<code>var</code>.</p>
+<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">rm_df_knownvar</span> <span class="op">&lt;-</span> <span class="va">rm_df</span></span>
+<span><span class="va">subject_se</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0.02</span>, <span class="fl">0.03</span>, <span class="fl">0.05</span>, <span class="fl">0.07</span>, <span class="fl">0.09</span>, <span class="fl">0.12</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/names.html" class="external-link">names</a></span><span class="op">(</span><span class="va">subject_se</span><span class="op">)</span> <span class="op">&lt;-</span> <span class="va">subjects</span></span>
+<span><span class="va">visit_precision_factor</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>pre <span class="op">=</span> <span class="fl">1.15</span>, mid <span class="op">=</span> <span class="fl">0.85</span>, post <span class="op">=</span> <span class="fl">1.00</span><span class="op">)</span></span>
+<span></span>
+<span><span class="va">rm_df_knownvar</span><span class="op">$</span><span class="va">var</span> <span class="op">&lt;-</span> <span class="op">(</span></span>
+<span>  <span class="va">subject_se</span><span class="op">[</span><span class="va">rm_df_knownvar</span><span class="op">$</span><span class="va">subject</span><span class="op">]</span> <span class="op">*</span></span>
+<span>    <span class="va">visit_precision_factor</span><span class="op">[</span><span class="va">rm_df_knownvar</span><span class="op">$</span><span class="va">contrast</span><span class="op">]</span></span>
+<span><span class="op">)</span><span class="op">^</span><span class="fl">2</span></span>
+<span></span>
+<span><span class="va">true_extra_residual_var</span> <span class="op">&lt;-</span> <span class="fl">0.0064</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">11</span><span class="op">)</span></span>
+<span><span class="va">rm_df_knownvar</span><span class="op">$</span><span class="va">beta</span> <span class="op">&lt;-</span> <span class="va">rm_signal</span> <span class="op">+</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">rm_df_knownvar</span><span class="op">)</span>, sd <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/MathFun.html" class="external-link">sqrt</a></span><span class="op">(</span><span class="va">rm_df_knownvar</span><span class="op">$</span><span class="va">var</span><span class="op">)</span><span class="op">)</span> <span class="op">+</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">rm_df_knownvar</span><span class="op">)</span>, sd <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/MathFun.html" class="external-link">sqrt</a></span><span class="op">(</span><span class="va">true_extra_residual_var</span><span class="op">)</span><span class="op">)</span></span>
+<span></span>
+<span><span class="va">g_knownvar_unweighted</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/gds.html">gds</a></span><span class="op">(</span><span class="va">rm_df_knownvar</span>, contrast_data_cols <span class="op">=</span> <span class="st">"time"</span><span class="op">)</span> <span class="op">|&gt;</span></span>
+<span>  <span class="fu"><a href="../reference/reduce.html">reduce</a></span><span class="op">(</span></span>
+<span>    method <span class="op">=</span> <span class="st">"lmm:ri_slope1"</span>,</span>
+<span>    formula <span class="op">=</span> <span class="op">~</span> <span class="va">time</span>,</span>
+<span>    options <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span></span>
+<span>      slope <span class="op">=</span> <span class="st">"time"</span>,</span>
+<span>      covariance <span class="op">=</span> <span class="st">"diag"</span>,</span>
+<span>      fit <span class="op">=</span> <span class="st">"REML"</span>,</span>
+<span>      theta_mode <span class="op">=</span> <span class="st">"voxelwise"</span></span>
+<span>    <span class="op">)</span></span>
+<span>  <span class="op">)</span> <span class="op">|&gt;</span></span>
+<span>  <span class="fu"><a href="../reference/compute.html">compute</a></span><span class="op">(</span><span class="op">)</span></span>
+<span></span>
+<span><span class="va">g_knownvar</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/gds.html">gds</a></span><span class="op">(</span><span class="va">rm_df_knownvar</span>, contrast_data_cols <span class="op">=</span> <span class="st">"time"</span><span class="op">)</span> <span class="op">|&gt;</span></span>
+<span>  <span class="fu"><a href="../reference/reduce.html">reduce</a></span><span class="op">(</span></span>
+<span>    method <span class="op">=</span> <span class="st">"lmm:ri_slope1_knownvar"</span>,</span>
+<span>    formula <span class="op">=</span> <span class="op">~</span> <span class="va">time</span>,</span>
+<span>    options <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span></span>
+<span>      slope <span class="op">=</span> <span class="st">"time"</span>,</span>
+<span>      covariance <span class="op">=</span> <span class="st">"diag"</span>,</span>
+<span>      fit <span class="op">=</span> <span class="st">"REML"</span></span>
+<span>    <span class="op">)</span></span>
+<span>  <span class="op">)</span> <span class="op">|&gt;</span></span>
+<span>  <span class="fu"><a href="../reference/compute.html">compute</a></span><span class="op">(</span><span class="op">)</span></span>
+<span></span>
+<span><span class="va">knownvar_compare</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span></span>
+<span>  sample <span class="op">=</span> <span class="fu"><a href="../reference/sample_labels.html">sample_labels</a></span><span class="op">(</span><span class="va">g_knownvar</span><span class="op">)</span>,</span>
+<span>  unweighted_time <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/numeric.html" class="external-link">as.numeric</a></span><span class="op">(</span><span class="fu"><a href="../reference/assay.html">assay</a></span><span class="op">(</span><span class="va">g_knownvar_unweighted</span>, <span class="st">"coef:time"</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>  knownvar_time <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/numeric.html" class="external-link">as.numeric</a></span><span class="op">(</span><span class="fu"><a href="../reference/assay.html">assay</a></span><span class="op">(</span><span class="va">g_knownvar</span>, <span class="st">"coef:time"</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>  unweighted_se <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/numeric.html" class="external-link">as.numeric</a></span><span class="op">(</span><span class="fu"><a href="../reference/assay.html">assay</a></span><span class="op">(</span><span class="va">g_knownvar_unweighted</span>, <span class="st">"se_coef:time"</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>  knownvar_se <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/numeric.html" class="external-link">as.numeric</a></span><span class="op">(</span><span class="fu"><a href="../reference/assay.html">assay</a></span><span class="op">(</span><span class="va">g_knownvar</span>, <span class="st">"se_coef:time"</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>  mean_sampling_var <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/numeric.html" class="external-link">as.numeric</a></span><span class="op">(</span><span class="fu"><a href="../reference/assay.html">assay</a></span><span class="op">(</span><span class="va">g_knownvar</span>, <span class="st">"sampling_var_mean"</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>  fitted_extra_residual_var <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/numeric.html" class="external-link">as.numeric</a></span><span class="op">(</span><span class="fu"><a href="../reference/assay.html">assay</a></span><span class="op">(</span><span class="va">g_knownvar</span>, <span class="st">"vc_resid"</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="op">)</span></span>
+<span></span>
+<span><span class="fu">knitr</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/pkg/knitr/man/kable.html" class="external-link">kable</a></span><span class="op">(</span><span class="va">knownvar_compare</span>, digits <span class="op">=</span> <span class="fl">4</span>, row.names <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span></code></pre></div>
+<table class="table">
+<colgroup>
+<col width="6%">
+<col width="14%">
+<col width="13%">
+<col width="13%">
+<col width="11%">
+<col width="16%">
+<col width="24%">
+</colgroup>
+<thead><tr class="header">
+<th align="left">sample</th>
+<th align="right">unweighted_time</th>
+<th align="right">knownvar_time</th>
+<th align="right">unweighted_se</th>
+<th align="right">knownvar_se</th>
+<th align="right">mean_sampling_var</th>
+<th align="right">fitted_extra_residual_var</th>
+</tr></thead>
+<tbody>
+<tr class="odd">
+<td align="left">ROI_1</td>
+<td align="right">0.4543</td>
+<td align="right">0.4416</td>
+<td align="right">0.0443</td>
+<td align="right">0.0361</td>
+<td align="right">0.0053</td>
+<td align="right">0.0032</td>
+</tr>
+<tr class="even">
+<td align="left">ROI_2</td>
+<td align="right">0.7234</td>
+<td align="right">0.7089</td>
+<td align="right">0.0666</td>
+<td align="right">0.0645</td>
+<td align="right">0.0053</td>
+<td align="right">0.0062</td>
+</tr>
+</tbody>
+</table>
+<p>Both fits use exactly the same effect estimates. Their coefficients
+and standard errors differ because the known-variance fit recognizes
+that some observations are measured less precisely.
+<code>fitted_extra_residual_var</code> estimates the simulated 0.0064
+component; with a data set this small it need not recover that value
+exactly. A near-zero estimate in real data can mean either that the
+reported sampling variances explain the remaining observation-level
+variation or that the component is weakly identified.</p>
+<p>There are two important limits. First, <code>var</code> must contain
+strictly positive sampling variances on the squared scale of
+<code>beta</code>; if the input supplies a standard error, square it
+during ingestion or map it to <code>se</code> so that
+<code>fmrigds</code> can derive <code>var</code>. Second, this version
+assumes the sampling-error covariance is diagonal. Contrasts estimated
+from the same first-level GLM can have correlated errors. Marginal
+variance maps alone cannot recover that covariance, so do not interpret
+the diagonal model as a full solution for dependent first-level
+contrasts.</p>
+<p>Because the variances are treated as known, their accuracy now
+matters directly. A variance biased downward gives that observation too
+much precision; <code>vc_resid</code> can absorb general excess
+heterogeneity but cannot repair an observation-specific miscalibration.
+Inspect the distribution and provenance of <code>var</code>, and use
+sensitivity analyses when first-level noise modeling is doubtful.</p>
+<p>That distinction matters in fMRI. Under a correctly specified mean
+model with mean-zero errors unrelated to the regressors, ordinary least
+squares coefficients need not be biased merely because residuals are
+positively autocorrelated, but an IID variance calculation generally
+overstates the effective information and can make standard errors too
+small. Prewhitening choices can materially change first-level
+uncertainty and, in some settings, the resulting activation estimates.
+See <a href="https://ora.ox.ac.uk/objects/uuid%3Ae26cdb91-02a9-4252-b2f6-cc57a8e25844" class="external-link">Woolrich
+et al. (2001)</a> and the multi-package evaluation by <a href="https://www.nature.com/articles/s41467-019-09230-w" class="external-link">Olszowy et
+al. (2019)</a>.</p>
+<p>Before treating a beta map as a comparable response, record how it
+was made: the first-level design and contrast, effect scaling, temporal
+autocorrelation model and prewhitening, censoring or nuisance
+regression, residual degrees of freedom, and any transformations. If
+first-level sampling variances need to enter the group model, use a
+<code>*_knownvar</code> method and audit the variance model; the
+unweighted methods are not measurement-error or inverse-variance
+meta-analytic LMMs. For the distinction between ordinary and
+precision-weighted two-stage group analysis, see <a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC2719771/" class="external-link">Mumford and
+Nichols (2009)</a> and <a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC3404516/" class="external-link">Chen et
+al. (2012)</a>.</p>
+</div>
+<div class="section level2">
+<h2 id="should-variance-components-be-pooled-or-fitted-voxelwise">Should variance components be pooled or fitted voxelwise?<a class="anchor" aria-label="anchor" href="#should-variance-components-be-pooled-or-fitted-voxelwise"></a>
+</h2>
+<p>This choice currently applies to the unweighted reducers. The
+known-variance reducers are voxelwise only: sharing an absolute
+random-effect covariance across voxels would usually be scientifically
+indefensible, while sharing a relative covariance requires an explicit
+cross-voxel scaling rule that is not yet part of the API.</p>
+<p>The choice is a bias–variance tradeoff, not just a speed switch. In
+pooled mode, all complete samples contribute to one profile-likelihood
+estimate of the <strong>relative</strong> covariance λ. Each sample
+still gets its own residual variance <code>sigma2</code>, so its
+absolute <code>vc_intercept</code> and <code>vc_slope</code> may differ.
+In voxelwise mode, both the relative covariance and the residual scale
+are estimated separately for every sample.</p>
+<table class="table">
+<colgroup>
+<col width="33%">
+<col width="33%">
+<col width="33%">
+</colgroup>
+<thead><tr class="header">
+<th>Question</th>
+<th><code>theta_mode = "pooled"</code></th>
+<th><code>theta_mode = "voxelwise"</code></th>
+</tr></thead>
+<tbody>
+<tr class="odd">
+<td>What is shared?</td>
+<td>Random-effect-to-residual variance ratios, and the intercept–slope
+correlation for <code>covariance = "full"</code>
+</td>
+<td>Nothing beyond the fixed/random design</td>
+</tr>
+<tr class="even">
+<td>Main advantage</td>
+<td>More stable covariance shape and much less optimization</td>
+<td>Allows genuine spatial or ROI heterogeneity in covariance shape</td>
+</tr>
+<tr class="odd">
+<td>Main risk</td>
+<td>A common shape can misrepresent regions with different longitudinal
+variability</td>
+<td>Noisy or boundary variance estimates with small samples; spatially
+speckled component maps</td>
+</tr>
+<tr class="even">
+<td>Effect on fixed effects</td>
+<td>Shared covariance determines the within-subject GLS weighting</td>
+<td>Sample-specific covariance gives sample-specific GLS weighting</td>
+</tr>
+<tr class="odd">
+<td>Sensible starting point</td>
+<td>Whole-brain data with few repeats, or when covariance heterogeneity
+is not the scientific target</td>
+<td>A modest number of ROIs, stronger replication, or a planned
+sensitivity analysis</td>
+</tr>
+</tbody>
+</table>
+<p>Pooled mode is not spatial smoothing and does not shrink voxelwise
+estimates toward a mean; it fits one common covariance shape by summing
+profile-likelihood contributions across samples. It also does not model
+spatial correlation among samples. A large set of highly correlated
+voxels therefore supplies less independent information than its voxel
+count suggests, and a common λ can be a poor description when tissue
+classes or regions have genuinely different variance ratios.</p>
+<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">g_pooled</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/gds.html">gds</a></span><span class="op">(</span><span class="va">rm_df</span>, contrast_data_cols <span class="op">=</span> <span class="st">"time"</span><span class="op">)</span> <span class="op">|&gt;</span></span>
 <span>  <span class="fu"><a href="../reference/reduce.html">reduce</a></span><span class="op">(</span></span>
 <span>    method <span class="op">=</span> <span class="st">"lmm:ri_slope1"</span>,</span>
@@ -253,32 +734,69 @@ is more flexible.</p>
 <span></span>
 <span><span class="va">theta_compare</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span></span>
 <span>  sample <span class="op">=</span> <span class="fu"><a href="../reference/sample_labels.html">sample_labels</a></span><span class="op">(</span><span class="va">g_rm</span><span class="op">)</span>,</span>
-<span>  pooled_lambda <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/numeric.html" class="external-link">as.numeric</a></span><span class="op">(</span><span class="fu"><a href="../reference/assay.html">assay</a></span><span class="op">(</span><span class="va">g_pooled</span>, <span class="st">"lambda_slope"</span><span class="op">)</span><span class="op">)</span>, <span class="fl">3</span><span class="op">)</span>,</span>
-<span>  voxelwise_lambda <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/numeric.html" class="external-link">as.numeric</a></span><span class="op">(</span><span class="fu"><a href="../reference/assay.html">assay</a></span><span class="op">(</span><span class="va">g_rm</span>, <span class="st">"lambda_slope"</span><span class="op">)</span><span class="op">)</span>, <span class="fl">3</span><span class="op">)</span>,</span>
+<span>  pooled_lambda_slope <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/numeric.html" class="external-link">as.numeric</a></span><span class="op">(</span><span class="fu"><a href="../reference/assay.html">assay</a></span><span class="op">(</span><span class="va">g_pooled</span>, <span class="st">"lambda_slope"</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>  voxelwise_lambda_slope <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/numeric.html" class="external-link">as.numeric</a></span><span class="op">(</span><span class="fu"><a href="../reference/assay.html">assay</a></span><span class="op">(</span><span class="va">g_rm</span>, <span class="st">"lambda_slope"</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>  pooled_vc_slope <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/numeric.html" class="external-link">as.numeric</a></span><span class="op">(</span><span class="fu"><a href="../reference/assay.html">assay</a></span><span class="op">(</span><span class="va">g_pooled</span>, <span class="st">"vc_slope"</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>  voxelwise_vc_slope <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/numeric.html" class="external-link">as.numeric</a></span><span class="op">(</span><span class="fu"><a href="../reference/assay.html">assay</a></span><span class="op">(</span><span class="va">g_rm</span>, <span class="st">"vc_slope"</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>  pooled_se_time <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/numeric.html" class="external-link">as.numeric</a></span><span class="op">(</span><span class="fu"><a href="../reference/assay.html">assay</a></span><span class="op">(</span><span class="va">g_pooled</span>, <span class="st">"se_coef:time"</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>  voxelwise_se_time <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/numeric.html" class="external-link">as.numeric</a></span><span class="op">(</span><span class="fu"><a href="../reference/assay.html">assay</a></span><span class="op">(</span><span class="va">g_rm</span>, <span class="st">"se_coef:time"</span><span class="op">)</span><span class="op">)</span>,</span>
 <span>  stringsAsFactors <span class="op">=</span> <span class="cn">FALSE</span></span>
 <span><span class="op">)</span></span>
 <span></span>
-<span><span class="fu">knitr</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/pkg/knitr/man/kable.html" class="external-link">kable</a></span><span class="op">(</span><span class="va">theta_compare</span>, row.names <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span></code></pre></div>
+<span><span class="fu">knitr</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/pkg/knitr/man/kable.html" class="external-link">kable</a></span><span class="op">(</span></span>
+<span>  <span class="va">theta_compare</span>,</span>
+<span>  digits <span class="op">=</span> <span class="fl">3</span>,</span>
+<span>  row.names <span class="op">=</span> <span class="cn">FALSE</span></span>
+<span><span class="op">)</span></span></code></pre></div>
 <table class="table">
+<colgroup>
+<col width="5%">
+<col width="16%">
+<col width="19%">
+<col width="13%">
+<col width="16%">
+<col width="12%">
+<col width="15%">
+</colgroup>
 <thead><tr class="header">
 <th align="left">sample</th>
-<th align="right">pooled_lambda</th>
-<th align="right">voxelwise_lambda</th>
+<th align="right">pooled_lambda_slope</th>
+<th align="right">voxelwise_lambda_slope</th>
+<th align="right">pooled_vc_slope</th>
+<th align="right">voxelwise_vc_slope</th>
+<th align="right">pooled_se_time</th>
+<th align="right">voxelwise_se_time</th>
 </tr></thead>
 <tbody>
 <tr class="odd">
 <td align="left">ROI_1</td>
-<td align="right">792143154</td>
-<td align="right">793553955</td>
+<td align="right">2.437</td>
+<td align="right">0.022</td>
+<td align="right">0.003</td>
+<td align="right">0.000</td>
+<td align="right">0.024</td>
+<td align="right">0.011</td>
 </tr>
 <tr class="even">
 <td align="left">ROI_2</td>
-<td align="right">792143154</td>
-<td align="right">793766066</td>
+<td align="right">2.437</td>
+<td align="right">5.493</td>
+<td align="right">0.013</td>
+<td align="right">0.025</td>
+<td align="right">0.050</td>
+<td align="right">0.068</td>
 </tr>
 </tbody>
 </table>
-<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
+<p>The pooled λ is identical across rows by construction. The absolute
+pooled slope variance need not be identical because it is the shared λ
+multiplied by each ROI’s residual variance. Differences between the
+final two columns show the inferential consequence of the choice: the
+fitted covariance changes the GLS standard error, not merely a
+diagnostic variance map. With only six subjects, the voxelwise
+covariance estimates in this toy example should be read as a sensitivity
+demonstration, not as trustworthy ROI-specific biology.</p>
+<div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu">knitr</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/pkg/knitr/man/kable.html" class="external-link">kable</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/transform.html" class="external-link">transform</a></span><span class="op">(</span><span class="va">bench_times</span>, elapsed <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">elapsed</span>, <span class="fl">3</span><span class="op">)</span><span class="op">)</span>, row.names <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span></code></pre></div>
 <table class="table">
 <thead><tr class="header">
@@ -288,14 +806,24 @@ is more flexible.</p>
 <tbody>
 <tr class="odd">
 <td align="left">pooled</td>
-<td align="right">0.027</td>
+<td align="right">0.013</td>
 </tr>
 <tr class="even">
 <td align="left">voxelwise</td>
-<td align="right">1.447</td>
+<td align="right">0.269</td>
 </tr>
 </tbody>
 </table>
+<p>Runtime is a practical reason to pool, but not a statistical
+justification. For a real analysis, start from the covariance assumption
+you can defend and then inspect sensitivity: compare coefficient and
+standard-error maps, the distribution of <code>lambda_*</code>, and the
+frequency of near-boundary components. The current
+<code>converged</code> assay distinguishes an available numerical fit
+from an unavailable one; it is not a rich optimizer-diagnostic code. A
+large change in scientific conclusions is evidence that the
+random-effects structure is consequential; it is not evidence that the
+more favorable mode is correct.</p>
 </div>
 <div class="section level2">
 <h2 id="what-if-your-repeated-measure-metadata-is-already-separate">What if your repeated-measure metadata is already separate?<a class="anchor" aria-label="anchor" href="#what-if-your-repeated-measure-metadata-is-already-separate"></a>
@@ -303,10 +831,10 @@ is more flexible.</p>
 <p>If your <code>time</code>, visit order, or other repeated-measure
 annotations already live outside the long table, attach them explicitly
 with <code><a href="../reference/with_contrast_data.html">with_contrast_data()</a></code>.</p>
-<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">contrast_df</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>time <span class="op">=</span> <span class="va">time</span>, row.names <span class="op">=</span> <span class="va">visits</span><span class="op">)</span></span>
 <span></span>
-<span><span class="va">g_attached</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/gds.html">gds</a></span><span class="op">(</span><span class="va">rm_df</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"sample"</span>, <span class="st">"subject"</span>, <span class="st">"contrast"</span>, <span class="st">"beta"</span>, <span class="st">"var"</span><span class="op">)</span><span class="op">]</span><span class="op">)</span> <span class="op">|&gt;</span></span>
+<span><span class="va">g_attached</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/gds.html">gds</a></span><span class="op">(</span><span class="va">rm_df</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"sample"</span>, <span class="st">"subject"</span>, <span class="st">"contrast"</span>, <span class="st">"beta"</span><span class="op">)</span><span class="op">]</span><span class="op">)</span> <span class="op">|&gt;</span></span>
 <span>  <span class="fu"><a href="../reference/with_contrast_data.html">with_contrast_data</a></span><span class="op">(</span><span class="va">contrast_df</span><span class="op">)</span> <span class="op">|&gt;</span></span>
 <span>  <span class="fu"><a href="../reference/reduce.html">reduce</a></span><span class="op">(</span></span>
 <span>    method <span class="op">=</span> <span class="st">"lmm:ri_slope1"</span>,</span>
@@ -336,7 +864,7 @@ with <code><a href="../reference/with_contrast_data.html">with_contrast_data()</
 <tbody>
 <tr class="odd">
 <td align="left">ROI_1</td>
-<td align="right">0.453</td>
+<td align="right">0.450</td>
 </tr>
 <tr class="even">
 <td align="left">ROI_2</td>
@@ -346,7 +874,7 @@ with <code><a href="../reference/with_contrast_data.html">with_contrast_data()</
 </table>
 <p>If you only need a random intercept, use
 <code>method = "lmm:ri"</code> instead:</p>
-<div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">g_ri</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/gds.html">gds</a></span><span class="op">(</span><span class="va">rm_df</span>, contrast_data_cols <span class="op">=</span> <span class="st">"time"</span><span class="op">)</span> <span class="op">|&gt;</span></span>
 <span>  <span class="fu"><a href="../reference/reduce.html">reduce</a></span><span class="op">(</span></span>
 <span>    method <span class="op">=</span> <span class="st">"lmm:ri"</span>,</span>
@@ -373,13 +901,13 @@ with <code><a href="../reference/with_contrast_data.html">with_contrast_data()</
 <tbody>
 <tr class="odd">
 <td align="left">ROI_1</td>
-<td align="right">0.453</td>
-<td align="right">34.765</td>
+<td align="right">0.450</td>
+<td align="right">11.836</td>
 </tr>
 <tr class="even">
 <td align="left">ROI_2</td>
 <td align="right">0.703</td>
-<td align="right">34.765</td>
+<td align="right">11.836</td>
 </tr>
 </tbody>
 </table>
@@ -393,14 +921,33 @@ with <code><a href="../reference/with_contrast_data.html">with_contrast_data()</
 <li>one grouping factor only</li>
 <li>Gaussian outcomes only</li>
 <li>shared observation layout across all samples</li>
-<li>random intercept only (<code>"lmm:ri"</code>) or random intercept
-plus one slope (<code>"lmm:ri_slope1"</code>)</li>
+<li>random intercept only or random intercept plus one slope, each
+available as an unweighted method or a <code>*_knownvar</code>
+method</li>
+<li>unweighted methods estimate one residual variance per sample and
+ignore observation-level precision</li>
+<li>known-variance methods add <code>diag(var)</code> to the marginal
+covariance and estimate additional residual heterogeneity; they
+currently assume diagonal sampling covariance and voxelwise variance
+components</li>
+<li>complete observations within a sample; a non-finite
+subject-by-repeat value makes that sample’s model outputs
+unavailable</li>
+<li>plug-in GLS inference with residual degrees of freedom, without
+Satterthwaite or Kenward–Roger correction</li>
 <li>no crossed random effects</li>
 <li>no general random-effects formula grammar</li>
+<li>no spatial covariance model or spatial regularization of voxelwise
+variance components</li>
 </ul>
 <p>That restriction is the point: it lets <code>fmrigds</code> reuse one
 design across many responses and produce a whole-brain or whole-ROI
-result with one call to <code><a href="../reference/reduce.html">reduce()</a></code>.</p>
+result with one call to <code><a href="../reference/reduce.html">reduce()</a></code>. It also defines the
+boundary of the scientific claim: the reducer models dependence among
+repeated effect estimates from the same subject. The known-variance
+variants additionally model reported marginal sampling uncertainty, but
+none of these reducers models dependence between neighboring samples or
+sampling-error covariance between contrasts.</p>
 </div>
 <div class="section level2">
 <h2 id="where-do-you-go-next">Where do you go next?<a class="anchor" aria-label="anchor" href="#where-do-you-go-next"></a>
@@ -411,6 +958,8 @@ result with one call to <code><a href="../reference/reduce.html">reduce()</a></c
 metadata is already separate from the long table.</li>
 <li>See <code>inst/examples/fmrigds_lmm_benchmark.R</code> for a
 benchmark harness that compares pooled and voxelwise theta modes.</li>
+<li>See <code>inst/examples/fmrigds_lmm_knownvar_benchmark.R</code> for
+a benchmark of the variance-aware random-slope reducer.</li>
 </ul>
 </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>

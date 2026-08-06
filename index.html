@@ -352,11 +352,13 @@
 <li>
 <code>method = "lmm:ri_slope1"</code> for a random intercept plus one within-subject slope</li>
 <li>
+<code>method = "lmm:ri_knownvar"</code> and <code>"lmm:ri_slope1_knownvar"</code> to incorporate known diagonal sampling variances from the <code>var</code> assay</li>
+<li>
 <code>options$theta_mode = "pooled"</code> to share variance parameters across samples</li>
 <li>
 <code>options$theta_mode = "voxelwise"</code> to fit variance parameters separately per sample</li>
 </ul>
-<p>This is intentionally narrower than <code>lmer()</code>: one grouping factor only, Gaussian outcomes only, and no general random-effects formula parser.</p>
+<p>The <code>*_knownvar</code> methods fit <code>diag(var) + vc_resid * I + Z G Z'</code> and currently use voxelwise variance components only. All four methods are intentionally narrower than <code>lmer()</code>: one grouping factor, Gaussian outcomes, and no general random-effects formula parser. See <code><a href="articles/repeated-measures-lmm.html">vignette("repeated-measures-lmm")</a></code> for the weighting contract and guidance on first-level variance quality.</p>
 </div>
 <div class="section level3">
 <h3 id="working-with-different-formats">Working with different formats<a class="anchor" aria-label="anchor" href="#working-with-different-formats"></a>

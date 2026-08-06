@@ -63,9 +63,10 @@
 <dd><p>Reduction method. Built-ins include <code>"fixed"</code>, <code>"random"</code>,
 <code>"stouffer"</code>, and <code>"fisher"</code>. Registry-backed reducers include
 meta-analytic regression reducers such as <code>"meta:fe_reg"</code> and the
-restricted repeated-measures Gaussian LMM reducers <code>"lmm:ri"</code> and
-<code>"lmm:ri_slope1"</code>, plus permutation reducers <code>"perm:onesample"</code> and
-<code>"perm:twosample"</code>.</p></dd>
+restricted repeated-measures Gaussian LMM reducers <code>"lmm:ri"</code>,
+<code>"lmm:ri_slope1"</code>, <code>"lmm:ri_knownvar"</code>, and
+<code>"lmm:ri_slope1_knownvar"</code>, plus permutation reducers
+<code>"perm:onesample"</code> and <code>"perm:twosample"</code>.</p></dd>
 
 
 <dt id="arg-weights">weights<a class="anchor" aria-label="anchor" href="#arg-weights"></a></dt>
@@ -86,9 +87,12 @@ not interpreted yet; future versions may extend grouping to other
 factors in <code>row_data</code>/<code>col_data</code>.</p>
 <p>Restricted repeated-measures LMM contract:</p><ul><li><p><code>"lmm:ri"</code> fits a Gaussian random-intercept model.</p></li>
 <li><p><code>"lmm:ri_slope1"</code> fits a Gaussian random intercept plus one within-subject slope.</p></li>
+<li><p>The corresponding <code>*_knownvar</code> methods add the known diagonal sampling
+variance from <code>var</code> plus an estimated residual heterogeneity component.</p></li>
 <li><p>Repeated-measure metadata must live on the contrast axis via <code><a href="with_contrast_data.html">with_contrast_data()</a></code>
 or tabular ingestion with <code>gds(..., contrast_data_cols = ...)</code>.</p></li>
-<li><p><code>options$theta_mode</code> can be <code>"pooled"</code> or <code>"voxelwise"</code>.</p></li>
+<li><p>Unweighted methods allow <code>theta_mode = "pooled"</code> or <code>"voxelwise"</code>;
+known-variance methods currently require <code>"voxelwise"</code>.</p></li>
 <li><p>The supported family is intentionally narrow: one grouping factor only,
 Gaussian responses only, and no general random-effects formula grammar.</p></li>
 </ul><p>Permutation reducer contract:</p><ul><li><p><code>"perm:onesample"</code> performs an unweighted one-sample sign-flip t test
@@ -105,8 +109,8 @@ max-|t| family-wise <code>p_fwer</code>.</p></li>
 
 <dt id="arg-formula">formula<a class="anchor" aria-label="anchor" href="#arg-formula"></a></dt>
 <dd><p>Optional model formula. For meta-regression reducers the design
-is built from subject-level <code>col_data</code>. For <code>"lmm:ri"</code> and
-<code>"lmm:ri_slope1"</code>, the formula specifies fixed effects at the
+is built from subject-level <code>col_data</code>. For repeated-measures LMM reducers,
+the formula specifies fixed effects at the
 subject-by-repeat level and must not contain <code>lmer</code>-style random-effects
 syntax.</p></dd>
 

@@ -76,6 +76,7 @@
 <div class="section level3">
 <h3 id="sprint--repeated-measures-lmm-polish-0-1-0-9000">Sprint 10 / Repeated-measures LMM polish<a class="anchor" aria-label="anchor" href="#sprint--repeated-measures-lmm-polish-0-1-0-9000"></a></h3>
 <ul><li>Added restricted repeated-measures Gaussian LMM reducers: <code>lmm:ri</code> and <code>lmm:ri_slope1</code>.</li>
+<li>Added variance-aware <code>lmm:ri_knownvar</code> and <code>lmm:ri_slope1_knownvar</code> reducers. They fit <code>diag(var) + vc_resid * I + Z G Z'</code>, reject synthetic or nonpositive variances, and are numerically checked against <code><a href="https://wviechtb.github.io/metafor/reference/rma.mv.html" class="external-link">metafor::rma.mv()</a></code>.</li>
 <li>Added <code>theta_mode = "pooled"</code> and <code>theta_mode = "voxelwise"</code> for shared- vs sample-specific variance parameters.</li>
 <li>Added long-table repeated-measures ingestion via <code>contrast_data_cols</code>, so contrast metadata can be extracted directly from tabular sources.</li>
 <li>Hardened the low-rank LMM kernels against numerical asymmetry in intermediate SPD matrices.</li>

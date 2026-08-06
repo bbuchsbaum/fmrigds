@@ -120,7 +120,7 @@ file.</p>
 <span>  <span class="st">"--reduce"</span>, <span class="st">"fixed"</span>,</span>
 <span>  <span class="st">"--out"</span>, <span class="va">quick_out</span></span>
 <span><span class="op">)</span></span>
-<span><span class="co">#&gt; $ fmrigds 'run' '--input' '/tmp/RtmpA27Ajn/file1abf4066200a.csv' '--subset' 'contrast=task' '--reduce' 'fixed' '--out' '/tmp/RtmpA27Ajn/file1abf4750814.csv'</span></span>
+<span><span class="co">#&gt; $ fmrigds 'run' '--input' '/tmp/RtmpJlqd3h/file19939cc48a9.csv' '--subset' 'contrast=task' '--reduce' 'fixed' '--out' '/tmp/RtmpJlqd3h/file19933d3d5d18.csv'</span></span>
 <span><span class="co">#&gt; GDS</span></span>
 <span><span class="co">#&gt;   dims: 2 x 1 x 1 [sample x subject x contrast]</span></span>
 <span><span class="co">#&gt;   space: sample_labels n=2</span></span>
@@ -255,7 +255,7 @@ reducer-specific options to more complex models.</p>
 <span>  <span class="st">"--show-assay"</span>, <span class="st">"coef:age"</span>,</span>
 <span>  <span class="st">"--n"</span>, <span class="st">"2"</span></span>
 <span><span class="op">)</span></span>
-<span><span class="co">#&gt; $ fmrigds 'preview' '--input' '/tmp/RtmpA27Ajn/file1abf4066200a.csv' '--subset' 'contrast=task' '--col-data' '/tmp/RtmpA27Ajn/file1abf702e3336.csv' '--reduce' 'meta:fe_reg' '--formula' '~ age' '--show-assay' 'coef:age' '--n' '2'</span></span>
+<span><span class="co">#&gt; $ fmrigds 'preview' '--input' '/tmp/RtmpJlqd3h/file19939cc48a9.csv' '--subset' 'contrast=task' '--col-data' '/tmp/RtmpJlqd3h/file199319c73129.csv' '--reduce' 'meta:fe_reg' '--formula' '~ age' '--show-assay' 'coef:age' '--n' '2'</span></span>
 <span><span class="co">#&gt; GDS</span></span>
 <span><span class="co">#&gt;   dims: 2 x 1 x 1 [sample x subject x contrast]</span></span>
 <span><span class="co">#&gt;   space: sample_labels n=2</span></span>
@@ -308,15 +308,15 @@ the current installation.</p>
 <span><span class="co">#&gt; 2 combine:lancaster         p</span></span>
 <span><span class="co">#&gt; 3  combine:stouffer         z</span></span>
 <span><span class="co">#&gt; 4            lmm:ri      beta</span></span>
-<span><span class="co">#&gt; 5     lmm:ri_slope1      beta</span></span>
-<span><span class="co">#&gt; 6           meta:fe beta, var</span></span>
+<span><span class="co">#&gt; 5   lmm:ri_knownvar beta, var</span></span>
+<span><span class="co">#&gt; 6     lmm:ri_slope1      beta</span></span>
 <span><span class="co">#&gt;                                                                                                                                                                                                       provides</span></span>
 <span><span class="co">#&gt; 1                                                                                                                                                                                                p_g, chi2, df</span></span>
 <span><span class="co">#&gt; 2                                                                                                                                                                                                p_g, chi2, df</span></span>
 <span><span class="co">#&gt; 3                                                                                                                                                                                                     z_g, p_g</span></span>
 <span><span class="co">#&gt; 4                                                                                                             coef, se_coef, t_coef, p_coef, sigma2, vc_intercept, vc_resid, df_res, logLik, converged, lambda</span></span>
-<span><span class="co">#&gt; 5 coef, se_coef, t_coef, p_coef, sigma2, vc_intercept, vc_slope, vc_cov_intercept_slope, vc_resid, df_res, logLik, converged, lambda_intercept, lambda_slope, lambda_cov_intercept_slope, corr_intercept_slope</span></span>
-<span><span class="co">#&gt; 6                                                                                                                                                                  beta_g, var_g, se_g, z_g, p_g, Q, I2, n_eff</span></span></code></pre></div>
+<span><span class="co">#&gt; 5                                                                                                  coef, se_coef, t_coef, p_coef, sigma2, vc_intercept, vc_resid, sampling_var_mean, df_res, logLik, converged</span></span>
+<span><span class="co">#&gt; 6 coef, se_coef, t_coef, p_coef, sigma2, vc_intercept, vc_slope, vc_cov_intercept_slope, vc_resid, df_res, logLik, converged, lambda_intercept, lambda_slope, lambda_cov_intercept_slope, corr_intercept_slope</span></span></code></pre></div>
 <p>If you are scripting around the CLI, this registry view is a good way
 to make your wrapper validate method names before a larger run.</p>
 </div>

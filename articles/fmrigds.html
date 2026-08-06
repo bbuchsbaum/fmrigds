@@ -64,17 +64,18 @@
 <script>document.addEventListener("DOMContentLoaded",function(){document.body.classList.remove("palette-red","palette-lapis","palette-ochre","palette-teal","palette-green","palette-violet","preset-homage","preset-interaction","preset-study","preset-structural","preset-adobe","preset-midnight");document.body.classList.add("palette-red","preset-interaction");});</script><div class="section level2">
 <h2 id="why-fmrigds">Why fmrigds?<a class="anchor" aria-label="anchor" href="#why-fmrigds"></a>
 </h2>
-<p>Group-level fMRI analysis follows a predictable pattern: you load
-first-level results (effect estimates, variances) for each subject,
-compute any missing statistics, run a group model, and correct for
-multiple comparisons. The statistical operations are well-understood,
-but the code ends up different every time because the input format
-varies—CSV, NIfTI, HDF5—and the bookkeeping around subjects, contrasts,
-and spatial locations is tedious.</p>
+<p>Group-level fMRI analysis follows a predictable pattern: you load one
+or more subject-level summaries—effect estimates, standardized effects,
+t-statistics, z-scores, or p-values—run a group model or combine
+evidence, and correct for multiple comparisons. The statistical
+operations are well-understood, but the code ends up different every
+time because the available summaries and input format vary—CSV, NIfTI,
+HDF5—and the bookkeeping around subjects, contrasts, and spatial
+locations is tedious.</p>
 <p>fmrigds gives you a single pipeline interface that works regardless
-of input format. You describe <em>what</em> you want (derive
-t-statistics, run a fixed-effects model, apply FDR correction) and
-fmrigds handles the rest.</p>
+of input format. You describe <em>what</em> you want (fit an unweighted
+group model, pool effects with known uncertainty, combine evidence,
+apply FDR correction) and fmrigds handles the rest.</p>
 </div>
 <div class="section level2">
 <h2 id="what-is-a-gds">What is a GDS?<a class="anchor" aria-label="anchor" href="#what-is-a-gds"></a>
@@ -102,6 +103,75 @@ aligned along the same axes.</p>
 <p>A GDS also carries a <strong>space</strong> descriptor that records
 what the sample axis represents (voxel coordinates, parcel labels,
 etc.), so spatial information is never lost.</p>
+<div class="section level3">
+<h3 id="which-path-fits-the-summaries-you-have">Which path fits the summaries you have?<a class="anchor" aria-label="anchor" href="#which-path-fits-the-summaries-you-have"></a>
+</h3>
+<p>You do not need a variance or standard error to start. Choose the
+reducer by what each subject contributes:</p>
+<table class="table">
+<colgroup>
+<col width="25%">
+<col width="25%">
+<col width="25%">
+<col width="25%">
+</colgroup>
+<thead><tr class="header">
+<th>Subject-level input</th>
+<th>Ingest as</th>
+<th>Group path</th>
+<th>What the result means</th>
+</tr></thead>
+<tbody>
+<tr class="odd">
+<td>Effect estimate plus <code>var</code> or <code>se</code>
+</td>
+<td>
+<code>beta</code> plus <code>var</code>/<code>se</code>
+</td>
+<td>
+<code>"fixed"</code>, <code>"random"</code>, or meta-regression</td>
+<td>A pooled effect with first-level precision</td>
+</tr>
+<tr class="even">
+<td>Beta, standardized effect, or another commensurate signed metric
+without uncertainty</td>
+<td><code>beta</code></td>
+<td>
+<code><a href="../reference/group_ols.html">one_sample()</a></code>, <code><a href="../reference/group_ols.html">group_ols()</a></code>, or
+<code>"perm:onesample"</code>
+</td>
+<td>An unweighted model of the subject-level values</td>
+</tr>
+<tr class="odd">
+<td>z-score</td>
+<td><code>z</code></td>
+<td><code>"stouffer"</code></td>
+<td>Combined signed evidence; no pooled effect size</td>
+</tr>
+<tr class="even">
+<td>t-statistic plus degrees of freedom</td>
+<td>
+<code>t</code> plus <code>df</code>, then
+<code>derive("z")</code>
+</td>
+<td><code>"stouffer"</code></td>
+<td>Combined signed evidence after calibrating each t-statistic</td>
+</tr>
+<tr class="odd">
+<td>p-value</td>
+<td><code>p</code></td>
+<td>
+<code>"fisher"</code> or <code>"combine:lancaster"</code>
+</td>
+<td>Combined unsigned evidence; no effect direction</td>
+</tr>
+</tbody>
+</table>
+<p>These paths answer different questions. In particular, a z-score or
+p-value does not contain enough information to reconstruct an effect
+estimate and its sampling variance. Do not invent unit variance and feed
+it to a variance-weighted reducer.</p>
+</div>
 </div>
 <div class="section level2">
 <h2 id="plan-first-compute-later">Plan first, compute later<a class="anchor" aria-label="anchor" href="#plan-first-compute-later"></a>
@@ -355,6 +425,9 @@ dependencies automatically—if you ask for <code>"z"</code> but only have
 </tr>
 </tbody>
 </table>
+<p>Derivation only follows mathematically identified relationships. It
+cannot recover a missing effect estimate or sampling variance from a
+z-score, t-statistic, or p-value alone.</p>
 </div>
 <div class="section level2">
 <h2 id="group-level-analysis-with-reduce">Group-level analysis with reduce()<a class="anchor" aria-label="anchor" href="#group-level-analysis-with-reduce"></a>
@@ -363,12 +436,101 @@ dependencies automatically—if you ask for <code>"z"</code> but only have
 happens. It combines data across subjects into a single summary, much
 like a meta-analysis combines results across studies.</p>
 <div class="section level3">
+<h3 id="effects-without-first-level-variance">Effects without first-level variance<a class="anchor" aria-label="anchor" href="#effects-without-first-level-variance"></a>
+</h3>
+<p>If every subject contributes the same kind of signed, commensurate
+quantity but no standard error—a beta, standardized effect, AUC
+contrast, or another scalar map—fit an unweighted model. Map the value
+column to the GDS <code>beta</code> assay, which is the response slot
+used by the group-model reducers:</p>
+<div class="sourceCode" id="cb13"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">effect_only</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span></span>
+<span>  sample <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"ROI_1"</span>, <span class="st">"ROI_2"</span><span class="op">)</span>, <span class="fl">3</span><span class="op">)</span>,</span>
+<span>  subject <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"sub-01"</span>, <span class="st">"sub-02"</span>, <span class="st">"sub-03"</span><span class="op">)</span>, each <span class="op">=</span> <span class="fl">2</span><span class="op">)</span>,</span>
+<span>  contrast <span class="op">=</span> <span class="st">"faces"</span>,</span>
+<span>  effect_size <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0.5</span>, <span class="fl">0.8</span>, <span class="fl">1.0</span>, <span class="fl">1.2</span>, <span class="fl">0.7</span>, <span class="fl">0.9</span><span class="op">)</span></span>
+<span><span class="op">)</span></span>
+<span></span>
+<span><span class="va">g_effect</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/gds.html">gds</a></span><span class="op">(</span><span class="va">effect_only</span>, effect_cols <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>beta <span class="op">=</span> <span class="st">"effect_size"</span><span class="op">)</span><span class="op">)</span> <span class="op">|&gt;</span></span>
+<span>  <span class="fu"><a href="../reference/group_ols.html">one_sample</a></span><span class="op">(</span><span class="op">)</span> <span class="op">|&gt;</span></span>
+<span>  <span class="fu"><a href="../reference/compute.html">compute</a></span><span class="op">(</span><span class="op">)</span></span>
+<span></span>
+<span><span class="fu"><a href="../reference/assay.html">assay</a></span><span class="op">(</span><span class="va">g_effect</span>, <span class="st">"coef:(Intercept)"</span><span class="op">)</span></span>
+<span><span class="co">#&gt; , , 1</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt;           [,1]</span></span>
+<span><span class="co">#&gt; [1,] 0.7333333</span></span>
+<span><span class="co">#&gt; [2,] 0.9666667</span></span></code></pre></div>
+<p>Here, uncertainty is estimated from between-subject variation. Use
+<code><a href="../reference/group_ols.html">group_ols()</a></code> instead when you need subject covariates, or
+<code>reduce(method = "perm:onesample")</code> for the sign-flip
+permutation path. If your effect size has a valid sampling standard
+error, ingest it as <code>se</code>, derive <code>var</code>, and use a
+meta-analytic reducer instead, for example
+<code>gds(data, effect_cols = list(beta = "effect_size", se = "se")) |&gt; derive("var") |&gt; reduce("random")</code>.</p>
+</div>
+<div class="section level3">
+<h3 id="z-t-or-p-summary-statistics">z, t, or p summary statistics<a class="anchor" aria-label="anchor" href="#z-t-or-p-summary-statistics"></a>
+</h3>
+<p>When you have test statistics rather than effects, combine evidence
+directly. For z-scores, name the input assay explicitly and use
+Stouffer’s method:</p>
+<div class="sourceCode" id="cb14"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">z_only</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/transform.html" class="external-link">transform</a></span><span class="op">(</span></span>
+<span>  <span class="va">effect_only</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"sample"</span>, <span class="st">"subject"</span>, <span class="st">"contrast"</span><span class="op">)</span><span class="op">]</span>,</span>
+<span>  z <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">1.5</span>, <span class="fl">2.0</span>, <span class="fl">2.1</span>, <span class="fl">2.4</span>, <span class="fl">1.8</span>, <span class="fl">2.2</span><span class="op">)</span></span>
+<span><span class="op">)</span></span>
+<span></span>
+<span><span class="va">g_z</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/gds.html">gds</a></span><span class="op">(</span><span class="va">z_only</span>, effect_cols <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>z <span class="op">=</span> <span class="st">"z"</span><span class="op">)</span><span class="op">)</span> <span class="op">|&gt;</span></span>
+<span>  <span class="fu"><a href="../reference/reduce.html">reduce</a></span><span class="op">(</span>method <span class="op">=</span> <span class="st">"stouffer"</span>, weights <span class="op">=</span> <span class="st">"equal"</span><span class="op">)</span> <span class="op">|&gt;</span></span>
+<span>  <span class="fu"><a href="../reference/compute.html">compute</a></span><span class="op">(</span><span class="op">)</span></span>
+<span></span>
+<span><span class="fu"><a href="../reference/assay.html">assay</a></span><span class="op">(</span><span class="va">g_z</span>, <span class="st">"z"</span><span class="op">)</span></span>
+<span><span class="co">#&gt; , , 1</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt;          [,1]</span></span>
+<span><span class="co">#&gt; [1,] 3.117691</span></span>
+<span><span class="co">#&gt; [2,] 3.810512</span></span>
+<span><span class="fu"><a href="../reference/assay.html">assay</a></span><span class="op">(</span><span class="va">g_z</span>, <span class="st">"p"</span><span class="op">)</span></span>
+<span><span class="co">#&gt; , , 1</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt;              [,1]</span></span>
+<span><span class="co">#&gt; [1,] 0.0018227352</span></span>
+<span><span class="co">#&gt; [2,] 0.0001386794</span></span></code></pre></div>
+<p>A t-statistic needs its degrees of freedom before it can be
+calibrated as a z-score. Once both columns are present, the rest of the
+path is the same:</p>
+<div class="sourceCode" id="cb15"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">t_only</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/transform.html" class="external-link">transform</a></span><span class="op">(</span></span>
+<span>  <span class="va">z_only</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"sample"</span>, <span class="st">"subject"</span>, <span class="st">"contrast"</span><span class="op">)</span><span class="op">]</span>,</span>
+<span>  t <span class="op">=</span> <span class="va">z_only</span><span class="op">$</span><span class="va">z</span>,</span>
+<span>  df <span class="op">=</span> <span class="fl">30</span></span>
+<span><span class="op">)</span></span>
+<span></span>
+<span><span class="va">g_t</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/gds.html">gds</a></span><span class="op">(</span><span class="va">t_only</span>, effect_cols <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>t <span class="op">=</span> <span class="st">"t"</span>, df <span class="op">=</span> <span class="st">"df"</span><span class="op">)</span><span class="op">)</span> <span class="op">|&gt;</span></span>
+<span>  <span class="fu"><a href="../reference/derive.html">derive</a></span><span class="op">(</span><span class="st">"z"</span><span class="op">)</span> <span class="op">|&gt;</span></span>
+<span>  <span class="fu"><a href="../reference/reduce.html">reduce</a></span><span class="op">(</span>method <span class="op">=</span> <span class="st">"stouffer"</span>, weights <span class="op">=</span> <span class="st">"equal"</span><span class="op">)</span> <span class="op">|&gt;</span></span>
+<span>  <span class="fu"><a href="../reference/compute.html">compute</a></span><span class="op">(</span><span class="op">)</span></span>
+<span></span>
+<span><span class="fu"><a href="../reference/assay.html">assay</a></span><span class="op">(</span><span class="va">g_t</span>, <span class="st">"p"</span><span class="op">)</span></span>
+<span><span class="co">#&gt; , , 1</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt;              [,1]</span></span>
+<span><span class="co">#&gt; [1,] 0.0026186744</span></span>
+<span><span class="co">#&gt; [2,] 0.0002758601</span></span></code></pre></div>
+<p>For p-values, use <code>effect_cols = list(p = "p")</code> with
+<code>method = "fisher"</code> or
+<code>method = "combine:lancaster"</code>. Fisher’s method does not
+retain effect direction; prefer Stouffer’s method when signed evidence
+matters.</p>
+</div>
+<div class="section level3">
 <h3 id="fixed-effects">Fixed-effects<a class="anchor" aria-label="anchor" href="#fixed-effects"></a>
 </h3>
 <p>A fixed-effects model assumes that every subject shares the same true
 effect. It pools estimates using inverse-variance weighting—subjects
 with more precise estimates (smaller variance) get more weight:</p>
-<div class="sourceCode" id="cb13"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb16"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">g_fe</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/gds.html">gds</a></span><span class="op">(</span><span class="va">tmp</span><span class="op">)</span> <span class="op">|&gt;</span></span>
 <span>  <span class="fu"><a href="../reference/reduce.html">reduce</a></span><span class="op">(</span>method <span class="op">=</span> <span class="st">"fixed"</span><span class="op">)</span> <span class="op">|&gt;</span></span>
 <span>  <span class="fu"><a href="../reference/compute.html">compute</a></span><span class="op">(</span><span class="op">)</span></span>
@@ -382,7 +544,7 @@ diagnostic assays like <code>cochran_q</code> (a test of whether the
 effect really is the same across subjects). Notice that
 <code><a href="../reference/subjects.html">subjects()</a></code> now returns <code>"meta"</code> instead of
 individual subject names:</p>
-<div class="sourceCode" id="cb14"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb17"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/subjects.html">subjects</a></span><span class="op">(</span><span class="va">g_fe</span><span class="op">)</span></span>
 <span><span class="co">#&gt; [1] "meta"</span></span></code></pre></div>
 </div>
@@ -393,7 +555,7 @@ individual subject names:</p>
 common in fMRI), a random-effects model is more appropriate. It
 estimates both the average effect and the between-subject
 variability:</p>
-<div class="sourceCode" id="cb15"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb18"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">g_re</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/gds.html">gds</a></span><span class="op">(</span><span class="va">tmp</span><span class="op">)</span> <span class="op">|&gt;</span></span>
 <span>  <span class="fu"><a href="../reference/reduce.html">reduce</a></span><span class="op">(</span>method <span class="op">=</span> <span class="st">"random"</span><span class="op">)</span> <span class="op">|&gt;</span></span>
 <span>  <span class="fu"><a href="../reference/compute.html">compute</a></span><span class="op">(</span><span class="op">)</span></span>
@@ -420,7 +582,7 @@ error.</p>
 <p>You can include subject-level covariates (e.g., age, group
 membership) in the group model. First attach the covariates with
 <code><a href="../reference/with_col_data.html">with_col_data()</a></code>, then specify a formula:</p>
-<div class="sourceCode" id="cb16"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb19"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">covariates</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span></span>
 <span>  age <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">25</span>, <span class="fl">32</span>, <span class="fl">28</span><span class="op">)</span>,</span>
 <span>  row.names <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"sub-01"</span>, <span class="st">"sub-02"</span>, <span class="st">"sub-03"</span><span class="op">)</span></span>
@@ -449,7 +611,7 @@ where every ROI or voxel shares the same observation layout and the same
 fixed/random design. The repeated measure lives on the contrast axis,
 and its metadata can be extracted directly from a stacked long
 table:</p>
-<div class="sourceCode" id="cb17"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb20"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">subjects_rm</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste0</a></span><span class="op">(</span><span class="st">"sub-"</span>, <span class="fu"><a href="https://rdrr.io/r/base/sprintf.html" class="external-link">sprintf</a></span><span class="op">(</span><span class="st">"%02d"</span>, <span class="fl">1</span><span class="op">:</span><span class="fl">4</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="va">visits_rm</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"pre"</span>, <span class="st">"mid"</span>, <span class="st">"post"</span><span class="op">)</span></span>
 <span><span class="va">time_rm</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="op">-</span><span class="fl">1</span>, <span class="fl">0</span>, <span class="fl">1</span><span class="op">)</span></span>
@@ -476,48 +638,49 @@ table:</p>
 <span></span>
 <span><span class="va">g_rm</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/gds.html">gds</a></span><span class="op">(</span><span class="va">rm_df</span>, contrast_data_cols <span class="op">=</span> <span class="st">"time"</span><span class="op">)</span> <span class="op">|&gt;</span></span>
 <span>  <span class="fu"><a href="../reference/reduce.html">reduce</a></span><span class="op">(</span></span>
-<span>    method <span class="op">=</span> <span class="st">"lmm:ri_slope1"</span>,</span>
+<span>    method <span class="op">=</span> <span class="st">"lmm:ri_slope1_knownvar"</span>,</span>
 <span>    formula <span class="op">=</span> <span class="op">~</span> <span class="va">time</span>,</span>
 <span>    options <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span></span>
 <span>      slope <span class="op">=</span> <span class="st">"time"</span>,</span>
 <span>      covariance <span class="op">=</span> <span class="st">"diag"</span>,</span>
-<span>      fit <span class="op">=</span> <span class="st">"REML"</span>,</span>
-<span>      theta_mode <span class="op">=</span> <span class="st">"voxelwise"</span></span>
+<span>      fit <span class="op">=</span> <span class="st">"REML"</span></span>
 <span>    <span class="op">)</span></span>
 <span>  <span class="op">)</span> <span class="op">|&gt;</span></span>
 <span>  <span class="fu"><a href="../reference/compute.html">compute</a></span><span class="op">(</span><span class="op">)</span></span>
 <span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/names.html" class="external-link">names</a></span><span class="op">(</span><span class="fu"><a href="../reference/assays.html">assays</a></span><span class="op">(</span><span class="va">g_rm</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="co">#&gt;  [1] "sigma2"                     "vc_intercept"              </span></span>
-<span><span class="co">#&gt;  [3] "vc_slope"                   "vc_cov_intercept_slope"    </span></span>
-<span><span class="co">#&gt;  [5] "vc_resid"                   "df_res"                    </span></span>
-<span><span class="co">#&gt;  [7] "logLik"                     "converged"                 </span></span>
-<span><span class="co">#&gt;  [9] "lambda_intercept"           "lambda_slope"              </span></span>
-<span><span class="co">#&gt; [11] "lambda_cov_intercept_slope" "corr_intercept_slope"      </span></span>
-<span><span class="co">#&gt; [13] "coef:(Intercept)"           "se_coef:(Intercept)"       </span></span>
-<span><span class="co">#&gt; [15] "t_coef:(Intercept)"         "p_coef:(Intercept)"        </span></span>
-<span><span class="co">#&gt; [17] "coef:time"                  "se_coef:time"              </span></span>
-<span><span class="co">#&gt; [19] "t_coef:time"                "p_coef:time"</span></span></code></pre></div>
+<span><span class="co">#&gt;  [1] "sigma2"                 "vc_intercept"           "vc_resid"              </span></span>
+<span><span class="co">#&gt;  [4] "sampling_var_mean"      "df_res"                 "logLik"                </span></span>
+<span><span class="co">#&gt;  [7] "converged"              "vc_slope"               "vc_cov_intercept_slope"</span></span>
+<span><span class="co">#&gt; [10] "corr_intercept_slope"   "coef:(Intercept)"       "se_coef:(Intercept)"   </span></span>
+<span><span class="co">#&gt; [13] "t_coef:(Intercept)"     "p_coef:(Intercept)"     "coef:time"             </span></span>
+<span><span class="co">#&gt; [16] "se_coef:time"           "t_coef:time"            "p_coef:time"</span></span></code></pre></div>
 <p>The fixed-effect outputs follow the same <code>coef:*</code>,
 <code>se_coef:*</code>, <code>t_coef:*</code>, and <code>p_coef:*</code>
 naming pattern as the regression reducers. Additional assays report
 variance components such as <code>vc_intercept</code>,
-<code>vc_slope</code>, <code>lambda_intercept</code>, and
-<code>lambda_slope</code>.</p>
-<p>Two restricted mixed-model reducers are available:</p>
+<code>vc_slope</code>, <code>vc_resid</code>, and
+<code>sampling_var_mean</code>.</p>
+<p>Four restricted mixed-model reducers are available:</p>
 <ul>
 <li>
 <code>method = "lmm:ri"</code> for a random intercept only</li>
 <li>
 <code>method = "lmm:ri_slope1"</code> for a random intercept plus
 one within-subject slope</li>
+<li>
+<code>method = "lmm:ri_knownvar"</code> and
+<code>"lmm:ri_slope1_knownvar"</code> for the same random-effects
+structures with <code>var</code> included as known diagonal sampling
+variance</li>
 </ul>
-<p>Set <code>options$theta_mode = "pooled"</code> when you want one
-shared variance structure across all samples, or
-<code>options$theta_mode = "voxelwise"</code> when you want each sample
-to estimate its own variance parameters. This is intentionally narrower
-than <code>lmer()</code>: one grouping factor only, Gaussian outcomes
-only, and no general random-effects formula grammar.</p>
+<p>The unweighted methods support pooled or voxelwise variance
+parameters. The known-variance methods are currently voxelwise only and
+fit <code>diag(var) + vc_resid * I + Z G Z'</code>. If only effect
+estimates are available, use an unweighted method; do not manufacture
+unit variances. See <code><a href="../articles/repeated-measures-lmm.html">vignette("repeated-measures-lmm")</a></code> for
+implications and variance-quality checks. This family remains
+intentionally narrower than <code>lmer()</code>.</p>
 </div>
 </div>
 <div class="section level2">
@@ -527,7 +690,7 @@ only, and no general random-effects formula grammar.</p>
 ROIs, thousands of voxels), some will appear significant by chance.
 Post-hoc corrections control the false discovery rate.</p>
 <p>Add a correction step with <code><a href="../reference/posthoc.html">posthoc()</a></code>:</p>
-<div class="sourceCode" id="cb18"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb21"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">g_fdr</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/gds.html">gds</a></span><span class="op">(</span><span class="va">tmp</span><span class="op">)</span> <span class="op">|&gt;</span></span>
 <span>  <span class="fu"><a href="../reference/reduce.html">reduce</a></span><span class="op">(</span>method <span class="op">=</span> <span class="st">"fixed"</span><span class="op">)</span> <span class="op">|&gt;</span></span>
 <span>  <span class="fu"><a href="../reference/posthoc.html">posthoc</a></span><span class="op">(</span><span class="st">"fdr:bh"</span><span class="op">)</span> <span class="op">|&gt;</span></span>
@@ -570,7 +733,7 @@ tests; see <code><a href="../articles/as-plan-and-spatial-fdr.html">vignette("as
 <p>The <code><a href="../reference/write_out.html">write_out()</a></code> verb saves results as part of the
 pipeline. It runs transparently—the data passes through to the next
 step, and a copy is written to the path you specify:</p>
-<div class="sourceCode" id="cb19"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb22"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">out_csv</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempfile</a></span><span class="op">(</span>fileext <span class="op">=</span> <span class="st">".csv"</span><span class="op">)</span></span>
 <span></span>
 <span><span class="fu"><a href="../reference/gds.html">gds</a></span><span class="op">(</span><span class="va">tmp</span><span class="op">)</span> <span class="op">|&gt;</span></span>
@@ -612,7 +775,7 @@ step, and a copy is written to the path you specify:</p>
 <tr class="odd">
 <td><code>"h5"</code></td>
 <td>.h5</td>
-<td>Archiving with full metadata</td>
+<td>Native fmrigds archive (<code>/gds</code>)</td>
 </tr>
 <tr class="even">
 <td><code>"nifti"</code></td>
@@ -621,17 +784,28 @@ step, and a copy is written to the path you specify:</p>
 </tr>
 </tbody>
 </table>
-<p>For archiving with full provenance, use HDF5. These files round-trip
-perfectly—reading them back with <code><a href="../reference/gds.html">gds()</a></code> recovers all
-metadata:</p>
-<div class="sourceCode" id="cb20"><pre class="downlit sourceCode r">
+<p>HDF5 is a container, not a synonym for the legacy fmristore schema.
+<code>write_out(..., format = "h5")</code> writes the current native
+fmrigds <code>/gds</code> layout. The writer stores assays, axes,
+spatial structure, axis tables, registered map families, metadata, and
+provenance records. The current reader restores the supported GDS data
+model; it does not promise that every arbitrary custom metadata field
+will be reconstructed by every fmrigds version.</p>
+<div class="sourceCode" id="cb23"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/gds.html">gds</a></span><span class="op">(</span><span class="va">tmp</span><span class="op">)</span> <span class="op">|&gt;</span></span>
 <span>  <span class="fu"><a href="../reference/reduce.html">reduce</a></span><span class="op">(</span>method <span class="op">=</span> <span class="st">"fixed"</span><span class="op">)</span> <span class="op">|&gt;</span></span>
 <span>  <span class="fu"><a href="../reference/write_out.html">write_out</a></span><span class="op">(</span><span class="st">"group_results.h5"</span>, format <span class="op">=</span> <span class="st">"h5"</span><span class="op">)</span> <span class="op">|&gt;</span></span>
 <span>  <span class="fu"><a href="../reference/compute.html">compute</a></span><span class="op">(</span><span class="op">)</span></span>
 <span></span>
-<span><span class="co"># Later: read back with full fidelity</span></span>
-<span><span class="va">plan</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/gds.html">gds</a></span><span class="op">(</span><span class="st">"group_results.h5"</span><span class="op">)</span></span></code></pre></div>
+<span><span class="co"># Later: read the native /gds archive (not a legacy fmristore layout)</span></span>
+<span><span class="va">plan</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/gds.html">gds</a></span><span class="op">(</span><span class="st">"group_results.h5"</span><span class="op">)</span></span>
+<span><span class="va">restored</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/compute.html">compute</a></span><span class="op">(</span><span class="va">plan</span><span class="op">)</span></span></code></pre></div>
+<p>If exact preservation of an application-specific metadata field
+matters, verify that field after reading with the fmrigds version used
+by your workflow. The legacy label in
+<code><a href="../articles/fmristore-ingestion.html">vignette("fmristore-ingestion")</a></code> applies only to older
+fmristore layouts such as LabeledVolumeSet, H5ParcellatedScan, and
+LatentNeuroVec.</p>
 </div>
 <div class="section level2">
 <h2 id="working-with-nifti-files">Working with NIfTI files<a class="anchor" aria-label="anchor" href="#working-with-nifti-files"></a>
@@ -640,7 +814,7 @@ metadata:</p>
 per contrast, spread across a directory tree. The
 <code><a href="../reference/image_catalog.html">image_catalog()</a></code> function discovers and organises these
 files automatically:</p>
-<div class="sourceCode" id="cb21"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb24"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="co"># Discover all NIfTI files under a study directory</span></span>
 <span><span class="va">catalog</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/image_catalog.html">image_catalog</a></span><span class="op">(</span></span>
 <span>  root <span class="op">=</span> <span class="st">"study_dir"</span>,</span>
@@ -667,18 +841,22 @@ disk. See <code><a href="../reference/image_catalog.html">?image_catalog</a></co
 <div class="section level2">
 <h2 id="the-pipeline-at-a-glance">The pipeline at a glance<a class="anchor" aria-label="anchor" href="#the-pipeline-at-a-glance"></a>
 </h2>
-<p>Here is the typical fmrigds pipeline from start to finish:</p>
+<p>Here is the beta-plus-variance branch from start to finish:</p>
 <pre><code>  gds("data.csv")
     |&gt; derive("t")
     |&gt; mask()
     |&gt; reduce(method = "fixed")
     |&gt; posthoc("fdr:bh")
-    |&gt; write_out("results.h5")
+    |&gt; write_out("results.csv", format = "csv")
     |&gt; compute()</code></pre>
-<p>Each verb adds one node to the plan. <code><a href="../reference/compute.html">compute()</a></code> executes
-them all in sequence. With 2 ROIs this runs instantly; in a typical
-whole-brain analysis with 100,000+ voxels, the same pipeline scales
-because fmrigds reads data lazily and streams through each step.</p>
+<p>For effect-only inputs, replace
+<code>derive("t") |&gt; reduce(method = "fixed")</code> with
+<code><a href="../reference/group_ols.html">one_sample()</a></code>. For z-scores, replace it with
+<code>reduce(method = "stouffer", weights = "equal")</code>. Each verb
+adds one node to the plan, and <code><a href="../reference/compute.html">compute()</a></code> executes them in
+sequence. With 2 ROIs this runs instantly; in a typical whole-brain
+analysis with 100,000+ voxels, the same pipeline scales because fmrigds
+reads data lazily and streams through each step.</p>
 </div>
 <div class="section level2">
 <h2 id="next-steps">Next steps<a class="anchor" aria-label="anchor" href="#next-steps"></a>
@@ -695,8 +873,9 @@ representations</li>
 operations on realised GDS objects and spatially-aware FDR
 correction</li>
 <li>
-<code><a href="../articles/fmristore-ingestion.html">vignette("fmristore-ingestion")</a></code> — reading fmristore
-HDF5 files (labeled volumes, parcellated data, latent bases)</li>
+<code><a href="../articles/fmristore-ingestion.html">vignette("fmristore-ingestion")</a></code> — reading native
+fmrigds HDF5 archives and older fmristore layouts (labeled volumes,
+parcellated data, latent bases)</li>
 <li>
 <code><a href="../reference/reduce.html">?reduce</a></code> for the full list of reduction methods,
 including OLS, Stouffer, Fisher, and Lancaster</li>
