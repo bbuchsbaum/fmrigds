@@ -1,5 +1,9 @@
 docs/
+src/*.o
+src/*.so
+src/*.dll
 .beads/
+.mote/
 .omc/
 .covr_result.rds
 coverage.html

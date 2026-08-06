@@ -25,12 +25,18 @@ test_that("meta-regression expands parameters into param-suffixed assays", {
   expect_true("coef:x" %in% a)
   expect_true("se_coef:(Intercept)" %in% a)
   expect_true("se_coef:x" %in% a)
+  expect_true("z_coef:(Intercept)" %in% a)
+  expect_true("z_coef:x" %in% a)
+  expect_true("p_coef:(Intercept)" %in% a)
+  expect_true("p_coef:x" %in% a)
 
   # Shapes are [sample x 1 x contrast] = [2 x 1 x 1]
   expect_equal(dim(assay(g, "coef:(Intercept)")), c(2, 1, 1))
   expect_equal(dim(assay(g, "coef:x")), c(2, 1, 1))
   expect_equal(dim(assay(g, "se_coef:(Intercept)")), c(2, 1, 1))
   expect_equal(dim(assay(g, "se_coef:x")), c(2, 1, 1))
+  expect_equal(dim(assay(g, "z_coef:x")), c(2, 1, 1))
+  expect_equal(dim(assay(g, "p_coef:x")), c(2, 1, 1))
 
   # Group-level outputs have subjects = "meta"
   expect_equal(subjects(g), "meta")
@@ -41,4 +47,37 @@ test_that("meta-regression expands parameters into param-suffixed assays", {
   expect_equal(nrow(cd), 1)
   expect_equal(rownames(cd), "meta")
   expect_true("subject" %in% names(cd))
+})
+
+test_that("meta-regression p assays support inherited FDR", {
+  set.seed(11)
+  n_sample <- 9L
+  n_subject <- 10L
+  ids <- paste0("s", seq_len(n_subject))
+  group <- factor(rep(c("control", "patient"), each = n_subject / 2))
+  beta <- array(rnorm(n_sample * n_subject, sd = 0.25), c(n_sample, n_subject, 1L))
+  beta[, group == "patient", 1L] <- beta[, group == "patient", 1L] + 0.5
+  g <- new_gds(
+    list(beta = beta, var = array(0.1, dim(beta))),
+    space_sample_labels(paste0("v", seq_len(n_sample))),
+    ids,
+    "task",
+    col_data = data.frame(group = group, row.names = ids)
+  )
+  for (method in c("meta:fe_reg", "meta:re_reg")) {
+    fit <- as_plan(g) |>
+      reduce(method = method, formula = ~ group) |>
+      posthoc("fdr:bh", options = list(source = "p_coef:grouppatient")) |>
+      compute()
+    expect_true(all(c(
+      "z_coef:grouppatient",
+      "p_coef:grouppatient",
+      "q_coef:grouppatient"
+    ) %in% names(assays(fit))))
+    expect_equal(
+      as.numeric(assay(fit, "p_coef:grouppatient")),
+      2 * stats::pnorm(-abs(as.numeric(assay(fit, "z_coef:grouppatient")))),
+      tolerance = 1e-12
+    )
+  }
 })

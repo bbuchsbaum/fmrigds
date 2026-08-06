@@ -27,5 +27,9 @@ test_that("reduce() aligns formula data to current plan subject order", {
   cd <- data.frame(age = c(10, 20), row.names = c("sub-01", "sub-02"))
 
   plan2 <- reduce(plan, method = "meta:fe_reg", formula = ~ age, data = cd)
-  expect_equal(unname(plan2$nodes[[2]]$options$X[, "age"]), c(20, 10))
+  expect_null(plan2$nodes[[2]]$options$X)
+  compiled <- fmrigds:::compile_examination_plan(plan2)
+  context <- fmrigds:::.build_reducer_model_context(compiled)
+  expect_equal(unname(context$X[, "age"]), c(20, 10))
+  expect_identical(rownames(context$X), c("sub-02", "sub-01"))
 })

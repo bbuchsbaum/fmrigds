@@ -151,7 +151,12 @@ add_provenance_node <- function(metadata,
     "[%s] %s(%s)",
     format(node$timestamp, "%Y-%m-%d %H:%M:%S"),
     op_name,
-    paste0(names(params), "=", vapply(params, format, character(1L)), collapse = ", ")
+    paste0(
+      names(params),
+      "=",
+      vapply(params, function(value) paste(format(value), collapse = "|"), character(1L)),
+      collapse = ", "
+    )
   )
   metadata$provenance$log <- c(metadata$provenance$log, log_entry)
 
@@ -198,7 +203,8 @@ assay.gds <- function(x, name = "beta", ...) x$assays[[name]]
 #' @param reducer Optional reducer name (e.g. `"meta:re"`, `"ols:voxelwise"`, or
 #'   an alias like `"random"`). When supplied, `x` is ignored and the reducer's
 #'   declared `provides` stems are returned. Regression/LMM reducers expand
-#'   `coef`/`se_coef`/`t_coef`/`p_coef` into per-term `coef:<term>` etc. at
+#'   `coef`/`se_coef`/`z_coef`/`t_coef`/`p_coef` into per-term
+#'   `coef:<term>` etc. at
 #'   compute time, so realised names depend on the model formula.
 #' @param info Logical; if `TRUE` (default) return a data frame with `assay`,
 #'   `role`, and `units` columns (from [assay_info()] where registered, else

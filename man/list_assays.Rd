@@ -12,7 +12,8 @@ list_assays(x, reducer = NULL, info = TRUE)
 \item{reducer}{Optional reducer name (e.g. \code{"meta:re"}, \code{"ols:voxelwise"}, or
 an alias like \code{"random"}). When supplied, \code{x} is ignored and the reducer's
 declared \code{provides} stems are returned. Regression/LMM reducers expand
-\code{coef}/\code{se_coef}/\code{t_coef}/\code{p_coef} into per-term \verb{coef:<term>} etc. at
+\code{coef}/\code{se_coef}/\code{z_coef}/\code{t_coef}/\code{p_coef} into per-term
+\verb{coef:<term>} etc. at
 compute time, so realised names depend on the model formula.}
 
 \item{info}{Logical; if \code{TRUE} (default) return a data frame with \code{assay},

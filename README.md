@@ -180,6 +180,45 @@ names(assays(result))
 # "se_coef:(Intercept)", "se_coef:age", "se_coef:grouppatient"
 ```
 
+### Examine the cohort before interpreting the group fit
+
+`examine_group()` branches from the subject-level prefix of an analysis. It
+uses the reducer's frozen formula, estimands, variance rules, and subject order
+to report three different questions: whether the data have a validity concern,
+whether each subject is unexpected under the fitted model, and how much deleting
+that subject changes the requested group statistic. It does not change the
+analysis or classify subjects for removal.
+
+```r
+analysis <- gds(paths, col_data = participants) |>
+  subset(contrast = c("faces>places", "tools>faces")) |>
+  reduce(
+    method = "meta:re_reg",
+    formula = ~ group + age + sex + site
+  ) |>
+  posthoc("fdr:bh")
+
+exam <- examine_group(
+  analysis,
+  estimands = "grouppatient",
+  quality = c("mean_fd", "tsnr")
+)
+
+plot(exam)                         # surprise versus influence
+plot(exam, type = "embedding")    # model-adjusted residual geometry
+plot(exam, subject = "sub-017")   # retained subject maps
+write_report(exam, "group-examination.html")
+
+fit <- compute(analysis)
+```
+
+The review queue uses absolute, stability-aware gates. The percentile-based
+`review_priority` only orders inspection. For random-effects models, the first
+pass holds the full-data heterogeneity estimate fixed; retained subjects then
+receive exact refits, with both modes recorded in the result. See
+`vignette("group-examination")` for the result contract, availability states,
+and interpretation of the plots.
+
 ### Repeated-measures mixed models
 
 For common neuroimaging repeated-measures workflows, `reduce()` also supports a

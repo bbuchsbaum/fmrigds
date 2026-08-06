@@ -1,6 +1,8 @@
 test_that("posthoc registry has built-ins", {
   expect_true(all(c("fdr:bh", "fdr:by") %in% list_posthoc()))
   expect_true(!is.null(get_posthoc("fdr:bh")))
+  expect_true(get_posthoc("fdr:bh")$case_deletion$supported)
+  expect_identical(get_posthoc("fdr:bh")$case_deletion$mode, "recompute")
 })
 
 test_that("FDR BH matches p.adjust across samples", {
@@ -63,4 +65,25 @@ test_that("validate() catches unknown post-hoc methods before compute", {
 
   plan <- gds(tmp, effect_cols = list(p = "p")) |> posthoc("not:a:method")
   expect_error(validate(plan), "Unknown post-hoc method")
+})
+
+test_that("post-hoc case-deletion preflight is explicit", {
+  supported <- fmrigds:::.posthoc_case_deletion_preflight(list(
+    list(op = "posthoc", method = "fdr:bh", options = list())
+  ))
+  expect_true(supported$supported)
+  expect_true(supported$deterministic)
+  expect_false(supported$requires_full_space)
+
+  register_posthoc(
+    "test:no-deletion",
+    fun = function(arrays, opts) list(q = arrays$p),
+    requires = "p",
+    provides = "q"
+  )
+  unsupported <- fmrigds:::.posthoc_case_deletion_preflight(list(
+    list(op = "posthoc", method = "test:no-deletion", options = list())
+  ))
+  expect_false(unsupported$supported)
+  expect_identical(unsupported$mode, "unavailable")
 })

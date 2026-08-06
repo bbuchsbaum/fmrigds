@@ -5,7 +5,15 @@ register_h5_adapter <- function() {
     open = .h5_open,
     probe = .h5_probe,
     read = .h5_read,
-    close = .h5_close
+    close = .h5_close,
+    capabilities = list(
+      sample_blocks = TRUE,
+      subject_blocks = TRUE,
+      contrast_blocks = TRUE,
+      persistent_handle = TRUE,
+      preferred_axis = "sample",
+      cheap_revisit = TRUE
+    )
   )
 }
 
@@ -120,14 +128,29 @@ register_h5_adapter <- function() {
   on.exit(assays_group$close())
   first_path <- paste0("/gds/assays/", assays[[1]])
   dims <- .h5_dataset_dims(h5, first_path)
-  samples_idx <- if (!is.null(block) && !is.null(block$sample)) block$sample else seq_len(dims[1])
-  subject_idx <- if (!is.null(block) && !is.null(block$subject)) block$subject else TRUE
-  contrast_idx <- if (!is.null(block) && !is.null(block$contrast)) block$contrast else TRUE
+  samples_idx <- .normalize_block_index(block$sample %||% NULL, dims[1], "sample")
+  subject_idx <- .normalize_block_index(block$subject %||% NULL, dims[2], "subject")
+  contrast_idx <- .normalize_block_index(block$contrast %||% NULL, dims[3], "contrast")
   index <- list(samples_idx, subject_idx, contrast_idx)
+  subjects <- as.character(.h5_read_dataset(h5, "/gds/axes/subjects"))[subject_idx]
+  contrasts <- as.character(.h5_read_dataset(h5, "/gds/axes/contrasts"))[contrast_idx]
+  sample_labels <- if (.h5_safe_exists(h5, "/gds/space/parcels/labels")) {
+    as.character(.h5_read_dataset(h5, "/gds/space/parcels/labels"))[samples_idx]
+  } else if (.h5_safe_exists(h5, "/gds/space/sample_labels/labels")) {
+    as.character(.h5_read_dataset(h5, "/gds/space/sample_labels/labels"))[samples_idx]
+  } else if (.h5_safe_exists(h5, "/gds/space/voxel/mask_idx")) {
+    as.character(.h5_read_dataset(h5, "/gds/space/voxel/mask_idx"))[samples_idx]
+  } else {
+    as.character(samples_idx)
+  }
   result <- lapply(assays, function(name) {
     path <- paste0("/gds/assays/", name)
     data <- .h5_read_dataset(h5, path, index = index)
-    array(data, dim = c(length(samples_idx), dims[2], dims[3]))
+    array(
+      data,
+      dim = c(length(samples_idx), length(subject_idx), length(contrast_idx)),
+      dimnames = list(sample_labels, subjects, contrasts)
+    )
   })
   names(result) <- assays
   result

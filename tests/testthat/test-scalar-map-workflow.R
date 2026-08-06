@@ -50,7 +50,12 @@ test_that("group_ols and two_sample create voxelwise OLS plans", {
   p <- two_sample(g, group = "group", baseline = "ctl")
   expect_s3_class(p, "gds_plan")
   expect_equal(p$nodes[[1]]$method, "ols:voxelwise")
-  expect_true("X" %in% names(p$nodes[[1]]$options))
+  expect_false("X" %in% names(p$nodes[[1]]$options))
+  expect_identical(p$nodes[[1]]$formula, "~group")
+  context <- p |>
+    fmrigds:::compile_examination_plan() |>
+    fmrigds:::.build_reducer_model_context(estimands = "grouppt")
+  expect_identical(rownames(context$X), subjects(g))
 })
 
 test_that("write_nifti_assays writes selected image assays and returns manifest", {

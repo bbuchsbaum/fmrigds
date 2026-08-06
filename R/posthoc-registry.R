@@ -17,10 +17,17 @@
 #' @param requires Character vector of required input assays, e.g., c("p")
 #' @param provides Character vector of output assay names, e.g., c("q")
 #' @param overwrite Logical; if FALSE and a handler with `name` exists, error
+#' @param case_deletion Optional declaration of whether and how the post-hoc
+#'   conclusion can be recomputed for selected case deletions.
 #' @return Invisibly, the registered post-hoc method `name`.
 #' @seealso [posthoc-methods] for the built-in methods and their output assays.
 #' @export
-register_posthoc <- function(name, fun, requires, provides, overwrite = TRUE) {
+register_posthoc <- function(name,
+                             fun,
+                             requires,
+                             provides,
+                             overwrite = TRUE,
+                             case_deletion = NULL) {
   stopifnot(is.character(name), length(name) == 1L, is.function(fun))
   if (!isTRUE(overwrite) && !is.null(.gds_posthoc[[name]])) {
     stop(sprintf("Post-hoc method '%s' already exists; set overwrite = TRUE to replace.", name), call. = FALSE)
@@ -29,9 +36,74 @@ register_posthoc <- function(name, fun, requires, provides, overwrite = TRUE) {
     name = name,
     fun = fun,
     requires = as.character(requires),
-    provides = as.character(provides)
+    provides = as.character(provides),
+    case_deletion = .normalize_posthoc_case_deletion(case_deletion)
   )
   invisible(name)
+}
+
+.normalize_posthoc_case_deletion <- function(contract = NULL) {
+  defaults <- list(
+    supported = FALSE,
+    mode = "unavailable",
+    requires_full_space = FALSE,
+    deterministic = TRUE,
+    seed_contract = NULL
+  )
+  if (is.null(contract)) return(defaults)
+  if (!is.list(contract)) {
+    stop("case_deletion must be NULL or a list.", call. = FALSE)
+  }
+  unknown <- setdiff(names(contract), names(defaults))
+  if (length(unknown)) {
+    stop("Unknown case_deletion fields: ", paste(unknown, collapse = ", "), call. = FALSE)
+  }
+  out <- utils::modifyList(defaults, contract, keep.null = TRUE)
+  for (field in c("supported", "requires_full_space", "deterministic")) {
+    if (!is.logical(out[[field]]) || length(out[[field]]) != 1L || is.na(out[[field]])) {
+      stop("case_deletion ", field, " must be TRUE or FALSE.", call. = FALSE)
+    }
+  }
+  if (!is.character(out$mode) || length(out$mode) != 1L || is.na(out$mode) ||
+      !out$mode %in% c("unavailable", "recompute", "selected_recompute")) {
+    stop(
+      "case_deletion mode must be unavailable, recompute, or selected_recompute.",
+      call. = FALSE
+    )
+  }
+  if (isTRUE(out$supported) && identical(out$mode, "unavailable")) {
+    stop("A supported case_deletion contract must declare a recomputation mode.", call. = FALSE)
+  }
+  if (!is.null(out$seed_contract) &&
+      (!is.character(out$seed_contract) || length(out$seed_contract) != 1L ||
+       is.na(out$seed_contract) || !nzchar(out$seed_contract))) {
+    stop("case_deletion seed_contract must be NULL or one non-empty string.", call. = FALSE)
+  }
+  out
+}
+
+.posthoc_case_deletion_preflight <- function(nodes) {
+  if (!length(nodes)) {
+    return(data.frame(
+      method = character(), supported = logical(), mode = character(),
+      requires_full_space = logical(), deterministic = logical(),
+      seed_contract = character(), stringsAsFactors = FALSE
+    ))
+  }
+  rows <- lapply(nodes, function(node) {
+    method <- get_posthoc(node$method)
+    contract <- method$case_deletion %||% .normalize_posthoc_case_deletion()
+    data.frame(
+      method = as.character(node$method),
+      supported = isTRUE(contract$supported),
+      mode = as.character(contract$mode),
+      requires_full_space = isTRUE(contract$requires_full_space),
+      deterministic = isTRUE(contract$deterministic),
+      seed_contract = contract$seed_contract %||% NA_character_,
+      stringsAsFactors = FALSE
+    )
+  })
+  do.call(rbind, rows)
 }
 
 #' Get post-hoc method by name
@@ -160,11 +232,34 @@ unregister_posthoc <- function(name) {
 }
 
 .register_builtin_posthoc <- function() {
-  register_posthoc("fdr:bh", .posthoc_fdr_template("BH"), requires = c("p"), provides = c("q", "q_coef"))
-  register_posthoc("fdr:by", .posthoc_fdr_template("BY"), requires = c("p"), provides = c("q", "q_coef"))
+  fdr_deletion <- list(
+    supported = TRUE,
+    mode = "recompute",
+    requires_full_space = FALSE,
+    deterministic = TRUE
+  )
+  register_posthoc(
+    "fdr:bh", .posthoc_fdr_template("BH"),
+    requires = c("p"), provides = c("q", "q_coef"),
+    case_deletion = fdr_deletion
+  )
+  register_posthoc(
+    "fdr:by", .posthoc_fdr_template("BY"),
+    requires = c("p"), provides = c("q", "q_coef"),
+    case_deletion = fdr_deletion
+  )
   # Register spatial FDR if available
   if (exists(".posthoc_spatial_fdr", mode = "function")) {
-    register_posthoc("fdr:spatial", .posthoc_spatial_fdr(), requires = c("p"), provides = c("q", "q_coef"))
+    register_posthoc(
+      "fdr:spatial", .posthoc_spatial_fdr(),
+      requires = c("p"), provides = c("q", "q_coef"),
+      case_deletion = list(
+        supported = TRUE,
+        mode = "recompute",
+        requires_full_space = TRUE,
+        deterministic = TRUE
+      )
+    )
   }
   # Register neurothresh-backed TFCE if optional dependency is available
   if (exists(".posthoc_neurothresh_tfce_fwer", mode = "function") &&
@@ -173,13 +268,27 @@ unregister_posthoc <- function(name) {
       "nt:tfce_fwer",
       .posthoc_neurothresh_tfce_fwer(),
       requires = c("z"),
-      provides = c("q", "sig_mask", "tfce")
+      provides = c("q", "sig_mask", "tfce"),
+      case_deletion = list(
+        supported = TRUE,
+        mode = "selected_recompute",
+        requires_full_space = TRUE,
+        deterministic = FALSE,
+        seed_contract = "options$seed"
+      )
     )
     register_posthoc(
       "nt:cluster_fdr_perm",
       .posthoc_neurothresh_cluster_fdr_perm(),
       requires = c("z"),
-      provides = c("q", "sig_mask")
+      provides = c("q", "sig_mask"),
+      case_deletion = list(
+        supported = TRUE,
+        mode = "selected_recompute",
+        requires_full_space = TRUE,
+        deterministic = FALSE,
+        seed_contract = "options$seed"
+      )
     )
   }
 }

@@ -40,9 +40,15 @@ Suggests:
     covr,
     pkgdown,
     albersdown,
+    metafor,
     ggplot2,
+    ps,
     ragg,
     systemfonts
+Remotes:
+    github::bbuchsbaum/neuroim2,
+    github::bbuchsbaum/neurotabs,
+    github::bbuchsbaum/neurothresh
 VignetteBuilder: knitr
 Config/testthat/edition: 3
 Config/Needs/website: albersdown

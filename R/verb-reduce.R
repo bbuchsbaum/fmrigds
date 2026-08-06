@@ -14,7 +14,8 @@
 #'   `"lmm:ri_slope1"`, the formula specifies fixed effects at the
 #'   subject-by-repeat level and must not contain `lmer`-style random-effects
 #'   syntax.
-#' @param data Optional data frame for building `X` when `x` is not a realised GDS.
+#' @param data Optional subject-keyed data frame to attach as `col_data` before
+#'   execution-time construction of the model matrix.
 #'
 #' @details
 #' `reduce()` always works on a lazy plan internally, so `x` is whichever stage
@@ -73,8 +74,13 @@
 #'   `se_g`, `z_g`, `p_g`, `Q`, `I2`, `n_eff` (random-effects also adds
 #'   `tau2`). `n_eff` is the number of finite subject-level inputs used for
 #'   each sample and contrast.
-#' - `"meta:fe_reg"`/`"meta:re_reg"`: per-term `coef:<term>`/`se_coef:<term>`
-#'   plus `Q`, `df_res` (random-effects also adds `tau2`).
+#' - `"meta:fe_reg"`/`"meta:re_reg"`: per-term `coef:<term>`,
+#'   `se_coef:<term>`, normal-approximation `z_coef:<term>` and
+#'   `p_coef:<term>`, plus `Q`, `df_res` (random-effects also adds `tau2`).
+#'   `"meta:re_reg"`
+#'   uses the DerSimonian--Laird meta-regression denominator
+#'   \eqn{\mathrm{tr}\{W - WX(X^T W X)^{-1}X^T W\}} and excludes rows with
+#'   non-finite effects/design values or non-finite, nonpositive variances.
 #' - `"stouffer"`/`"combine:stouffer"`: `z_g`, `p_g`.
 #' - `"fisher"`/`"combine:fisher"` and `"combine:lancaster"`: `chi2`, `df`,
 #'   `p_g`.
@@ -101,6 +107,7 @@ reduce <- function(x,
     stop("`options` must be a list", call. = FALSE)
   }
   plan <- as_plan(x)
+  reducer <- get_reducer(.normalize_reducer_name(method))
 
   # Guard: variance-weighted reducers on a synthetic unit-variance placeholder
   # (beta/stat maps ingested without standard errors) would yield meaningless
@@ -109,7 +116,7 @@ reduce <- function(x,
     isTRUE(tryCatch(metadata(plan)$synthetic_var, error = function(e) NULL)) ||
     isTRUE(plan$source$probe$metadata$synthetic_var)
   if (synthetic_var) {
-    red <- get_reducer(.normalize_reducer_name(method))
+    red <- reducer
     # For a registered reducer, its declared inputs are authoritative: an
     # unweighted reducer such as ols:voxelwise does not consume `var` and must
     # not be blocked (the default weights = "1/var" is ignored by it). Only fall
@@ -132,35 +139,64 @@ reduce <- function(x,
   }
 
   is_observation_level <- grepl("^lmm:", method)
-  # Auto-build X from formula and col_data/data if provided
-  if (!is.null(formula) && !is_observation_level) {
-    f <- if (inherits(formula, "formula")) formula else stats::as.formula(formula)
-    cd <- data
-    if (is.null(cd) && inherits(x, "gds")) cd <- x$col_data
-    if (is.null(cd)) cd <- col_data(plan)
-    if (!is.null(cd)) {
-      subjects <- if (inherits(x, "gds")) x$subjects else .plan_subjects_for_model_matrix(plan)
-      if (!is.null(subjects) && length(subjects)) {
-        if (!is.null(rownames(cd)) && length(rownames(cd))) {
-          cd <- .align_col_data_for_subjects(cd, subjects, warn_extra = FALSE, context = "reduce")
-        } else if ("subject" %in% names(cd)) {
-          idx <- match(subjects, cd$subject)
-          if (anyNA(idx)) stop("`data` is missing subjects required by the plan", call. = FALSE)
-          cd <- cd[idx, , drop = FALSE]
-        } else if (nrow(cd) != length(subjects)) {
-          stop("`data` must have rownames, a `subject` column, or one row per subject in plan order", call. = FALSE)
-        }
-        if ("subject" %in% names(cd)) cd$subject <- NULL
-        cd <- data.frame(subject = subjects, cd, check.names = FALSE)
-      }
-      options$X <- stats::model.matrix(f, data = cd)
-    }
-    options$formula <- deparse(f)
-  } else if (!is.null(formula)) {
-    f <- if (inherits(formula, "formula")) formula else stats::as.formula(formula)
-    options$formula <- deparse(f)
+  if (!is.null(data)) {
+    plan <- .attach_reducer_data(plan, data)
   }
-  add_op(plan, op_reduce(method, weights, by = by, options = options, formula = options$formula %||% NULL))
+  formula_spec <- NULL
+  if (!is.null(formula)) {
+    f <- .formula_from_spec(formula)
+    if (!is_observation_level && !is.null(reducer$model_contract) &&
+        !isTRUE(reducer$model_contract$uses_X)) {
+      stop(
+        "Reducer '", .normalize_reducer_name(method),
+        "' does not consume a design matrix; remove `formula`.",
+        call. = FALSE
+      )
+    }
+    formula_spec <- paste(deparse(f), collapse = " ")
+  }
+  add_op(
+    plan,
+    op_reduce(
+      method,
+      weights,
+      by = by,
+      options = options,
+      formula = formula_spec
+    )
+  )
+}
+
+.attach_reducer_data <- function(plan, data) {
+  if (!is.data.frame(data)) {
+    stop("`data` must be a data.frame.", call. = FALSE)
+  }
+  current_subjects <- as.character(.plan_subjects_for_model_matrix(plan))
+  if (!length(current_subjects)) {
+    stop("Cannot attach reducer data without a known subject axis.", call. = FALSE)
+  }
+  if ("subject" %in% names(data)) {
+    ids <- as.character(data$subject)
+    if (anyNA(ids) || any(!nzchar(ids)) || anyDuplicated(ids)) {
+      stop("`data$subject` must contain unique non-missing subject IDs.", call. = FALSE)
+    }
+    rownames(data) <- ids
+  } else if (is.null(rownames(data)) || !all(current_subjects %in% rownames(data))) {
+    if (nrow(data) != length(current_subjects)) {
+      stop(
+        "`data` must have matching rownames, a `subject` column, or one row per current subject.",
+        call. = FALSE
+      )
+    }
+    rownames(data) <- current_subjects
+  }
+  plan$meta$col_data <- .align_col_data_for_subjects(
+    data,
+    current_subjects,
+    warn_extra = FALSE,
+    context = "reduce"
+  )
+  plan
 }
 
 #' Eagerly reduce across subjects and compute immediately

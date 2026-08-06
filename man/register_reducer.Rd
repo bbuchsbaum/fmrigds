@@ -10,7 +10,9 @@ register_reducer(
   requires,
   provides,
   options_schema = list(),
-  input_shape = c("contrastwise", "joint_contrast")
+  input_shape = c("contrastwise", "joint_contrast"),
+  model_contract = NULL,
+  diagnostics = NULL
 )
 }
 \arguments{
@@ -26,6 +28,15 @@ register_reducer(
 
 \item{input_shape}{Reducer execution mode: \code{"contrastwise"} (default) or
 \code{"joint_contrast"} for reducers that consume the full contrast axis jointly}
+
+\item{model_contract}{Optional declarative description of the reducer's
+design, weighting, missingness, variance, estimand, and deletion semantics.
+Custom reducers may omit this, in which case model-conditioned examination
+diagnostics are reported as unavailable.}
+
+\item{diagnostics}{Optional diagnostic implementation declaration. This is a
+list containing \code{fun}, \code{capabilities}, and \code{modes}; \code{fun} may be \code{NULL}
+while a capability is declared but not yet implemented.}
 }
 \value{
 Invisibly, the registered reducer \code{name}.

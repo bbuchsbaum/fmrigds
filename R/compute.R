@@ -82,7 +82,6 @@ compute <- function(x,
   contrasts <- node_result$contrasts %||% plan$source$probe$contrasts
   space <- node_result$space
   subset_info <- node_result$subset
-  if (!is.null(subset_info$samples)) space <- .subset_space(space, subset_info$samples)
   row_data_final <- if ("row_data" %in% names(node_result)) {
     node_result$row_data
   } else {
@@ -206,7 +205,7 @@ digest_plan <- function(plan) {
 #' @return Canonicalized node list
 #' @export
 canonicalize_node <- function(node) {
-  params <- node[names(node) != "op"]
+  params <- node[!names(node) %in% c("op", "node_id")]
   params <- params[order(names(params))]
   list(op = node$op, params = params)
 }
@@ -256,11 +255,20 @@ canonicalize_node <- function(node) {
   for (node in plan$nodes) {
     op <- node$op
     if (op == "subset_axis") {
-      res <- .apply_subset_node(arrays, plan, node)
+      res <- .apply_subset_node(
+        arrays,
+        node,
+        current_space,
+        current_subjects,
+        current_contrasts
+      )
       arrays <- res$arrays
       subset_info <- res$subset
       if (!is.null(subset_info$samples) && !is.null(current_row_data)) {
         current_row_data <- current_row_data[subset_info$samples, , drop = FALSE]
+      }
+      if (!is.null(subset_info$samples)) {
+        current_space <- .subset_space(current_space, subset_info$samples)
       }
       if (!is.null(subset_info$subjects)) {
         current_subjects <- current_subjects[subset_info$subjects]
@@ -349,22 +357,26 @@ canonicalize_node <- function(node) {
   )
 }
 
-.apply_subset_node <- function(arrays, plan, node) {
+.apply_subset_node <- function(arrays,
+                               node,
+                               current_space,
+                               current_subjects,
+                               current_contrasts) {
   sample <- node$sample
   subject <- node$subject
   contrast <- node$contrast
 
   dims <- dim(arrays[[1]])
-  samples_idx <- if (is.null(sample)) seq_len(dims[1]) else .coerce_index(sample, plan$source$probe$space, dims[1])
+  samples_idx <- if (is.null(sample)) seq_len(dims[1]) else .coerce_index(sample, current_space, dims[1])
   subjects_idx <- if (is.null(subject)) {
     seq_len(dims[2])
   } else {
-    .coerce_named_index(subject, plan$source$probe$subjects, axis = "subject")
+    .coerce_named_index(subject, current_subjects, axis = "subject")
   }
   contrasts_idx <- if (is.null(contrast)) {
     seq_len(dims[3])
   } else {
-    .coerce_named_index(contrast, plan$source$probe$contrasts, axis = "contrast")
+    .coerce_named_index(contrast, current_contrasts, axis = "contrast")
   }
 
   if (any(is.na(subjects_idx))) stop("Unknown subject in subset operation", call. = FALSE)
@@ -375,19 +387,43 @@ canonicalize_node <- function(node) {
 }
 
 .coerce_index <- function(idx, space, n_samples) {
-  if (is.numeric(idx)) return(idx)
-  if (is.logical(idx)) return(which(idx))
-  if (is.character(idx) && inherits(space, "space_parcels")) {
-    return(match(idx, space$labels))
+  if (is.numeric(idx)) return(.validate_positive_index(idx, n_samples, "sample"))
+  if (is.logical(idx)) {
+    if (length(idx) != n_samples) {
+      stop("Logical sample index must match the current sample axis.", call. = FALSE)
+    }
+    return(which(idx))
+  }
+  if (is.character(idx) && (inherits(space, "space_parcels") || inherits(space, "space_sample_labels"))) {
+    out <- match(idx, as.character(space$labels))
+    if (anyNA(out)) stop("Unknown sample in subset operation", call. = FALSE)
+    return(out)
   }
   stop("Unsupported index type for samples", call. = FALSE)
 }
 
 .coerce_named_index <- function(idx, values, axis) {
-  if (is.numeric(idx)) return(as.integer(idx))
-  if (is.logical(idx)) return(which(idx))
-  if (is.character(idx)) return(match(idx, values))
+  if (is.numeric(idx)) return(.validate_positive_index(idx, length(values), axis))
+  if (is.logical(idx)) {
+    if (length(idx) != length(values)) {
+      stop("Logical ", axis, " index must match the current axis.", call. = FALSE)
+    }
+    return(which(idx))
+  }
+  if (is.character(idx)) {
+    out <- match(idx, values)
+    if (anyNA(out)) stop("Unknown ", axis, " in subset operation", call. = FALSE)
+    return(out)
+  }
   stop("Unsupported index type for ", axis, call. = FALSE)
+}
+
+.validate_positive_index <- function(idx, n, axis) {
+  if (anyNA(idx) || any(!is.finite(idx)) || any(idx != as.integer(idx)) ||
+      any(idx < 1L) || any(idx > n)) {
+    stop("Invalid positional ", axis, " index for current axis.", call. = FALSE)
+  }
+  as.integer(idx)
 }
 
 .subset_space <- function(space, idx) {

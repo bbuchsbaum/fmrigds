@@ -31,8 +31,7 @@ jobs:
           needs: website
 
       - name: Build site
-        run: scripts/build_pkgdown_site.R
-        shell: Rscript {0}
+        run: Rscript scripts/build_pkgdown_site.R
 
       - name: Deploy to GitHub pages
         if: github.event_name != 'pull_request'

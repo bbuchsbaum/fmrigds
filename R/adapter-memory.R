@@ -5,7 +5,15 @@ register_memory_adapter <- function() {
     open = .memory_open,
     probe = .memory_probe,
     read = .memory_read,
-    close = .memory_close
+    close = .memory_close,
+    capabilities = list(
+      sample_blocks = TRUE,
+      subject_blocks = TRUE,
+      contrast_blocks = TRUE,
+      persistent_handle = TRUE,
+      preferred_axis = "sample",
+      cheap_revisit = TRUE
+    )
   )
 }
 
@@ -76,18 +84,9 @@ register_memory_adapter <- function() {
   first <- arrs[[1L]]
   dims <- dim(first)
   # Build indices
-  samples_idx <- if (!is.null(block) && !is.null(block$sample)) {
-    bs <- block$sample
-    if (is.logical(bs)) which(bs) else as.integer(bs)
-  } else seq_len(dims[1L])
-  subject_idx <- if (!is.null(block) && !is.null(block$subject)) {
-    bj <- block$subject
-    if (is.logical(bj)) which(bj) else as.integer(bj)
-  } else TRUE
-  contrast_idx <- if (!is.null(block) && !is.null(block$contrast)) {
-    bc <- block$contrast
-    if (is.logical(bc)) which(bc) else as.integer(bc)
-  } else TRUE
+  samples_idx <- .normalize_block_index(block$sample %||% NULL, dims[1L], "sample")
+  subject_idx <- .normalize_block_index(block$subject %||% NULL, dims[2L], "subject")
+  contrast_idx <- .normalize_block_index(block$contrast %||% NULL, dims[3L], "contrast")
 
   out <- lapply(assays, function(name) {
     a <- arrs[[name]]

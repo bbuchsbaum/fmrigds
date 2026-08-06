@@ -4,7 +4,17 @@
 \alias{register_adapter}
 \title{Register a storage adapter}
 \usage{
-register_adapter(name, detect, open, probe, read, close, ...)
+register_adapter(
+  name,
+  detect,
+  open,
+  probe,
+  read,
+  close,
+  capabilities = NULL,
+  scan = NULL,
+  ...
+)
 }
 \arguments{
 \item{name}{Adapter name}
@@ -18,6 +28,13 @@ register_adapter(name, detect, open, probe, read, close, ...)
 \item{read}{Function (handle, assays, block = NULL, ...) -> named list of arrays}
 
 \item{close}{Function (handle) -> NULL}
+
+\item{capabilities}{Optional scan-capability declaration. Supported fields
+are \code{sample_blocks}, \code{subject_blocks}, \code{contrast_blocks},
+\code{persistent_handle}, \code{preferred_axis}, \code{cheap_revisit}, and
+\code{requires_staging}. Omitted fields default conservatively.}
+
+\item{scan}{Optional adapter-specific scan callback.}
 
 \item{...}{Additional elements stored with adapter entry}
 }
