@@ -8,8 +8,8 @@ output:
     includes:
       in_header: albers-header.html
 params:
-  family: lapis
-  preset: study
+  family: red
+  preset: interaction
 resource_files:
 - albers.css
 - albers.js
@@ -43,7 +43,7 @@ set.seed(20260805)
 cat(sprintf(
   paste0(
     '<script>document.addEventListener("DOMContentLoaded",function(){',
-    'document.body.classList.remove("palette-red","palette-lapis","palette-ochre","palette-teal","palette-green","palette-violet","preset-homage","preset-study","preset-structural","preset-adobe","preset-midnight");',
+    'document.body.classList.remove("palette-red","palette-lapis","palette-ochre","palette-teal","palette-green","palette-violet","preset-homage","preset-interaction","preset-study","preset-structural","preset-adobe","preset-midnight");',
     'document.body.classList.add("palette-%s","preset-%s");',
     '});</script>'
   ),
