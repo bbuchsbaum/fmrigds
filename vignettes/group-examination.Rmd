@@ -275,7 +275,7 @@ plane and geometry link to retained-subject sections. The file has no external
 font, image, script, or stylesheet dependency.
 
 ```{r write-report}
-report_file <- file.path(tempdir(), "group-examination.html")
+report_file <- file.path(tempdir(), "fmrigds-group-examination-report.html")
 write_report(exam, report_file, overwrite = TRUE)
 report_file
 ```
