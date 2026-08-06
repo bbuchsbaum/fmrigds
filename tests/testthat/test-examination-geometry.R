@@ -48,6 +48,24 @@ test_that("full subject-rank geometry agrees with explicit residual SVD", {
   expect_equal(tcrossprod(coordinates), tcrossprod(E), tolerance = 1e-8)
 })
 
+test_that("captured residual energy remains a bounded fraction", {
+  control <- examination_control(
+    geometry = list(rank = 2L, oversample = 0L, stability_replicates = 0L)
+  )
+  state <- list(
+    basis = list(Q = diag(2), sketch_rank = 2L, requested_rank = 2L),
+    C = diag(c(0.6, 0.4 + 4 * .Machine$double.eps)),
+    total_energy = 1,
+    split_C = array(0, c(2L, 2L, 0L)),
+    subjects = c("s1", "s2")
+  )
+
+  embedding <- fmrigds:::.finalize_residual_geometry(state, control)
+
+  expect_equal(embedding$captured_energy, 1)
+  expect_equal(sum(embedding$explained_energy), embedding$captured_energy)
+})
+
 test_that("geometry coordinates and fidelity are block invariant", {
   plan <- reduce(as_plan(.group_examination_fixture()), method = "meta:fe")
   a <- examine_group(

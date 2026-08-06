@@ -254,10 +254,19 @@
   )
   names(coordinate_data)[seq_len(ncol(coordinates)) + 1L] <-
     paste0("dimension", seq_len(ncol(coordinates)))
+  explained_energy <- values / state$total_energy
+  captured_energy <- sum(explained_energy)
+  if (captured_energy > 1) {
+    # Q is orthonormal, so projected energy cannot exceed total residual
+    # energy mathematically. Normalize boundary roundoff so the public
+    # fidelity remains a fraction and its components retain the same sum.
+    explained_energy <- explained_energy / captured_energy
+    captured_energy <- 1
+  }
   list(
     coordinates = coordinate_data,
-    explained_energy = values / state$total_energy,
-    captured_energy = sum(values) / state$total_energy,
+    explained_energy = explained_energy,
+    captured_energy = captured_energy,
     total_residual_energy = state$total_energy,
     sketch_rank = state$basis$sketch_rank,
     requested_rank = state$basis$requested_rank,
