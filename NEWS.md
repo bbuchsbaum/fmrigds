@@ -12,6 +12,8 @@
   plots, selected post-hoc sensitivity analyses, and self-contained HTML reports.
 - Corrected the DerSimonian-Laird meta-regression denominator to use
   `tr(W - W X (X' W X)^-1 X' W)` and aligned R/C++ variance-validity rules.
+- Declared the GitHub remotes for `neuroim2`, `neurotabs`, and `neurothresh`
+  so checks and pkgdown can provision the current development dependencies.
 
 ## Bug fixes (reported issues #1, #5, #6, #7)
 - `write_nifti_assays()` and `write_out(format = "nifti")` now preserve the
