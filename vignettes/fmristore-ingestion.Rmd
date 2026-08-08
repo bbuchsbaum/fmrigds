@@ -1,5 +1,5 @@
 ---
-title: Reading fmristore HDF5 files
+title: Reading native HDF5 and legacy fmristore files
 output:
   rmarkdown::html_vignette:
     toc: yes
@@ -9,7 +9,7 @@ output:
       in_header: albers-header.html
 params:
   family: red
-  preset: homage
+  preset: interaction
 resource_files:
 - albers.css
 - albers.js
@@ -17,7 +17,7 @@ resource_files:
 - fonts
 
 vignette: |
-  %\VignetteIndexEntry{Reading fmristore HDF5 files}
+  %\VignetteIndexEntry{Reading native HDF5 and legacy fmristore files}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
@@ -26,7 +26,7 @@ vignette: |
 if (requireNamespace("ragg", quietly = TRUE)) knitr::opts_chunk$set(dev = "ragg_png")
 if (requireNamespace("albersdown", quietly = TRUE)) {
   if (requireNamespace("systemfonts", quietly = TRUE)) try(albersdown::albers_register_fonts(), silent = TRUE)
-  if (requireNamespace("ggplot2", quietly = TRUE)) try(ggplot2::theme_set(albersdown::theme_albers(family = params$family, preset = params$preset)), silent = TRUE)
+  if (requireNamespace("ggplot2", quietly = TRUE) && requireNamespace("albersdown", quietly = TRUE)) ggplot2::theme_set(albersdown::theme_albers(family = params$family, preset = params$preset))
 }
 knitr::opts_chunk$set(
   collapse = TRUE,
@@ -41,7 +41,7 @@ knitr::opts_chunk$set(
 cat(sprintf(
   paste0(
     '<script>document.addEventListener("DOMContentLoaded",function(){',
-    'document.body.classList.remove("palette-red","palette-lapis","palette-ochre","palette-teal","palette-green","palette-violet","preset-homage","preset-study","preset-structural","preset-adobe","preset-midnight");',
+    'document.body.classList.remove("palette-red","palette-lapis","palette-ochre","palette-teal","palette-green","palette-violet","preset-homage","preset-interaction","preset-study","preset-structural","preset-adobe","preset-midnight");',
     'document.body.classList.add("palette-%s","preset-%s");',
     '});</script>'
   ),
@@ -50,13 +50,15 @@ cat(sprintf(
 ))
 ```
 
+
 ## When do you need this?
 
-Many fMRI analysis pipelines store first-level results in HDF5 files using the
-fmristore format. These files can contain voxelwise statistical maps (labeled
-volumes), parcel-level timeseries, or latent-space decompositions. If you want
-to run group-level analyses on data already stored in fmristore, fmrigds reads
-it directly---auto-detecting the layout and converting to the GDS structure.
+HDF5 is a container that can hold several different schemas. fmrigds uses a
+current native `/gds` schema for files written by `write_out()`, and it also
+reads older schemas created by the fmristore package. Those legacy files can
+contain voxelwise statistical maps (labeled volumes), parcel-level timeseries,
+or latent-space decompositions. fmrigds auto-detects the layout and converts
+the supported structure to a GDS.
 
 All examples below use `eval = FALSE` because they require HDF5 files that are
 not shipped with the package. To run them locally, you need `hdf5r`:
@@ -70,22 +72,26 @@ install.packages("hdf5r")
 fmrigds supports two kinds of HDF5 input. The path you use depends on how the
 file was created:
 
-**Path B (recommended)**: Native `/gds` format
+**Current path (recommended)**: Native fmrigds `/gds` format
 :   Files written by `write_out(..., format = "h5")` contain a `/gds` group
-    with full metadata, provenance, and structure. These round-trip perfectly.
+    containing assays, axes, space, axis tables, metadata, and provenance
+    records.
 
-**Path A (legacy)**: Original fmristore layouts
+**Compatibility path (legacy)**: Original fmristore layouts
 :   Files created by the fmristore package use one of three layout types:
     LabeledVolumeSet, Parcellated, or LatentNeuroVec. fmrigds auto-detects
     the layout and converts to GDS.
 
-If you control file creation, use Path B. If you're reading existing fmristore
-files, Path A works automatically with `gds(path)`.
+If you control file creation, use the current native path. If you are reading
+an existing fmristore file, the compatibility path works automatically with
+`gds(path)`. The word *legacy* refers to those older fmristore schemas, not to
+HDF5 generally and not to the native `/gds` format.
 
-## Native `/gds` layout (Path B)
+## Native fmrigds `/gds` layout
 
-The simplest case---files with a `/gds` group are read directly with full
-fidelity:
+The simplest case is a file with a `/gds` group. The current reader restores
+assays, axes, spatial structure, axis tables, and supported registered map
+families:
 
 ```r
 library(fmrigds)
@@ -93,10 +99,11 @@ library(fmrigds)
 plan <- gds("group_store.h5")
 g <- compute(plan)
 
-# Everything is preserved as written
 names(assays(g))
 space(g)
-metadata(g)$provenance
+col_data(g)
+row_data(g)
+contrast_data(g)
 ```
 
 Create files in this format with `write_out()`:
@@ -264,18 +271,21 @@ g <- compute(plan)
 metadata(g)$provenance$log
 ```
 
-For native `/gds` files (Path B), provenance is preserved across
-write--read cycles.
+The native writer serializes GDS metadata and writes the provenance log into
+the archive. The current reader does not promise to reconstruct every
+arbitrary custom metadata field across versions. Treat application-specific
+metadata as an explicit verification point after reading; the core GDS data
+model listed above is the supported read contract.
 
 ## Quick reference
 
 | Scenario | What to do |
 |---|---|
-| Creating new files | `write_out(..., format = "h5")` (Path B) |
+| Creating new files | `write_out(..., format = "h5")` (native `/gds`) |
 | Existing fmristore files | `gds(path)` --- layout auto-detected |
 | Parcellated timeseries | Set `temporal_policy` (`"as_is"`, `"mean"`, or `"design"`) |
 | Large files | Use `block = list(...)` to read subsets |
-| Reproducibility | Provenance tracked automatically in `metadata()$provenance` |
+| Reproducibility | Native archives store metadata and provenance records; verify custom fields after reading |
 
 ## Next steps
 
