@@ -6,6 +6,14 @@
   Albers theme, restored theme activation in the fmristore article, and added
   a post-build check that prevents article theme drift.
 
+## Frame-native analysis
+
+- Added `fit_group()` for bounded feature-block fitting directly from aligned
+  `fmridataset` estimate and sampling-variance assays.
+- The walking-skeleton model supports ragged random-intercept designs,
+  preserves feature IDs and spatial identity in a result `fmri_frame`, and is
+  numerically checked against `metafor::rma.mv()`.
+
 ## Model-conditioned group examination
 
 - Added `examine_group()` as a terminal branch from subject-level plans. It

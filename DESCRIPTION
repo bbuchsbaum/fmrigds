@@ -20,9 +20,11 @@ RoxygenNote: 7.3.3
 Imports:
     Matrix,
     digest,
+    fmridataset,
     jsonlite,
     data.table,
-    hdf5r
+    hdf5r,
+    multidesign
 LinkingTo: Rcpp, RcppArmadillo
 URL: https://github.com/bbuchsbaum/fmrigds
 BugReports: https://github.com/bbuchsbaum/fmrigds/issues
@@ -46,6 +48,8 @@ Suggests:
     ragg,
     systemfonts
 Remotes:
+    github::bbuchsbaum/fmridataset,
+    github::bbuchsbaum/multidesign,
     github::bbuchsbaum/neuroim2,
     github::bbuchsbaum/neurotabs,
     github::bbuchsbaum/neurothresh
