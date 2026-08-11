@@ -40,6 +40,11 @@
 <ul><li>Standardized every vignette and pkgdown article on the red <code>interaction</code> Albers theme, restored theme activation in the fmristore article, and added a post-build check that prevents article theme drift.</li>
 </ul></div>
 <div class="section level3">
+<h3 id="frame-native-analysis-0-1-0-9000">Frame-native analysis<a class="anchor" aria-label="anchor" href="#frame-native-analysis-0-1-0-9000"></a></h3>
+<ul><li>Added <code><a href="../reference/fit_group.html">fit_group()</a></code> for bounded feature-block fitting directly from aligned <code>fmridataset</code> estimate and sampling-variance assays.</li>
+<li>The walking-skeleton model supports ragged random-intercept designs, preserves feature IDs and spatial identity in a result <code>fmri_frame</code>, and is numerically checked against <code><a href="https://wviechtb.github.io/metafor/reference/rma.mv.html" class="external-link">metafor::rma.mv()</a></code>.</li>
+</ul></div>
+<div class="section level3">
 <h3 id="model-conditioned-group-examination-0-1-0-9000">Model-conditioned group examination<a class="anchor" aria-label="anchor" href="#model-conditioned-group-examination-0-1-0-9000"></a></h3>
 <ul><li>Added <code><a href="../reference/examine_group.html">examine_group()</a></code> as a terminal branch from subject-level plans. It reports data validity, cross-fitted model surprise, deletion influence on named estimands, and model-adjusted residual geometry without changing the source analysis.</li>
 <li>Added exact fixed-effect, meta-regression, and voxelwise OLS diagnostics, plus fixed-<code>tau2</code> random-effects screening and exact retained-subject refits.</li>
