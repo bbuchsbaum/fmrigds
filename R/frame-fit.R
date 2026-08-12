@@ -461,9 +461,11 @@ group_plan <- function(
 #' @param observations Result-row metadata containing stable `.obs_id` values.
 #' @param features The aligned spatial feature axis.
 #' @param method Registered statistical reducer name.
-#' @param diagnostics Per-feature diagnostics.
-#' @param term_data Compiled term metadata.
-#' @param source_observation_ids Stable source observation IDs.
+#' @param diagnostics Per-feature diagnostics, stored as a feature-aligned
+#'   `diagnostics` block.
+#' @param term_data Compiled term metadata, stored as a typed result table.
+#' @param source_observation_ids Stable source observation IDs, stored as a
+#'   typed result table.
 #' @param metadata Additional result metadata.
 #' @param provenance Serializable derivation provenance.
 #' @return An `fmri_frame` marked with a versioned statistical-result schema.
@@ -481,18 +483,79 @@ result_frame <- function(assays, observations, features, method,
       !nzchar(method)) {
     stop("`method` must be one non-empty reducer name.", call. = FALSE)
   }
+  if (!is.list(diagnostics) ||
+      (length(diagnostics) && (is.null(names(diagnostics)) ||
+       anyNA(names(diagnostics)) || any(!nzchar(names(diagnostics))) ||
+       anyDuplicated(names(diagnostics))))) {
+    stop("`diagnostics` must be a named list.", call. = FALSE)
+  }
+  n_feature <- length(features)
+  if (length(diagnostics)) {
+    bad <- vapply(diagnostics, function(value) {
+      is.list(value) || !is.null(dim(value)) || length(value) != n_feature
+    }, logical(1))
+    if (any(bad)) {
+      stop(
+        "Every result diagnostic must contain one scalar value per feature.",
+        call. = FALSE
+      )
+    }
+    diagnostic_data <- do.call(cbind, unname(diagnostics))
+    colnames(diagnostic_data) <- names(diagnostics)
+    components <- data.frame(
+      .component_id = names(diagnostics),
+      stringsAsFactors = FALSE
+    )
+    existing_blocks <- fmridataset::axis_blocks(features)
+    if ("diagnostics" %in% names(existing_blocks)) {
+      stop("Result features already contain a `diagnostics` block.", call. = FALSE)
+    }
+    features <- fmridataset::feature_axis(
+      fmridataset::axis_data(features),
+      space = features$space,
+      blocks = c(
+        existing_blocks,
+        list(diagnostics = fmridataset::axis_block(
+          diagnostic_data,
+          components = components,
+          role = "diagnostic"
+        ))
+      ),
+      metadata = features$metadata
+    )
+  }
   metadata <- utils::modifyList(list(
     result_schema_version = 1L,
     result_kind = "statistical",
-    method = method,
-    term_data = term_data,
-    diagnostics = diagnostics,
-    source_observation_ids = source_observation_ids
+    method = method
   ), metadata)
+  tables <- list()
+  if (!is.null(term_data)) {
+    if (!is.data.frame(term_data)) {
+      stop("`term_data` must be NULL or a data frame.", call. = FALSE)
+    }
+    tables$terms <- fmridataset::auxiliary_table(
+      term_data, role = "model_terms"
+    )
+  }
+  if (!is.null(source_observation_ids)) {
+    if (!is.character(source_observation_ids) || anyNA(source_observation_ids) ||
+        any(!nzchar(source_observation_ids)) || anyDuplicated(source_observation_ids)) {
+      stop("`source_observation_ids` must be unique non-empty strings.", call. = FALSE)
+    }
+    tables$source_observations <- fmridataset::auxiliary_table(
+      data.frame(
+        .obs_id = source_observation_ids,
+        stringsAsFactors = FALSE
+      ),
+      key = ".obs_id", role = "source_observations"
+    )
+  }
   fmridataset::fmri_frame(
     assays = assays,
     observations = observations,
     features = features,
+    tables = tables,
     active_assay = if ("estimate" %in% names(assays)) "estimate" else names(assays)[[1L]],
     metadata = metadata,
     provenance = provenance

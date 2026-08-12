@@ -64,6 +64,25 @@ test_that("fit_group returns a spatially aligned result frame", {
   expect_s3_class(fit$result, "fmri_frame")
   expect_identical(fit$result$metadata$result_schema_version, 1L)
   expect_identical(fit$result$metadata$result_kind, "statistical")
+  expect_s3_class(
+    fmridataset::feature_blocks(fit$result)$diagnostics,
+    "axis_block"
+  )
+  expect_identical(
+    fmridataset::block_component_ids(
+      fmridataset::feature_blocks(fit$result)$diagnostics
+    ),
+    names(fit$diagnostics)[names(fit$diagnostics) != "block_size"]
+  )
+  expect_s3_class(fit$result$tables$terms, "fmri_auxiliary_table")
+  expect_s3_class(
+    fit$result$tables$source_observations,
+    "fmri_auxiliary_table"
+  )
+  expect_identical(
+    fmridataset::table_data(fit$result$tables$source_observations)$.obs_id,
+    fit$plan$observation_ids
+  )
   expect_s3_class(fit$result$provenance, "provenance_graph")
   expect_identical(
     fmridataset::feature_ids(fit$result),

@@ -25,11 +25,13 @@ result_frame(
 
 \item{method}{Registered statistical reducer name.}
 
-\item{diagnostics}{Per-feature diagnostics.}
+\item{diagnostics}{Per-feature diagnostics, stored as a feature-aligned
+\code{diagnostics} block.}
 
-\item{term_data}{Compiled term metadata.}
+\item{term_data}{Compiled term metadata, stored as a typed result table.}
 
-\item{source_observation_ids}{Stable source observation IDs.}
+\item{source_observation_ids}{Stable source observation IDs, stored as a
+typed result table.}
 
 \item{metadata}{Additional result metadata.}
 

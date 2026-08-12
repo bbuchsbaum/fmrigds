@@ -419,7 +419,8 @@ as_fmri_frame.gds <- function(
     inputs = list(
       subjects = subjects(x),
       contrasts = contrasts(x),
-      assays = gds_names
+      assays = gds_names,
+      legacy_metadata = metadata(x)
     ),
     outputs = list(
       observation_ids = observation_ids,
@@ -443,7 +444,7 @@ as_fmri_frame.gds <- function(
     ),
     active_assay = frame_names[[1L]],
     metadata = projection$frame_metadata %||% list(
-      legacy_gds = metadata(x)
+      migration = list(source_class = "gds")
     ),
     provenance = projection$frame_provenance %||% provenance
   )
