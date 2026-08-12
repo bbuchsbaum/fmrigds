@@ -14,6 +14,10 @@
   frame kernels. Random-intercept known-variance and voxelwise OLS reducers now
   share one bounded frame execution path, including explicit observation-ID
   mapping after design-row omission and featurewise missing-data handling.
+- Standardized statistical outputs as versioned result `fmri_frame` objects
+  and added strict, reversible compatibility projections between complete
+  rectangular frames and the legacy feature by subject by contrast GDS cube.
+  Ragged or duplicate observation grids are rejected before assay reads.
 - The walking-skeleton model supports ragged random-intercept designs,
   preserves feature IDs and spatial identity in a result `fmri_frame`, and is
   numerically checked against `metafor::rma.mv()`.

@@ -455,6 +455,50 @@ group_plan <- function(
   list(assays = assays, observations = observations, diagnostics = diagnostics)
 }
 
+#' Construct a standardized statistical result frame
+#'
+#' @param assays Named observation-by-feature result assays.
+#' @param observations Result-row metadata containing stable `.obs_id` values.
+#' @param features The aligned spatial feature axis.
+#' @param method Registered statistical reducer name.
+#' @param diagnostics Per-feature diagnostics.
+#' @param term_data Compiled term metadata.
+#' @param source_observation_ids Stable source observation IDs.
+#' @param metadata Additional result metadata.
+#' @param provenance Serializable derivation provenance.
+#' @return An `fmri_frame` marked with a versioned statistical-result schema.
+#' @export
+result_frame <- function(assays, observations, features, method,
+                         diagnostics = list(), term_data = NULL,
+                         source_observation_ids = NULL, metadata = list(),
+                         provenance = NULL) {
+  if (!is.data.frame(observations) || !".obs_id" %in% names(observations) ||
+      anyNA(observations$.obs_id) || anyDuplicated(observations$.obs_id)) {
+    stop("Result observations require unique, non-missing `.obs_id` values.",
+         call. = FALSE)
+  }
+  if (!is.character(method) || length(method) != 1L || is.na(method) ||
+      !nzchar(method)) {
+    stop("`method` must be one non-empty reducer name.", call. = FALSE)
+  }
+  metadata <- utils::modifyList(list(
+    result_schema_version = 1L,
+    result_kind = "statistical",
+    method = method,
+    term_data = term_data,
+    diagnostics = diagnostics,
+    source_observation_ids = source_observation_ids
+  ), metadata)
+  fmridataset::fmri_frame(
+    assays = assays,
+    observations = observations,
+    features = features,
+    active_assay = if ("estimate" %in% names(assays)) "estimate" else names(assays)[[1L]],
+    metadata = metadata,
+    provenance = provenance
+  )
+}
+
 .compute_group_plan <- function(plan) {
   if (!inherits(plan, "fmri_group_plan") || !identical(plan$schema_version, 1L)) {
     stop("`plan` must be a valid fmri_group_plan.", call. = FALSE)
@@ -516,24 +560,34 @@ group_plan <- function(
     reducer$frame_fun(arrays, plan$execution_design, plan$options)
   })
   combined <- .combine_frame_block_results(blocks)
-  result <- fmridataset::fmri_frame(
+  result <- result_frame(
     assays = combined$assays,
     observations = combined$observations,
     features = fmridataset::feature_axis(plan$frame),
-    active_assay = "estimate",
-    metadata = list(
-      method = plan$method,
-      term_data = multidesign::term_data(plan$design),
-      diagnostics = combined$diagnostics,
-      source_observation_ids = plan$observation_ids
-    ),
-    provenance = list(
-      operation = "fmrigds::compute_group_plan",
-      method = plan$method,
-      estimate_assay = plan$estimate,
-      variance_assay = plan$variance,
-      memory_budget = plan$memory_budget,
-      block_size = plan$block_size
+    method = plan$method,
+    term_data = multidesign::term_data(plan$design),
+    diagnostics = combined$diagnostics,
+    source_observation_ids = plan$observation_ids,
+    provenance = fmridataset::provenance_graph(
+      fmridataset::provenance_record(
+        "fmrigds::compute_group_plan",
+        inputs = list(
+          observation_ids = plan$observation_ids,
+          feature_ids = plan$feature_ids,
+          estimate_assay = plan$estimate,
+          variance_assay = plan$variance
+        ),
+        parameters = list(
+          method = plan$method,
+          memory_budget = plan$memory_budget,
+          block_size = plan$block_size
+        ),
+        outputs = list(
+          result_observation_ids = combined$observations$.obs_id,
+          space_digest = plan$space_digest
+        ),
+        software = list(package = "fmrigds", version = .pkg_version())
+      )
     )
   )
   structure(

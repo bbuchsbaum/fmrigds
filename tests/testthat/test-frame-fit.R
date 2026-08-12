@@ -62,6 +62,9 @@ test_that("fit_group returns a spatially aligned result frame", {
 
   expect_s3_class(fit, "fmri_group_fit")
   expect_s3_class(fit$result, "fmri_frame")
+  expect_identical(fit$result$metadata$result_schema_version, 1L)
+  expect_identical(fit$result$metadata$result_kind, "statistical")
+  expect_s3_class(fit$result$provenance, "provenance_graph")
   expect_identical(
     fmridataset::feature_ids(fit$result),
     fmridataset::feature_ids(fixture$frame)
