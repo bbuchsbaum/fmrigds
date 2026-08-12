@@ -10,6 +10,10 @@
 
 - Added `fit_group()` for bounded feature-block fitting directly from aligned
   `fmridataset` estimate and sampling-variance assays.
+- Added serializable, metadata-only `group_plan()` objects and reducer-registry
+  frame kernels. Random-intercept known-variance and voxelwise OLS reducers now
+  share one bounded frame execution path, including explicit observation-ID
+  mapping after design-row omission and featurewise missing-data handling.
 - The walking-skeleton model supports ragged random-intercept designs,
   preserves feature IDs and spatial identity in a result `fmri_frame`, and is
   numerically checked against `metafor::rma.mv()`.

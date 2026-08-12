@@ -42,7 +42,7 @@ Rcpp::List meta_fe_cpp(const arma::mat& beta, const arma::mat& var,
   #pragma omp parallel for schedule(static)
   #endif
   for (long b = 0; b < static_cast<long>(B); ++b) {
-    double sw = 0.0, wy = 0.0, sum_w2 = 0.0;
+    double sw = 0.0, wy = 0.0;
     int k = 0;
 
     for (uword i = 0; i < S; ++i) {
@@ -50,7 +50,7 @@ Rcpp::List meta_fe_cpp(const arma::mat& beta, const arma::mat& var,
       double v = var(i, b);
       if (finite_(y) && finite_(v) && v > 0.0) {
         double w = 1.0 / std::max(v, eps);
-        sw += w; wy += w * y; sum_w2 += w * w; ++k;
+        sw += w; wy += w * y; ++k;
       }
     }
     if (k < min_subj || sw <= 0.0) {

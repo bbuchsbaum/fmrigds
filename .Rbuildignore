@@ -3,12 +3,14 @@
 ^\.albersdown\.bak$
 ^\.claude$
 ^\.github$
+^\.git$
 ^\.beads$
 ^\.omc$
 ^\.mote$
 ^\.covr_result\.rds$
 ^\.rcmdcheck_result\.rds$
 ^.*\.Rcheck$
+^fmrigds_.*\.tar\.gz$
 ^FMRIGDS_IMPLEMENTATION_STATUS\.md$
 ^FMRIGDS_PIPELINE_ANALYSIS\.md$
 ^INTEGRATION_GAP_ANALYSIS\.md$

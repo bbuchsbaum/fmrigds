@@ -655,7 +655,8 @@ register_core_reducers <- function() {
       fun = .diagnose_ols_block,
       capabilities = c("prediction", "surprise", "leverage", "coefficient_deletion", "statistic_deletion"),
       modes = "exact"
-    )
+    ),
+    frame_fun = .fit_frame_ols_block
   )
 }
 

@@ -2,7 +2,7 @@
 % Please edit documentation in R/frame-fit.R
 \name{fit_group}
 \alias{fit_group}
-\title{Fit a variance-aware random-intercept model over frame feature blocks}
+\title{Fit a registered group reducer over frame feature blocks}
 \usage{
 fit_group(
   frame,
@@ -11,7 +11,9 @@ fit_group(
   design,
   memory_budget = 256 * 1024^2,
   block_size = NULL,
-  fit = c("REML", "ML")
+  fit = c("REML", "ML"),
+  method = "lmm:ri_knownvar",
+  options = list()
 )
 }
 \arguments{
@@ -28,14 +30,20 @@ fit_group(
 \item{block_size}{Optional explicit feature-block width.}
 
 \item{fit}{Likelihood criterion, \code{"REML"} or \code{"ML"}.}
+
+\item{method}{Registered frame-capable reducer. The default is
+\code{"lmm:ri_knownvar"}; \code{"ols:voxelwise"} provides unweighted fixed-effects
+fitting when no sampling-variance assay is available.}
+
+\item{options}{Named reducer options.}
 }
 \value{
 An \code{fmri_group_fit} whose \code{result} is an \code{fmri_frame} sharing the
 input feature IDs and spatial domain.
 }
 \description{
-\code{fit_group()} is the first frame-native \code{fmrigds} execution path. It consumes
-aligned estimate and sampling-variance assays, compiles a \code{multidesign}
-specification when necessary, and reads bounded feature blocks. The model is
-\verb{diag(sampling_variance) + vc_resid I + vc_intercept Z Z'}.
+\code{fit_group()} is the eager convenience wrapper for \code{\link[=group_plan]{group_plan()}} followed
+by \code{\link[=compute]{compute()}}. The default known-variance random-intercept model is
+\verb{diag(sampling_variance) + vc_resid I + vc_intercept Z Z'}; other registered
+frame kernels may use different input and model contracts.
 }

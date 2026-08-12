@@ -22,6 +22,7 @@ test_that("register_reducer() registers custom reducers", {
   expect_equal(reducer$provides, c("beta_g", "var_g"))
   expect_null(reducer$model_contract)
   expect_null(reducer$diagnostics)
+  expect_null(reducer$frame_fun)
 })
 
 test_that("register_reducer stores validated model and diagnostic contracts", {
@@ -64,6 +65,37 @@ test_that("register_reducer stores validated model and diagnostic contracts", {
       model_contract = list(weight_mode = "mystery")
     ),
     "weight_mode"
+  )
+})
+
+test_that("register_reducer validates frame execution contracts", {
+  kernel <- function(beta, var, X, z, p, df, df1, df2, opts) {
+    list(beta_g = colMeans(beta))
+  }
+  frame_kernel <- function(arrays, design, options) {
+    list(
+      assays = list(estimate = arrays$beta),
+      observations = data.frame(.obs_id = "effect"),
+      diagnostics = list()
+    )
+  }
+  register_reducer(
+    "test:frame",
+    kernel,
+    "beta",
+    "beta_g",
+    frame_fun = frame_kernel
+  )
+  expect_identical(get_reducer("test:frame")$frame_fun, frame_kernel)
+  expect_error(
+    register_reducer(
+      "test:bad-frame",
+      kernel,
+      "beta",
+      "beta_g",
+      frame_fun = "not a function"
+    ),
+    "frame_fun"
   )
 })
 

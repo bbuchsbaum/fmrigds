@@ -12,7 +12,8 @@ register_reducer(
   options_schema = list(),
   input_shape = c("contrastwise", "joint_contrast"),
   model_contract = NULL,
-  diagnostics = NULL
+  diagnostics = NULL,
+  frame_fun = NULL
 )
 }
 \arguments{
@@ -37,6 +38,10 @@ diagnostics are reported as unavailable.}
 \item{diagnostics}{Optional diagnostic implementation declaration. This is a
 list containing \code{fun}, \code{capabilities}, and \code{modes}; \code{fun} may be \code{NULL}
 while a capability is declared but not yet implemented.}
+
+\item{frame_fun}{Optional feature-block kernel for \code{fmri_frame} execution.
+It must accept \code{arrays}, \code{design}, and \code{options}, and return aligned result
+assays, result-observation metadata, and per-feature diagnostics.}
 }
 \value{
 Invisibly, the registered reducer \code{name}.

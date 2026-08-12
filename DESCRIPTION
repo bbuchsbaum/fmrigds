@@ -7,11 +7,12 @@ Depends:
 Authors@R: c(
     person("Brad", "Buchsbaum", email = "brad.buchsbaum@gmail.com", role = c("aut", "cre"))
     )
-Description: Provides a Group Data Set (GDS) abstraction and lazy analysis
-    pipeline for first-level fMRI statistical outputs. Unifies tabular, NIfTI,
-    HDF5, and fmristore inputs under a common sample x subject x contrast
-    representation; supports space-aware transformations, group and meta-analytic
-    reducers, provenance tracking, and reproducible export.
+Description: Provides lazy, spatially typed group-analysis plans for
+    observation-by-feature fMRI frames together with compatibility workflows
+    for first-level statistical outputs represented as sample by subject by
+    contrast Group Data Sets (GDS). Supports bounded feature-block reducers,
+    tabular, NIfTI, HDF5, and fmristore inputs, space-aware transformations,
+    provenance tracking, and reproducible export.
 License: MIT + file LICENSE
 Encoding: UTF-8
 LazyData: false

@@ -18,6 +18,9 @@
 #' @param diagnostics Optional diagnostic implementation declaration. This is a
 #'   list containing `fun`, `capabilities`, and `modes`; `fun` may be `NULL`
 #'   while a capability is declared but not yet implemented.
+#' @param frame_fun Optional feature-block kernel for `fmri_frame` execution.
+#'   It must accept `arrays`, `design`, and `options`, and return aligned result
+#'   assays, result-observation metadata, and per-feature diagnostics.
 #' @return Invisibly, the registered reducer `name`.
 #' @export
 register_reducer <- function(name,
@@ -27,8 +30,12 @@ register_reducer <- function(name,
                              options_schema = list(),
                              input_shape = c("contrastwise", "joint_contrast"),
                              model_contract = NULL,
-                             diagnostics = NULL) {
+                             diagnostics = NULL,
+                             frame_fun = NULL) {
   stopifnot(is.character(name), length(name) == 1L, is.function(fun))
+  if (!is.null(frame_fun) && !is.function(frame_fun)) {
+    stop("`frame_fun` must be NULL or a function.", call. = FALSE)
+  }
   input_shape <- match.arg(input_shape)
   model_contract <- .normalize_reducer_model_contract(model_contract)
   diagnostics <- .normalize_reducer_diagnostics(diagnostics)
@@ -40,7 +47,8 @@ register_reducer <- function(name,
     options_schema = options_schema,
     input_shape = input_shape,
     model_contract = model_contract,
-    diagnostics = diagnostics
+    diagnostics = diagnostics,
+    frame_fun = frame_fun
   )
   invisible(name)
 }

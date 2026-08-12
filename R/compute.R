@@ -18,6 +18,16 @@ compute <- function(x,
                     block = NULL,
                     assays = NULL,
                     ...) {
+  if (inherits(x, "fmri_group_plan")) {
+    if (!identical(match.arg(sink), "memory") || !is.null(path) ||
+        length(sink_options) || !is.null(block) || !is.null(assays)) {
+      stop(
+        "Frame group plans currently support only compute(plan) to an in-memory result frame.",
+        call. = FALSE
+      )
+    }
+    return(.compute_group_plan(x))
+  }
   sink <- match.arg(sink)
   plan <- as_plan(x)
   plan <- optimize_plan(plan)
@@ -191,6 +201,36 @@ compute <- function(x,
 #' @return Character digest hash
 #' @export
 digest_plan <- function(plan) {
+  if (inherits(plan, "fmri_group_plan")) {
+    design_digest <- digest::digest(
+      list(
+        observation_ids = plan$design$observation_ids,
+        model_matrix = multidesign::model_matrix(plan$design),
+        term_data = multidesign::term_data(plan$design),
+        grouping_data = multidesign::grouping_data(plan$design)
+      ),
+      algo = "xxhash64"
+    )
+    return(digest::digest(
+      list(
+        schema_version = plan$schema_version,
+        method = plan$method,
+        reducer_digest = plan$reducer_digest,
+        observation_ids = plan$observation_ids,
+        feature_ids = plan$feature_ids,
+        space_digest = plan$space_digest,
+        estimate = plan$estimate,
+        variance = plan$variance,
+        estimate_source_fingerprint = plan$estimate_source_fingerprint,
+        variance_source_fingerprint = plan$variance_source_fingerprint,
+        design = design_digest,
+        block_size = plan$block_size,
+        memory_budget = plan$memory_budget,
+        options = plan$options
+      ),
+      algo = "xxhash64"
+    ))
+  }
   canonical <- list(
     source_hash = plan$source$hash,
     nodes = lapply(plan$nodes, canonicalize_node)

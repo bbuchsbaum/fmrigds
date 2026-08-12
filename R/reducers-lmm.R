@@ -706,7 +706,8 @@ register_lmm_reducers <- function() {
       missingness = "complete_case",
       synthetic_variance = "forbid",
       deletion = "unsupported"
-    )
+    ),
+    frame_fun = .fit_frame_ri_knownvar_block
   )
   register_reducer(
     name = "lmm:ri_slope1_knownvar",
