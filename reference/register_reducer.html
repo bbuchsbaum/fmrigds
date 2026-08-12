@@ -48,7 +48,8 @@
 <span>  options_schema <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span><span class="op">)</span>,</span>
 <span>  input_shape <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"contrastwise"</span>, <span class="st">"joint_contrast"</span><span class="op">)</span>,</span>
 <span>  model_contract <span class="op">=</span> <span class="cn">NULL</span>,</span>
-<span>  diagnostics <span class="op">=</span> <span class="cn">NULL</span></span>
+<span>  diagnostics <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  frame_fun <span class="op">=</span> <span class="cn">NULL</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
 
@@ -92,6 +93,12 @@ diagnostics are reported as unavailable.</p></dd>
 <dd><p>Optional diagnostic implementation declaration. This is a
 list containing <code>fun</code>, <code>capabilities</code>, and <code>modes</code>; <code>fun</code> may be <code>NULL</code>
 while a capability is declared but not yet implemented.</p></dd>
+
+
+<dt id="arg-frame-fun">frame_fun<a class="anchor" aria-label="anchor" href="#arg-frame-fun"></a></dt>
+<dd><p>Optional feature-block kernel for <code>fmri_frame</code> execution.
+It must accept <code>arrays</code>, <code>design</code>, and <code>options</code>, and return aligned result
+assays, result-observation metadata, and per-feature diagnostics.</p></dd>
 
 </dl></div>
     <div class="section level2">

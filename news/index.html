@@ -42,6 +42,7 @@
 <div class="section level3">
 <h3 id="frame-native-analysis-0-1-0-9000">Frame-native analysis<a class="anchor" aria-label="anchor" href="#frame-native-analysis-0-1-0-9000"></a></h3>
 <ul><li>Added <code><a href="../reference/fit_group.html">fit_group()</a></code> for bounded feature-block fitting directly from aligned <code>fmridataset</code> estimate and sampling-variance assays.</li>
+<li>Added serializable, metadata-only <code><a href="../reference/group_plan.html">group_plan()</a></code> objects and reducer-registry frame kernels. Random-intercept known-variance and voxelwise OLS reducers now share one bounded frame execution path, including explicit observation-ID mapping after design-row omission and featurewise missing-data handling.</li>
 <li>The walking-skeleton model supports ragged random-intercept designs, preserves feature IDs and spatial identity in a result <code>fmri_frame</code>, and is numerically checked against <code><a href="https://wviechtb.github.io/metafor/reference/rma.mv.html" class="external-link">metafor::rma.mv()</a></code>.</li>
 </ul></div>
 <div class="section level3">
