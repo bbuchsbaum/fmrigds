@@ -25,7 +25,9 @@ restricted repeated-measures Gaussian LMM reducers \code{"lmm:ri"},
 \code{"lmm:ri_slope1_knownvar"}, plus permutation reducers
 \code{"perm:onesample"} and \code{"perm:twosample"}.}
 
-\item{weights}{Weighting scheme (\code{"1/var"}, \code{"n_eff"}, \code{"equal"}, \code{"custom"})}
+\item{weights}{Weighting scheme (\code{"1/var"}, \code{"n_eff"}, \code{"equal"}, \code{"custom"}).
+When omitted, permutation reducers default to \code{"equal"}; other reducers
+default to \code{"1/var"}.}
 
 \item{by}{Grouping variable (e.g., \code{"contrast"})}
 
@@ -54,15 +56,24 @@ Gaussian responses only, and no general random-effects formula grammar.
 
 Permutation reducer contract:
 \itemize{
-\item \code{"perm:onesample"} performs an unweighted one-sample sign-flip t test
-for each sample and contrast.
+\item \code{"perm:onesample"} performs a one-sample sign-flip t test for each sample
+and contrast. \code{weights = "equal"} preserves the ordinary one-sample t
+statistic. Fixed positive \code{"1/var"}, \code{"n_eff"}, or \code{"custom"} weights use
+the reliability-weighted mean and variance, with Kish effective sample size
+for the standard error and degrees of freedom. Weights are held fixed across
+sign flips; multiplying every weight by a positive constant does not change
+the result. Inverse-variance weighting requires a genuine \code{var} or \code{se}
+assay, \code{n_eff} weighting requires an \code{n_eff} assay, and custom weighting
+requires \code{options$custom_weights} as a matching 3-D array or one value per
+subject.
 \item \code{"perm:twosample"} performs an unweighted two-sample label-permutation
 t test. It can infer the tested two-level group column from \code{formula}
-and \code{col_data}, or use \code{options$group} directly.
+and \code{col_data}, or use \code{options$group} directly. It currently accepts only
+\code{weights = "equal"}.
 \item Common options include \code{n_perm}, \code{seed}, \code{alternative}, and for
 \code{"perm:twosample"} \code{variance = "welch"} or \code{"pooled"}.
 \item Outputs include \code{t_g}, parametric \code{p_g}, permutation \code{p_perm}, and
-max-|t| family-wise \code{p_fwer}.
+tail-matched max-statistic family-wise \code{p_fwer}.
 }}
 
 \item{formula}{Optional model formula. For meta-regression reducers the design

@@ -461,6 +461,12 @@ inline double perm_tail_p(const double obs, const double null_stat, const int ta
   return std::fabs(null_stat) >= std::fabs(obs) ? 1.0 : 0.0; // two.sided
 }
 
+inline double perm_tail_score(const double statistic, const int tail) {
+  if (tail == 1) return -statistic;       // less
+  if (tail == 2) return statistic;        // greater
+  return std::fabs(statistic);            // two.sided
+}
+
 inline double mean_from_sums(const double sum, const int n) {
   return n > 0 ? sum / static_cast<double>(n) : NA_REAL;
 }
@@ -472,6 +478,61 @@ inline double t_onesample_from_sums(const double sum, const double sumsq, const 
   if (var < 0.0 && var > -1e-10) var = 0.0;
   if (var <= 0.0 || !finite_(var)) return NA_REAL;
   return mean / std::sqrt(var / static_cast<double>(n));
+}
+
+struct WeightedOneSampleStats {
+  double mean;
+  double se;
+  double statistic;
+  double df;
+
+  WeightedOneSampleStats()
+    : mean(NA_REAL), se(NA_REAL), statistic(NA_REAL), df(NA_REAL) {}
+};
+
+inline WeightedOneSampleStats weighted_onesample_stats(
+    const arma::mat& beta,
+    const arma::mat& weights,
+    const double weight_scale,
+    const uword b,
+    const arma::imat* sign_mat = NULL,
+    const uword permutation = 0,
+    const int min_subj = 2) {
+  WeightedOneSampleStats out;
+  if (!finite_(weight_scale) || weight_scale <= 0.0) return out;
+  double sum_w = 0.0, sum_w2 = 0.0, sum_wy = 0.0, sum_wy2 = 0.0;
+  int n = 0;
+  for (uword i = 0; i < beta.n_rows; ++i) {
+    const double y = beta(i, b);
+    const double w = weights(i, b) / weight_scale;
+    if (!finite_(y) || !finite_(w) || w <= 0.0) continue;
+    const double signed_y = sign_mat == NULL
+      ? y
+      : static_cast<double>((*sign_mat)(permutation, i)) * y;
+    sum_w += w;
+    sum_w2 += w * w;
+    sum_wy += w * signed_y;
+    sum_wy2 += w * signed_y * signed_y;
+    ++n;
+  }
+  if (n < min_subj || sum_w <= 0.0 || sum_w2 <= 0.0) return out;
+
+  const double mean = sum_wy / sum_w;
+  const double variance_denom = sum_w - sum_w2 / sum_w;
+  if (variance_denom <= 0.0 || !finite_(variance_denom)) return out;
+  double centered_sum = sum_wy2 - sum_w * mean * mean;
+  if (centered_sum < 0.0 && centered_sum > -1e-10) centered_sum = 0.0;
+  const double variance = centered_sum / variance_denom;
+  const double effective_n = sum_w * sum_w / sum_w2;
+  if (variance <= 0.0 || !finite_(variance) || effective_n <= 1.0 || !finite_(effective_n)) return out;
+  const double se = std::sqrt(variance / effective_n);
+  if (se <= 0.0 || !finite_(se)) return out;
+
+  out.mean = mean;
+  out.se = se;
+  out.statistic = mean / se;
+  out.df = effective_n - 1.0;
+  return out;
 }
 
 inline double t_twosample_from_sums(const double sum0, const double sumsq0, const int n0,
@@ -500,82 +561,68 @@ inline double t_twosample_from_sums(const double sum0, const double sumsq0, cons
 // [[Rcpp::export]]
 Rcpp::List perm_onesample_t_cpp(const arma::mat& beta,
                                 const arma::imat& sign_mat,
+                                const arma::mat& weights,
                                 const int tail = 0,
                                 const int min_subj = 2) {
   const uword S = beta.n_rows, B = beta.n_cols;
   const uword P = sign_mat.n_rows;
   if (sign_mat.n_cols != S) stop("sign_mat column count must equal number of subjects.");
+  if (weights.n_rows != S || weights.n_cols != B)
+    stop("weights dimensions must match beta dimensions.");
 
   NumericVector estimate(B), se(B), stat(B), df(B), p_perm(B), p_fwer(B);
   NumericVector max_null(P);
+  arma::rowvec weight_scale(B, arma::fill::zeros);
+
+  for (uword b = 0; b < B; ++b) {
+    double max_weight = 0.0;
+    for (uword i = 0; i < S; ++i) {
+      const double w = weights(i, b);
+      if (finite_(w) && w > max_weight) max_weight = w;
+    }
+    weight_scale[b] = max_weight;
+  }
 
   #ifdef _OPENMP
   #pragma omp parallel for schedule(static)
   #endif
   for (long pp = 0; pp < static_cast<long>(P); ++pp) {
-    double max_abs = 0.0;
+    double max_score = R_NegInf;
     for (uword b = 0; b < B; ++b) {
-      double sum = 0.0, sumsq = 0.0;
-      int n = 0;
-      for (uword i = 0; i < S; ++i) {
-        const double y = beta(i, b);
-        if (!finite_(y)) continue;
-        const double yp = static_cast<double>(sign_mat(pp, i)) * y;
-        sum += yp;
-        sumsq += yp * yp;
-        ++n;
+      const WeightedOneSampleStats permuted = weighted_onesample_stats(
+        beta, weights, weight_scale[b], b, &sign_mat, static_cast<uword>(pp), min_subj
+      );
+      if (finite_(permuted.statistic)) {
+        max_score = std::max(max_score, perm_tail_score(permuted.statistic, tail));
       }
-      const double tp = t_onesample_from_sums(sum, sumsq, n);
-      if (finite_(tp)) max_abs = std::max(max_abs, std::fabs(tp));
     }
-    max_null[pp] = max_abs;
+    max_null[pp] = finite_(max_score) ? max_score : NA_REAL;
   }
 
   #ifdef _OPENMP
   #pragma omp parallel for schedule(static)
   #endif
   for (long b = 0; b < static_cast<long>(B); ++b) {
-    double sum = 0.0, sumsq = 0.0;
-    int n = 0;
-    for (uword i = 0; i < S; ++i) {
-      const double y = beta(i, b);
-      if (!finite_(y)) continue;
-      sum += y;
-      sumsq += y * y;
-      ++n;
-    }
-    if (n < min_subj) {
+    const WeightedOneSampleStats observed = weighted_onesample_stats(
+      beta, weights, weight_scale[b], static_cast<uword>(b), NULL, 0, min_subj
+    );
+    if (!finite_(observed.statistic)) {
       estimate[b] = se[b] = stat[b] = df[b] = p_perm[b] = p_fwer[b] = NA_REAL;
       continue;
     }
-    const double mean = mean_from_sums(sum, n);
-    double var = (sumsq - static_cast<double>(n) * mean * mean) / static_cast<double>(n - 1);
-    if (var < 0.0 && var > -1e-10) var = 0.0;
-    const double seb = (var > 0.0 && finite_(var)) ? std::sqrt(var / static_cast<double>(n)) : NA_REAL;
-    const double tobs = t_onesample_from_sums(sum, sumsq, n);
-    estimate[b] = mean;
-    se[b] = seb;
+    const double tobs = observed.statistic;
+    estimate[b] = observed.mean;
+    se[b] = observed.se;
     stat[b] = tobs;
-    df[b] = static_cast<double>(n - 1);
-    if (!finite_(tobs)) {
-      p_perm[b] = p_fwer[b] = NA_REAL;
-      continue;
-    }
+    df[b] = observed.df;
     double count = 0.0, count_fwer = 0.0;
     for (uword pp = 0; pp < P; ++pp) {
-      double psum = 0.0, psumsq = 0.0;
-      int pn = 0;
-      for (uword i = 0; i < S; ++i) {
-        const double y = beta(i, b);
-        if (!finite_(y)) continue;
-        const double yp = static_cast<double>(sign_mat(pp, i)) * y;
-        psum += yp;
-        psumsq += yp * yp;
-        ++pn;
-      }
-      const double tnull = t_onesample_from_sums(psum, psumsq, pn);
+      const WeightedOneSampleStats permuted = weighted_onesample_stats(
+        beta, weights, weight_scale[b], static_cast<uword>(b), &sign_mat, pp, min_subj
+      );
+      const double tnull = permuted.statistic;
       count += perm_tail_p(tobs, tnull, tail);
-      if (max_null[pp] >= std::fabs(tobs)) count_fwer += 1.0;
+      if (finite_(max_null[pp]) && max_null[pp] >= perm_tail_score(tobs, tail)) count_fwer += 1.0;
     }
     p_perm[b] = (count + 1.0) / (static_cast<double>(P) + 1.0);
     p_fwer[b] = (count_fwer + 1.0) / (static_cast<double>(P) + 1.0);
@@ -611,7 +658,7 @@ Rcpp::List perm_twosample_t_cpp(const arma::mat& beta,
   #pragma omp parallel for schedule(static)
   #endif
   for (long pp = 0; pp < static_cast<long>(P); ++pp) {
-    double max_abs = 0.0;
+    double max_score = R_NegInf;
     for (uword b = 0; b < B; ++b) {
       double sum0 = 0.0, sum1 = 0.0, sumsq0 = 0.0, sumsq1 = 0.0;
       int n0 = 0, n1 = 0;
@@ -625,9 +672,9 @@ Rcpp::List perm_twosample_t_cpp(const arma::mat& beta,
         }
       }
       const double tp = t_twosample_from_sums(sum0, sumsq0, n0, sum1, sumsq1, n1, welch);
-      if (finite_(tp)) max_abs = std::max(max_abs, std::fabs(tp));
+      if (finite_(tp)) max_score = std::max(max_score, perm_tail_score(tp, tail));
     }
-    max_null[pp] = max_abs;
+    max_null[pp] = finite_(max_score) ? max_score : NA_REAL;
   }
 
   #ifdef _OPENMP
@@ -692,7 +739,7 @@ Rcpp::List perm_twosample_t_cpp(const arma::mat& beta,
       }
       const double tnull = t_twosample_from_sums(psum0, psumsq0, pn0, psum1, psumsq1, pn1, welch);
       count += perm_tail_p(tobs, tnull, tail);
-      if (max_null[pp] >= std::fabs(tobs)) count_fwer += 1.0;
+      if (finite_(max_null[pp]) && max_null[pp] >= perm_tail_score(tobs, tail)) count_fwer += 1.0;
     }
     p_perm[b] = (count + 1.0) / static_cast<double>(P);
     p_fwer[b] = (count_fwer + 1.0) / static_cast<double>(P);

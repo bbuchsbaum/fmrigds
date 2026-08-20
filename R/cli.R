@@ -367,10 +367,12 @@
 
   if (!is.null(opts[["reduce"]])) {
     reduce_opts <- .cli_parse_options_kv(opts[["reduce-option"]] %||% NULL)
+    reduce_method <- as.character(.cli_get_opt(opts, "reduce"))
+    default_weights <- if (reduce_method %in% c("perm:onesample", "perm:twosample")) "equal" else "1/var"
     plan <- reduce(
       plan,
-      method = as.character(.cli_get_opt(opts, "reduce")),
-      weights = as.character(.cli_get_opt(opts, "weights", "1/var")),
+      method = reduce_method,
+      weights = as.character(.cli_get_opt(opts, "weights", default_weights)),
       by = as.character(.cli_get_opt(opts, "reduce-by", "contrast")),
       formula = .cli_get_opt(opts, "formula", NULL),
       options = reduce_opts
@@ -553,7 +555,7 @@
     "  --derive <stat[,stat...]>      e.g. t,z,p\n",
     "  --align <family>               Repeatable registered alignment family\n",
     "  --reduce <method>              e.g. fixed, random, meta:fe_reg, lmm:ri\n",
-    "  --weights <1/var|n_eff|equal|custom>  Default: 1/var\n",
+    "  --weights <1/var|n_eff|equal|custom>  Default: equal for permutation reducers; 1/var otherwise\n",
     "  --reduce-by <axis>             Default: contrast\n",
     "  --formula <R formula>          Quote it, e.g. \"~ 1 + age + group\"\n",
     "  --reduce-option <k=v>          Repeatable reducer options\n",

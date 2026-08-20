@@ -97,7 +97,7 @@ what each subject contributes:
 
 | Subject-level input | Ingest as | Group path | What the result means |
 |---|---|---|---|
-| Effect estimate plus `var` or `se` | `beta` plus `var`/`se` | `"fixed"`, `"random"`, or meta-regression | A pooled effect with first-level precision |
+| Effect estimate plus `var` or `se` | `beta` plus `var`/`se` | `"fixed"`, `"random"`, meta-regression, or `"perm:onesample"` with `weights = "1/var"` | A precision-weighted pooled effect; the permutation path also supplies tail-matched max-statistic FWER inference |
 | Beta, standardized effect, or another commensurate signed metric without uncertainty | `beta` | `one_sample()`, `group_ols()`, or `"perm:onesample"` | An unweighted model of the subject-level values |
 | z-score | `z` | `"stouffer"` | Combined signed evidence; no pooled effect size |
 | t-statistic plus degrees of freedom | `t` plus `df`, then `derive("z")` | `"stouffer"` | Combined signed evidence after calibrating each t-statistic |
@@ -369,9 +369,12 @@ Here, uncertainty is estimated from between-subject variation. Use
 `group_ols()` instead when you need subject covariates, or
 `reduce(method = "perm:onesample")` for the sign-flip permutation path. If
 your effect size has a valid sampling standard error, ingest it as `se`, derive
-`var`, and use a meta-analytic reducer instead, for example
+`var`, and use a meta-analytic reducer, for example
 `gds(data, effect_cols = list(beta = "effect_size", se = "se")) |>
-derive("var") |> reduce("random")`.
+derive("var") |> reduce("random")`. When max-statistic FWER inference for the
+precision-weighted mean is the target, use `reduce(method = "perm:onesample",
+weights = "1/var")`; the subject weights are computed once and held fixed
+across sign flips.
 
 ### z, t, or p summary statistics
 

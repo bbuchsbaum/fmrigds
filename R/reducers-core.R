@@ -394,10 +394,12 @@ core_perm_onesample_kernel <- function(beta, var = NULL, X = NULL, df = NULL, op
     include_observed = opts$include_observed %||% FALSE
   )
   tail <- .perm_tail_code(opts$alternative %||% "two.sided")
+  subject_weights <- opts$subject_weights %||% matrix(1, nrow = nrow(beta), ncol = ncol(beta))
   if (exists("perm_onesample_t_cpp", mode = "function")) { # nocov start
     res <- perm_onesample_t_cpp(
       beta,
       signs,
+      weights = subject_weights,
       tail = tail,
       min_subj = opts$min_subjects %||% 2L
     )
@@ -594,7 +596,7 @@ register_core_reducers <- function() {
     model_contract = list(
       uses_X = FALSE,
       estimands = "intercept",
-      weight_mode = "unweighted",
+      weight_mode = "model_specific",
       missingness = "samplewise",
       synthetic_variance = "allow_effect_only",
       deletion = "unsupported"

@@ -68,6 +68,11 @@ apply_reduce <- function(node, arrays, weights, subjects, col_data = NULL, contr
   param_arrays <- list()
   # Validate and prepare reducer options once
   opts_root <- validate_reducer_options(reducer$options_schema %||% list(), node$options %||% list())
+  permutation_weights <- if (identical(reducer$name, "perm:onesample")) {
+    .prepare_perm_onesample_weights(node$weights %||% "equal", arrays, opts_root)
+  } else {
+    NULL
+  }
   # A formula is authoritative and is always resolved against the realized
   # subject axis. Never reuse a plan-construction-time X after subject
   # subsetting or reordering.
@@ -107,6 +112,9 @@ apply_reduce <- function(node, arrays, weights, subjects, col_data = NULL, contr
     p_mat    <- if (!is.null(p))    .slice_subjects_samples(p, k)    else NULL
     # Lancaster dfw auto-derive if missing
     opts_local <- opts_root
+    if (!is.null(permutation_weights)) {
+      opts_local$subject_weights <- .slice_subjects_samples(permutation_weights, k)
+    }
     if (identical(reducer$name, "combine:lancaster") && is.null(opts_local$dfw)) {
       if (!is.null(arrays$df)) {
         opts_local$dfw <- as.integer(round(as.numeric(arrays$df[1, , k])))
@@ -286,6 +294,64 @@ apply_reduce <- function(node, arrays, weights, subjects, col_data = NULL, contr
   # force into matrix [samples x subjects]
   mat <- matrix(mat, nrow = d[1], ncol = d[2])
   t(mat)
+}
+
+.prepare_perm_onesample_weights <- function(scheme, arrays, opts = list()) {
+  beta <- arrays$beta
+  dims <- dim(beta)
+  if (is.null(dims) || length(dims) != 3L) {
+    stop("perm:onesample requires a three-dimensional beta assay", call. = FALSE)
+  }
+
+  expand_weights <- function(x, label) {
+    if (!is.numeric(x)) {
+      stop(label, " weights must be numeric", call. = FALSE)
+    }
+    if (is.null(dim(x))) {
+      if (length(x) != dims[2L]) {
+        stop(label, " weights must have one value per subject or match the beta assay dimensions", call. = FALSE)
+      }
+      return(array(rep(x, each = dims[1L]), dim = dims))
+    }
+    if (length(dim(x)) != 3L || !identical(dim(x), dims)) {
+      stop(label, " weight array dimensions must match the beta assay", call. = FALSE)
+    }
+    array(as.numeric(x), dim = dims)
+  }
+
+  weights <- switch(
+    scheme,
+    equal = array(1, dim = dims),
+    `1/var` = {
+      sampling_var <- arrays$var
+      if (is.null(sampling_var) && !is.null(arrays$se)) {
+        sampling_var <- arrays$se^2
+      }
+      if (is.null(sampling_var)) {
+        stop("weights = \"1/var\" requires a genuine var or se assay", call. = FALSE)
+      }
+      1 / expand_weights(sampling_var, "Inverse-variance")
+    },
+    n_eff = {
+      if (is.null(arrays$n_eff)) {
+        stop("weights = \"n_eff\" requires an n_eff assay", call. = FALSE)
+      }
+      expand_weights(arrays$n_eff, "n_eff")
+    },
+    custom = {
+      if (is.null(opts$custom_weights)) {
+        stop("weights = \"custom\" requires options$custom_weights", call. = FALSE)
+      }
+      expand_weights(opts$custom_weights, "Custom")
+    },
+    stop("Unknown perm:onesample weighting scheme: ", scheme, call. = FALSE)
+  )
+
+  active <- is.finite(beta) & !is.na(weights)
+  if (any(active & (!is.finite(weights) | weights <= 0))) {
+    stop("Non-missing perm:onesample weights must be finite and positive wherever beta is finite", call. = FALSE)
+  }
+  weights
 }
 
 .reduce_effects <- function(arrays, method, weight_scheme, opts) {

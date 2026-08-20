@@ -1,5 +1,17 @@
 # fmrigds 0.1.0.9000
 
+## Permutation inference fixes
+
+- Corrected one- and two-sample max-statistic FWER p-values to use the
+  requested `alternative`. One-sided corrected p-values now use the same tail
+  as their uncorrected permutation p-values and preserve the invariant
+  `p_fwer >= p_perm` (#22).
+- Added fixed positive subject weighting to `perm:onesample` for `"1/var"`,
+  `"n_eff"`, and `"custom"` schemes. The weighted point estimate, studentized
+  statistic, permutation p-value, and FWER p-value now target the same
+  reliability-weighted estimand; omitted weights still preserve the historical
+  equal-weight behavior (#21).
+
 ## Model-conditioned group examination
 
 - Added `examine_group()` as a terminal branch from subject-level plans. It

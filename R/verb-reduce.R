@@ -8,7 +8,9 @@
 #'   `"lmm:ri_slope1"`, `"lmm:ri_knownvar"`, and
 #'   `"lmm:ri_slope1_knownvar"`, plus permutation reducers
 #'   `"perm:onesample"` and `"perm:twosample"`.
-#' @param weights Weighting scheme (`"1/var"`, `"n_eff"`, `"equal"`, `"custom"`)
+#' @param weights Weighting scheme (`"1/var"`, `"n_eff"`, `"equal"`, `"custom"`).
+#'   When omitted, permutation reducers default to `"equal"`; other reducers
+#'   default to `"1/var"`.
 #' @param by Grouping variable (e.g., `"contrast"`)
 #' @param formula Optional model formula. For meta-regression reducers the design
 #'   is built from subject-level `col_data`. For repeated-measures LMM reducers,
@@ -59,15 +61,24 @@
 #'   Gaussian responses only, and no general random-effects formula grammar.
 #'
 #' Permutation reducer contract:
-#' - `"perm:onesample"` performs an unweighted one-sample sign-flip t test
-#'   for each sample and contrast.
+#' - `"perm:onesample"` performs a one-sample sign-flip t test for each sample
+#'   and contrast. `weights = "equal"` preserves the ordinary one-sample t
+#'   statistic. Fixed positive `"1/var"`, `"n_eff"`, or `"custom"` weights use
+#'   the reliability-weighted mean and variance, with Kish effective sample size
+#'   for the standard error and degrees of freedom. Weights are held fixed across
+#'   sign flips; multiplying every weight by a positive constant does not change
+#'   the result. Inverse-variance weighting requires a genuine `var` or `se`
+#'   assay, `n_eff` weighting requires an `n_eff` assay, and custom weighting
+#'   requires `options$custom_weights` as a matching 3-D array or one value per
+#'   subject.
 #' - `"perm:twosample"` performs an unweighted two-sample label-permutation
 #'   t test. It can infer the tested two-level group column from `formula`
-#'   and `col_data`, or use `options$group` directly.
+#'   and `col_data`, or use `options$group` directly. It currently accepts only
+#'   `weights = "equal"`.
 #' - Common options include `n_perm`, `seed`, `alternative`, and for
 #'   `"perm:twosample"` `variance = "welch"` or `"pooled"`.
 #' - Outputs include `t_g`, parametric `p_g`, permutation `p_perm`, and
-#'   max-|t| family-wise `p_fwer`.
+#'   tail-matched max-statistic family-wise `p_fwer`.
 #' @section Output assays:
 #' Reducers collapse the subject axis and write group-level assays (named on the
 #' realised GDS, retrievable with [assays()]/[assay()]):
@@ -101,12 +112,19 @@ reduce <- function(x,
                    options = list(),
                    formula = NULL,
                    data = NULL) {
+  weights_missing <- missing(weights)
   # Allow registry-backed methods in addition to legacy names
   method <- as.character(method)[1]
+  if (weights_missing && method %in% c("perm:onesample", "perm:twosample")) {
+    weights <- "equal"
+  }
   # Support alias: ivw -> 1/var
   w_in <- as.character(weights)[1]
   if (identical(w_in, "ivw")) w_in <- "1/var"
   weights <- match.arg(w_in, c("1/var", "n_eff", "equal", "custom"))
+  if (identical(method, "perm:twosample") && !identical(weights, "equal")) {
+    stop("perm:twosample currently supports only weights = \"equal\"", call. = FALSE)
+  }
   if (!is.list(options)) {
     stop("`options` must be a list", call. = FALSE)
   }
@@ -126,7 +144,8 @@ reduce <- function(x,
     # not be blocked (the default weights = "1/var" is ignored by it). Only fall
     # back to the weight scheme for unknown/legacy reducers.
     needs_var <- if (!is.null(red)) {
-      "var" %in% (red$requires %||% character())
+      "var" %in% (red$requires %||% character()) ||
+        (identical(red$name, "perm:onesample") && identical(weights, "1/var"))
     } else {
       weights %in% c("1/var", "n_eff")
     }

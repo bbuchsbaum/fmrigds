@@ -210,16 +210,17 @@ BEGIN_RCPP
 END_RCPP
 }
 // perm_onesample_t_cpp
-Rcpp::List perm_onesample_t_cpp(const arma::mat& beta, const arma::imat& sign_mat, const int tail, const int min_subj);
-RcppExport SEXP _fmrigds_perm_onesample_t_cpp(SEXP betaSEXP, SEXP sign_matSEXP, SEXP tailSEXP, SEXP min_subjSEXP) {
+Rcpp::List perm_onesample_t_cpp(const arma::mat& beta, const arma::imat& sign_mat, const arma::mat& weights, const int tail, const int min_subj);
+RcppExport SEXP _fmrigds_perm_onesample_t_cpp(SEXP betaSEXP, SEXP sign_matSEXP, SEXP weightsSEXP, SEXP tailSEXP, SEXP min_subjSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
     Rcpp::traits::input_parameter< const arma::mat& >::type beta(betaSEXP);
     Rcpp::traits::input_parameter< const arma::imat& >::type sign_mat(sign_matSEXP);
+    Rcpp::traits::input_parameter< const arma::mat& >::type weights(weightsSEXP);
     Rcpp::traits::input_parameter< const int >::type tail(tailSEXP);
     Rcpp::traits::input_parameter< const int >::type min_subj(min_subjSEXP);
-    rcpp_result_gen = Rcpp::wrap(perm_onesample_t_cpp(beta, sign_mat, tail, min_subj));
+    rcpp_result_gen = Rcpp::wrap(perm_onesample_t_cpp(beta, sign_mat, weights, tail, min_subj));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -254,7 +255,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_fmrigds_stouffer_combine_cpp", (DL_FUNC) &_fmrigds_stouffer_combine_cpp, 3},
     {"_fmrigds_fisher_combine_cpp", (DL_FUNC) &_fmrigds_fisher_combine_cpp, 2},
     {"_fmrigds_lancaster_combine_cpp", (DL_FUNC) &_fmrigds_lancaster_combine_cpp, 3},
-    {"_fmrigds_perm_onesample_t_cpp", (DL_FUNC) &_fmrigds_perm_onesample_t_cpp, 4},
+    {"_fmrigds_perm_onesample_t_cpp", (DL_FUNC) &_fmrigds_perm_onesample_t_cpp, 5},
     {"_fmrigds_perm_twosample_t_cpp", (DL_FUNC) &_fmrigds_perm_twosample_t_cpp, 5},
     {NULL, NULL, 0}
 };

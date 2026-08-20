@@ -57,8 +57,8 @@ lancaster_combine_cpp <- function(pmat, dfw, min_subj = 1L) {
     .Call(`_fmrigds_lancaster_combine_cpp`, pmat, dfw, min_subj)
 }
 
-perm_onesample_t_cpp <- function(beta, sign_mat, tail = 0L, min_subj = 2L) {
-    .Call(`_fmrigds_perm_onesample_t_cpp`, beta, sign_mat, tail, min_subj)
+perm_onesample_t_cpp <- function(beta, sign_mat, weights, tail = 0L, min_subj = 2L) {
+    .Call(`_fmrigds_perm_onesample_t_cpp`, beta, sign_mat, weights, tail, min_subj)
 }
 
 perm_twosample_t_cpp <- function(beta, group_mat, tail = 0L, welch = TRUE, min_group = 2L) {
