@@ -76,4 +76,6 @@ can_map_linear <- function(name) {
   register_assay("p", role = "p")
   register_assay("chi2", role = "chi2")
   register_assay("logBF", role = "log_evidence", units = "log BF")
+  register_assay("cancellation_probability", role = "posterior", units = "probability")
+  register_assay("shift_rescue_fraction", role = "evidence", units = "fraction")
 }
