@@ -219,6 +219,45 @@ receive exact refits, with both modes recorded in the result. See
 `vignette("group-examination")` for the result contract, availability states,
 and interpretation of the plots.
 
+### Experimental cancellation diagnostics
+
+A voxelwise group mean can disappear when nearby positive and negative
+responses are displaced differently across normalized brains.
+`experimental_cancellation()` examines this case using two independent,
+aligned sets of subject-level split maps:
+
+```r
+diagnostics <- experimental_cancellation(
+  split_a,
+  split_b,
+  delta = 0.25,       # smallest meaningful subject-level effect, in beta units
+  equivalence = 0.25, # practically null population mean
+  prevalence = 0.20,
+  shift_radius = 1
+)
+
+names(assays(diagnostics))
+# [1] "cancellation_probability" "shift_rescue_fraction"
+```
+
+`cancellation_probability` uses a fast voxelwise random-effects model. Its
+between-subject heterogeneity (`tau^2`) contributes to a stricter event: both
+meaningful positive and negative true effects must be sufficiently prevalent
+while the population mean remains practically zero. High heterogeneity alone
+is therefore not labelled cancellation.
+
+`shift_rescue_fraction` estimates how much candidate cancellation is removed
+by a small translation learned on one split and evaluated on the other,
+averaged over both directions. A high value supports spatial displacement as
+the explanation; non-spatial amplitude heterogeneity may raise cancellation
+probability but should not be rescued by translation.
+
+This API and its statistical model are experimental. It requires genuine
+subject-level `beta` plus `var` or `se` assays from independent splits, and the
+spatial-rescue map is a diagnostic rather than corrected whole-brain
+inference. See `?experimental_cancellation` for its evaluation gates and
+interpretation of unavailable values.
+
 ### Repeated-measures mixed models
 
 For common neuroimaging repeated-measures workflows, `reduce()` also supports a
@@ -317,7 +356,7 @@ vignettes in this repository. After installation, run
 - **Post-hoc Corrections**: `vignette("as-plan-and-spatial-fdr")` --- standard and spatial FDR
 - **fmristore Integration**: `vignette("fmristore-ingestion")` --- reading fmristore HDF5 files
 - **Technical Details**: See `notes/TECHNICAL_SPECIFICATION.md` for the full design specification
-- **Function Reference**: `?gds`, `?compute`, `?reduce`, `?align`, `?mask`, `?map_to`
+- **Function Reference**: `?gds`, `?compute`, `?reduce`, `?align`, `?mask`, `?map_to`, `?experimental_cancellation`
 
 ## Release Focus
 
