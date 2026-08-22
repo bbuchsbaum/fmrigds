@@ -1,5 +1,20 @@
 # fmrigds 0.1.0.9000
 
+## Experimental cancellation diagnostics
+
+- Added `experimental_cancellation()` for voxelwise cases in which meaningful
+  positive and negative subject effects may average to a practically null group
+  mean. It requires two independent, aligned split-map GDS objects and returns
+  exactly `cancellation_probability` and `shift_rescue_fraction`.
+- `cancellation_probability` uses voxelwise random-effects heterogeneity but
+  requires both effect signs to reach the requested prevalence while the
+  population mean remains within a practical-equivalence interval; high
+  heterogeneity alone is not labelled cancellation.
+- `shift_rescue_fraction` learns small translations on one split and evaluates
+  them on the other in both directions. The API remains experimental, and its
+  spatial-rescue output is a diagnostic rather than corrected whole-brain
+  inference.
+
 ## Permutation inference fixes
 
 - Corrected one- and two-sample max-statistic FWER p-values to use the
