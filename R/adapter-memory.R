@@ -51,7 +51,7 @@ register_memory_adapter <- function() {
       contrasts = x$contrasts,
       space = x$space,
       maps = x$metadata$map_families %||% list(),
-      metadata = x$metadata,
+      metadata = .deactivate_source_verification(x$metadata),
       columns = list(),
       col_data = x$col_data
     )
@@ -60,6 +60,13 @@ register_memory_adapter <- function() {
   if (!is.null(handle$arrays)) {
     arrs <- handle$arrays
     dims <- dim(arrs[[1L]])
+    source_metadata <- .metadata_with_source_entities(
+      list(schema_version = "0.2.0", source = "<memory>", sample_labels_synthetic = TRUE),
+      list(.source_nonfile_entity(
+        "memory", "array-list", 1L,
+        reason = "in-memory arrays have no stable byte representation"
+      ))
+    )
     out <- list(
       assays = names(arrs),
       dims = gds_dims(sample = dims[1L], subject = dims[2L], contrast = dims[3L]),
@@ -67,7 +74,7 @@ register_memory_adapter <- function() {
       contrasts = paste0("contrast", seq_len(dims[3L])),
       space = space_sample_labels(labels = as.character(seq_len(dims[1L]))),
       maps = list(),
-      metadata = list(schema_version = "0.1.0", source = "<memory>", sample_labels_synthetic = TRUE),
+      metadata = source_metadata,
       columns = list()
     )
     return(probe_contract(out))

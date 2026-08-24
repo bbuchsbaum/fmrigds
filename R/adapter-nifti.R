@@ -185,6 +185,14 @@ register_nifti_adapter <- function() {
 .nifti_probe <- function(handle, ...) {
   # Read header using neuroim2
   files1 <- handle$files_beta %||% handle$files_se
+  dots <- list(...)
+  mask <- dots$mask
+  source_identity <- .normalize_source_identity_policy(dots$source_identity %||% "sha256")
+  source_paths <- c(handle$files_beta %||% character(), handle$files_se %||% character())
+  pre_read_stats <- stats::setNames(lapply(source_paths, .source_stat), source_paths)
+  mask_pre_read_stat <- if (is.character(mask) && length(mask) == 1L) {
+    .source_stat(mask)
+  } else NULL
   meta <- neuroim2::read_header(files1[1])
 
   # Get dimensions from metadata
@@ -200,9 +208,6 @@ register_nifti_adapter <- function() {
 
   # Load mask from separate file if provided via ... arguments
   # Otherwise create a full mask (all voxels included)
-  dots <- list(...)
-  mask <- dots$mask
-
   if (!is.null(mask)) {
     # Mask provided as file path or NeuroVol object
     mask_vol <- if (is.character(mask)) {
@@ -240,15 +245,43 @@ register_nifti_adapter <- function() {
   if (!is.null(handle$files_beta)) assays_avail <- c(assays_avail, "beta")
   if (!is.null(handle$files_se)) assays_avail <- c(assays_avail, "se")
   if (!is.null(handle$files_beta) && is.null(handle$files_se)) assays_avail <- c(assays_avail, "var")
-  out <- list(
-    assays = assays_avail,
-    dims = gds_dims(sample = length(mask_idx), subject = length(files1), contrast = n_contrasts),
-    subjects = subjects,
-    contrasts = contrasts,
-    space = space,
-    maps = list(),
-    metadata = list(
-      schema_version = "0.1.0",
+  source_records <- list()
+  if (length(handle$files_beta %||% character())) {
+    for (i in seq_along(handle$files_beta)) {
+      source_records[[length(source_records) + 1L]] <- list(
+        path = handle$files_beta[[i]], role = "beta", ordinal = length(source_records) + 1L,
+        pair = i, kind = "file",
+        expected_stat = pre_read_stats[[handle$files_beta[[i]]]]
+      )
+    }
+  }
+  if (length(handle$files_se %||% character())) {
+    for (i in seq_along(handle$files_se)) {
+      source_records[[length(source_records) + 1L]] <- list(
+        path = handle$files_se[[i]], role = "standard-error",
+        ordinal = length(source_records) + 1L, pair = i, kind = "file",
+        expected_stat = pre_read_stats[[handle$files_se[[i]]]]
+      )
+    }
+  }
+  entities <- .source_entities_from_files(source_records, source_identity)
+  if (!is.null(mask)) {
+    mask_entity <- if (is.character(mask) && length(mask) == 1L) {
+      .source_entities_from_files(list(list(
+        path = mask, role = "mask", ordinal = length(source_records) + 1L,
+        kind = "file", expected_stat = mask_pre_read_stat
+      )), source_identity)
+    } else {
+      list(.source_nonfile_entity(
+        "memory", "mask", length(source_records) + 1L,
+        reason = "in-memory mask has no stable byte representation"
+      ))
+    }
+    entities <- c(entities, mask_entity)
+  }
+  source_metadata <- .metadata_with_source_entities(
+    list(
+      schema_version = "0.2.0",
       source_files = c(handle$files_beta %||% character(), handle$files_se %||% character()),
       # Beta-only sources have no real uncertainty; the `var` assay is a
       # synthetic unit-variance placeholder. Flagged so variance-weighted
@@ -256,6 +289,16 @@ register_nifti_adapter <- function() {
       synthetic_var = is.null(handle$files_se) && !is.null(handle$files_beta),
       sample_labels_synthetic = TRUE
     ),
+    entities
+  )
+  out <- list(
+    assays = assays_avail,
+    dims = gds_dims(sample = length(mask_idx), subject = length(files1), contrast = n_contrasts),
+    subjects = subjects,
+    contrasts = contrasts,
+    space = space,
+    maps = list(),
+    metadata = source_metadata,
     columns = list(effect_cols = NULL, subject_col = NULL, sample_col = NULL, contrast_col = NULL),
     mask_idx = mask_idx,
     spatial_dim = spatial_dim,
@@ -557,6 +600,9 @@ register_nifti_adapter <- function() {
 #'   matching subject order and bypass filename-key pairing.
 #' @param contrast,contrasts Optional contrast labels. Length must match the
 #'   number of contrasts in each NIfTI image (one for ordinary 3D maps).
+#' @param source_identity Byte-identity policy: `"sha256"` (default) streams
+#'   every physical source once during probe, while `"none"` records an
+#'   explicit not-requested state.
 #'
 #' @return A list suitable for `gds(source = <returned>, format = "nifti")`
 #' @export
@@ -569,11 +615,13 @@ nifti_source <- function(beta = NULL,
                          subject = NULL,
                          subjects = NULL,
                          contrast = NULL,
-                         contrasts = NULL) {
+                         contrasts = NULL,
+                         source_identity = c("sha256", "none")) {
   if (is.null(beta) && is.null(se)) {
     stop("Provide at least one of `beta` or `se`", call. = FALSE)
   }
-  source <- list(beta = beta, se = se)
+  source_identity <- match.arg(source_identity)
+  source <- list(beta = beta, se = se, source_identity = source_identity)
   .nifti_attach_source_metadata(
     source,
     list(subject = subject, subjects = subjects, contrast = contrast, contrasts = contrasts)

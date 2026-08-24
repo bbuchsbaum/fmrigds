@@ -31,6 +31,7 @@ register_tabular_adapter <- function() {
   }
   if (!file.exists(source)) stop("File does not exist: ", source, call. = FALSE)
 
+  pre_read_stat <- .source_stat(source)
   ext <- tolower(tools::file_ext(source))
   data <- switch(ext,
     csv = data.table::fread(source, data.table = FALSE, ...),
@@ -44,7 +45,7 @@ register_tabular_adapter <- function() {
     stop("Unsupported tabular file extension: ", ext, call. = FALSE)
   )
 
-  list(path = source, data = data, ext = ext)
+  list(path = source, data = data, ext = ext, pre_read_stat = pre_read_stat)
 }
 
 .tabular_probe <- function(handle,
@@ -55,6 +56,7 @@ register_tabular_adapter <- function() {
                            contrast_data_cols = NULL,
                            roi_col = NULL,
                            space = NULL,
+                           source_identity = "sha256",
                            ...) {
   # Alias: roi_col overrides sample_col if provided
   sample_col <- roi_col %||% sample_col
@@ -84,6 +86,25 @@ register_tabular_adapter <- function() {
   dims <- gds_dims(sample = length(samples), subject = length(subjects), contrast = length(contrasts))
   space <- space %||% space_sample_labels(labels = samples)
 
+  source_identity <- .normalize_source_identity_policy(source_identity)
+  entities <- if (identical(handle$path, "<memory>")) {
+    list(.source_nonfile_entity(
+      "tabular-memory", "table", 1L,
+      reason = "in-memory data frame has no stable byte representation"
+    ))
+  } else {
+    .source_entities_from_files(list(list(
+      path = handle$path,
+      role = "table",
+      ordinal = 1L,
+      kind = "file",
+      expected_stat = handle$pre_read_stat
+    )), source_identity)
+  }
+  source_metadata <- .metadata_with_source_entities(
+    list(schema_version = "0.2.0", source_file = handle$path),
+    entities
+  )
   out <- list(
     assays = names(present_effects),
     dims = dims,
@@ -91,10 +112,7 @@ register_tabular_adapter <- function() {
     contrasts = as.character(contrasts),
     space = space,
     maps = list(),
-    metadata = list(
-      schema_version = "0.1.0",
-      source_file = handle$path
-    ),
+    metadata = source_metadata,
     contrast_data = contrast_data,
     columns = list(
       effect_cols = present_effects,

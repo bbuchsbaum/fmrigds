@@ -10,7 +10,8 @@ nifti_source(
   subject = NULL,
   subjects = NULL,
   contrast = NULL,
-  contrasts = NULL
+  contrasts = NULL,
+  source_identity = c("sha256", "none")
 )
 }
 \arguments{
@@ -26,6 +27,10 @@ matching subject order and bypass filename-key pairing.}
 
 \item{contrast, contrasts}{Optional contrast labels. Length must match the
 number of contrasts in each NIfTI image (one for ordinary 3D maps).}
+
+\item{source_identity}{Byte-identity policy: \code{"sha256"} (default) streams
+every physical source once during probe, while \code{"none"} records an
+explicit not-requested state.}
 }
 \value{
 A list suitable for \verb{gds(source = <returned>, format = "nifti")}

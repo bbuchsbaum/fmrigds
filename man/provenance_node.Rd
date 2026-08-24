@@ -9,7 +9,8 @@ provenance_node(
   params,
   inputs = list(),
   timestamp = Sys.time(),
-  software = list(package = "fmrigds", version = .pkg_version()),
+  software = list(package = "fmrigds", version = .pkg_version(), RVersion =
+    as.character(getRversion())),
   hash = NULL
 )
 }

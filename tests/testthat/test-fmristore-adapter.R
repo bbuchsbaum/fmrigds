@@ -18,7 +18,7 @@ test_that("fmristore adapter detects labeled volume layout and reads assays", {
   data_grp$create_dataset("cope1_var", rep(1.0, 6))
   data_grp$create_dataset("cope2", c(7.0, 8.0, 9.0, 10.0, 11.0, 12.0))
   data_grp$create_dataset("cope2_var", rep(2.0, 6))
-  data_grp$close(); h5$close()
+  data_grp$close(); h5$close_all()
 
   # Adapter detection
   name <- detect_adapter(tmp)
@@ -42,7 +42,7 @@ test_that("fmristore adapter detects latent layout and reads embeddings", {
   scans <- h5$create_group("scans")
   scans$create_group("sub-01")$create_dataset("embedding", matrix(c(1,2,3), nrow = 3, ncol = 1))
   scans$create_group("sub-02")$create_dataset("embedding", matrix(c(4,5,6), nrow = 3, ncol = 1))
-  scans$close(); h5$close()
+  scans$close(); h5$close_all()
 
   name <- detect_adapter(tmp)
   expect_true(name %in% c("fmristore", "h5"))

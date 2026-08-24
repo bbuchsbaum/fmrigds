@@ -4,7 +4,16 @@
 \alias{add_provenance_node}
 \title{Append a provenance node to metadata}
 \usage{
-add_provenance_node(metadata, op_name, params, inputs = list())
+add_provenance_node(
+  metadata,
+  op_name,
+  params,
+  inputs = NULL,
+  id = NULL,
+  timestamp = Sys.time(),
+  software = list(package = "fmrigds", version = .pkg_version(), RVersion =
+    as.character(getRversion()))
+)
 }
 \arguments{
 \item{metadata}{Metadata list from \code{\link[=gds_metadata]{gds_metadata()}}}
@@ -14,6 +23,13 @@ add_provenance_node(metadata, op_name, params, inputs = list())
 \item{params}{Named list of parameters}
 
 \item{inputs}{Parent node identifiers}
+
+\item{id}{Optional unique activity occurrence identifier. Plan execution uses
+the plan node identifier; other callers normally let fmrigds mint one.}
+
+\item{timestamp}{Timestamp of the activity occurrence.}
+
+\item{software}{Portable software identity stored with the activity.}
 }
 \value{
 Updated metadata list

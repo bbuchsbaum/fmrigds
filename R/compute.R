@@ -23,6 +23,8 @@ compute <- function(x,
   plan <- optimize_plan(plan)
 
   adapter <- get_adapter(plan$source$adapter)
+  source_entities <- plan$source$probe$metadata$provenance$entities %||% list()
+  .verify_source_entities(source_entities, "before-read")
   handle <- adapter$open(plan$source$source)
   on.exit({
     if (!is.null(adapter$close)) adapter$close(handle)
@@ -33,7 +35,7 @@ compute <- function(x,
 
   # If assays explicitly requested, return raw arrays (adapter-level read)
   if (!is.null(assays)) {
-    return(adapter$read(
+    raw <- adapter$read(
       handle,
       assays = assays,
       block = block,
@@ -47,7 +49,9 @@ compute <- function(x,
       temporal_policy = plan$meta$temporal_policy %||% NULL,
       contrast_matrix = plan$meta$contrast_matrix %||% NULL,
       contrast_names = plan$meta$contrast_names %||% NULL
-    ))
+    )
+    .verify_source_entities(source_entities, "after-read")
+    return(raw)
   }
 
   read_assays <- .initial_assays_for_plan(plan, all_assays)
@@ -66,6 +70,7 @@ compute <- function(x,
     contrast_matrix = plan$meta$contrast_matrix %||% NULL,
     contrast_names = plan$meta$contrast_names %||% NULL
   )
+  .verify_source_entities(source_entities, "after-read")
 
   node_result <- .apply_plan_nodes(
     arrays,
@@ -135,6 +140,16 @@ compute <- function(x,
     existing_att <- gds$metadata$attachments %||% list()
     gds$metadata$attachments <- utils::modifyList(existing_att, node_result$attachments)
   }
+  if (length(node_result$reduction_receipts)) {
+    existing_receipts <- gds$metadata$reduction_receipts %||% list()
+    for (nm in names(node_result$reduction_receipts)) {
+      if (!is.null(existing_receipts[[nm]])) {
+        stop("Duplicate reduction receipt id: ", nm, call. = FALSE)
+      }
+      existing_receipts[[nm]] <- node_result$reduction_receipts[[nm]]
+    }
+    gds$metadata$reduction_receipts <- existing_receipts
+  }
 
   registry <- list()
   if (length(plan$source$probe$maps %||% list())) {
@@ -147,23 +162,49 @@ compute <- function(x,
     gds$metadata$map_families <- registry
   }
 
+  gds$metadata <- .ensure_nonfile_source(
+    gds$metadata,
+    kind = plan$source$adapter,
+    role = "ingest-source"
+  )
+  current_inputs <- .provenance_current_inputs(gds$metadata)
   for (node in plan$nodes) {
-    params <- switch(node$op,
-      subset_axis = list(sample = node$sample, subject = node$subject, contrast = node$contrast),
-      align_to_group = list(
-        family = node$family_name %||% node$family$name %||% NA_character_,
-        type = node$type %||% node$family$type %||% NA_character_
-      ),
-      mask_policy = list(scope = node$policy$scope, rule = node$policy$rule, threshold = node$policy$threshold),
-      map = list(combine = node$combine, uncertainty = node$uncertainty$mode),
-      reduce = list(method = node$method, weights = node$weights, by = node$by),
-      posthoc = list(method = node$method),
-      write = list(path = node$path, format = node$format),
-      list()
+    reduction_receipt <- node_result$reduction_receipts[[node$node_id]] %||% NULL
+    params <- if (identical(node$op, "reduce")) {
+      if (is.null(reduction_receipt)) {
+        list(method = node$method, weights = node$weights, by = node$by)
+      } else {
+        list(
+          method = reduction_receipt$reducerId,
+          formula = reduction_receipt$formula,
+          options = reduction_receipt$options,
+          weight = reduction_receipt$weight,
+          modelContract = reduction_receipt$modelContract,
+          design = reduction_receipt$design,
+          nInputSubjects = reduction_receipt$nInputSubjects
+        )
+      }
+    } else {
+      tryCatch(
+        .portable_plan_node(node)$params,
+        error = function(e) list(
+          availability = "unavailable",
+          reason = conditionMessage(e)
+        )
+      )
+    }
+    gds$metadata <- add_provenance_node(
+      gds$metadata,
+      node$op,
+      params,
+      inputs = current_inputs,
+      id = node$node_id
     )
-    gds$metadata <- add_provenance_node(gds$metadata, node$op, params)
+    current_inputs <- node$node_id
   }
   gds$metadata$provenance$digest <- digest_plan(plan)
+  gds$metadata$provenance$planReceipt <- .portable_plan_receipt(plan)
+  gds$metadata$provenance <- .refresh_provenance(gds$metadata$provenance)
 
   # Re-run plan nodes that depend on col_data (e.g., build X from formula) if needed
   # Build X during reduce execution using gds$col_data if available.
@@ -246,6 +287,7 @@ canonicalize_node <- function(node) {
   writes <- list()
   designs <- list()
   attachments <- list()
+  reduction_receipts <- list()
   registry <- list()
   source_maps <- plan$source$probe$maps %||% list()
   if (length(source_maps)) registry[names(source_maps)] <- source_maps
@@ -309,17 +351,29 @@ canonicalize_node <- function(node) {
       current_row_data <- NULL
       subset_info <- list(samples = NULL, subjects = NULL, contrasts = NULL)
     } else if (op == "reduce") {
+      input_subjects <- current_subjects
+      input_contrasts <- current_contrasts
       res <- apply_reduce(node, arrays, node$weights, current_subjects, col_data, current_contrast_data, current_contrasts)
       arrays <- res$arrays
       current_subjects <- res$subjects %||% "meta"
       current_contrasts <- res$contrasts %||% current_contrasts
       current_contrast_data <- res$contrast_data %||% current_contrast_data
-       if (!is.null(res$design_info)) {
+      if (!is.null(res$design_info)) {
         designs <- c(designs, list(res$design_info))
       }
       if (!is.null(res$attachments) && length(res$attachments)) {
         attachments <- c(attachments, res$attachments)
       }
+      receipt <- .build_reduction_receipt(
+        node = node,
+        result = res,
+        input_subjects = input_subjects,
+        input_contrasts = input_contrasts,
+        output_contrasts = current_contrasts,
+        output_assays = names(arrays),
+        plan = plan
+      )
+      reduction_receipts[[node$node_id]] <- receipt
       subset_info <- list(samples = NULL, subjects = NULL, contrasts = NULL)
     } else if (op == "posthoc") {
       res <- apply_posthoc(
@@ -353,7 +407,8 @@ canonicalize_node <- function(node) {
     contrast_data = current_contrast_data,
     writes = writes,
     designs = designs,
-    attachments = attachments
+    attachments = attachments,
+    reduction_receipts = reduction_receipts
   )
 }
 

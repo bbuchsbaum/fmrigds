@@ -533,7 +533,8 @@
     formula = design$formula,
     columns = coef_names,
     theta_mode = theta_mode,
-    hash = digest::digest(design$X)
+    hash = digest::digest(design$X),
+    portable = .portable_design_receipt(design$X, coef_names)
   )
 
   list(
@@ -638,7 +639,8 @@
     slope = design$slope,
     covariance = covariance_mode,
     theta_mode = theta_mode,
-    hash = digest::digest(list(X = design$X, W_block = design$W_block))
+    hash = digest::digest(list(X = design$X, W_block = design$W_block)),
+    portable = .portable_design_receipt(design$X, coef_names)
   )
 
   list(

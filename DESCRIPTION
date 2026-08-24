@@ -44,11 +44,13 @@ Suggests:
     ggplot2,
     ps,
     ragg,
-    systemfonts
+    systemfonts,
+    neuropublish
 Remotes:
     github::bbuchsbaum/neuroim2,
     github::bbuchsbaum/neurotabs,
-    github::bbuchsbaum/neurothresh
+    github::bbuchsbaum/neurothresh,
+    github::canardlapin/neuropublish/clients/r/neuropublish
 VignetteBuilder: knitr
 Config/testthat/edition: 3
 Config/Needs/website: albersdown

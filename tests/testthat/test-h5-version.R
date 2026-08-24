@@ -11,7 +11,7 @@ test_that("h5 adapter validates schema version", {
       try(unlink(path), silent = TRUE)
     }
     h5 <- hdf5r::H5File$new(path, mode = "w")
-    on.exit(h5$close())
+    on.exit(h5$close_all())
     g <- h5$create_group("gds"); on.exit(g$close(), add = TRUE)
     g$create_dataset("version", version)
     axes <- g$create_group("axes"); on.exit(axes$close(), add = TRUE)
