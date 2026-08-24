@@ -66,6 +66,11 @@ in tables or named lists. \code{subject_data$review_priority} orders inspection;
 stability-aware criterion is met. Random-effects screening is labeled
 \code{"tau2_fixed_full"}; exact retained-subject refits are labeled
 \code{"tau2_refit_exact"} and never alter the original review queue.
+When \code{control$robust} is explicitly enabled, the object also contains a
+\code{robust_sensitivity} component. This is an alternate Huber M-functional
+fit, not a replacement reducer or an outlier probability. It reports effect
+shifts and downweight factors separately, supplies no robust hypothesis
+test or p-value, and never changes \code{review_status} or \code{review_priority}.
 }
 
 \examples{

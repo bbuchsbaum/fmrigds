@@ -377,6 +377,73 @@ not a common numerical scale for comparing their raw magnitudes.
 plot(exam, type = "heatmap")
 ```
 
+## What robust sensitivity is available?
+
+The primary examination already measures two forms of casewise unusualness:
+leave-one-subject-out predictive surprise and deletion influence. Those remain
+the right diagnostics for asking whether one subject is poorly predicted or
+changes a named group estimand. They can, however, be partly masked when
+several discrepant subjects support one another in the fitted model.
+
+An optional Huber inverse-variance fit provides a complementary estimator
+sensitivity check. It uses the same design matrix and measured first-level
+variance contract as the primary meta-analytic reducer, but bounds each
+subject's standardized score contribution. The comparison asks how far the
+estimated effect moves under that alternate M-functional. It does not replace
+the primary result, assign an outlier probability, classify a subject, or add
+a subject to the review queue.
+
+The calculation is opt-in because it adds one iterative fit per feature. For a
+random-effects reducer, it holds the full-data heterogeneity estimate fixed;
+the recorded mode is therefore `huber_ivw_tau2_fixed_full`.
+
+```{r run-robust-sensitivity}
+robust_control <- examination_control(
+  review = exam_control$review,
+  robust = list(tuning_constant = 1.345)
+)
+robust_exam <- examine_group(
+  analysis,
+  estimands = "grouppatient",
+  quality = "mean_fd",
+  control = robust_control
+)
+
+robust_exam$robust_sensitivity$estimand_data
+head(
+  robust_exam$robust_sensitivity$subject_data[
+    order(robust_exam$robust_sensitivity$subject_data$mean_downweight_factor),
+  ],
+  6L
+)
+```
+
+`effect_shift_rms` is on the effect's native scale.
+`effect_shift_primary_se_energy` expresses the featurewise shift in units of
+the primary fit's standard error, with the same cap used for examination
+energies. Subject-level downweight factors describe the alternate estimator's
+response to each case; they are weights, not probabilities. Feature status,
+iteration count, leverage, and effect-shift maps are retained under
+`robust_exam$robust_sensitivity$maps`. Robust covariance estimation and robust
+hypothesis tests are deliberately not claimed in this first slice.
+
+```{r validate-robust-sensitivity, include=FALSE}
+stopifnot(
+  identical(robust_exam$subject_data, exam$subject_data),
+  identical(robust_exam$contrast_data, exam$contrast_data),
+  identical(robust_exam$estimand_data, exam$estimand_data),
+  identical(
+    robust_exam$robust_sensitivity$mode,
+    "huber_ivw_tau2_fixed_full"
+  ),
+  all(robust_exam$robust_sensitivity$availability$status == "available"),
+  identical(
+    robust_exam$robust_sensitivity$provenance$robust_inference,
+    "not provided"
+  )
+)
+```
+
 ## How do you inspect one retained subject?
 
 The second pass retains maps for the review queue, explicitly requested

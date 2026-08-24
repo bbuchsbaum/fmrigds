@@ -20,6 +20,11 @@
 #'   removed on success or failure.
 #' @param tolerance Named list of numerical tolerances: `rank`, `leverage`, and
 #'   `degeneracy`.
+#' @param robust Optional named list enabling a separately interpreted robust
+#'   sensitivity fit. `NULL` (the default) performs no additional work and
+#'   preserves the core examination result. Supported entries are `method`,
+#'   `tuning_constant`, `max_iterations`, `convergence_tolerance`, and
+#'   `leverage_limit`.
 #'
 #' @return An object of class `gds_examination_control`.
 #' @export
@@ -54,7 +59,8 @@ examination_control <- function(
       rank = sqrt(.Machine$double.eps),
       leverage = 1e-8,
       degeneracy = 1e-12
-    )) {
+    ),
+    robust = NULL) {
   geometry_defaults <- list(
     rank = 32L,
     oversample = 8L,
@@ -88,6 +94,7 @@ examination_control <- function(
   review <- .examination_merge_settings(review, review_defaults, "review")
   staging <- .examination_merge_settings(staging, staging_defaults, "staging")
   tolerance <- .examination_merge_settings(tolerance, tolerance_defaults, "tolerance")
+  robust <- .validate_robust_examination_control(robust)
 
   block_size <- .examination_positive_integer(block_size, "block_size")
   geometry$rank <- .examination_positive_integer(geometry$rank, "geometry rank")
@@ -134,18 +141,60 @@ examination_control <- function(
     }
   }
 
-  structure(
-    list(
-      block_size = block_size,
-      geometry = geometry,
-      review = review,
-      exact_refit_n = exact_refit_n,
-      retain_n = retain_n,
-      staging = staging,
-      tolerance = tolerance
-    ),
-    class = "gds_examination_control"
+  out <- list(
+    block_size = block_size,
+    geometry = geometry,
+    review = review,
+    exact_refit_n = exact_refit_n,
+    retain_n = retain_n,
+    staging = staging,
+    tolerance = tolerance
   )
+  # Keep the default-off object shape stable. Robust sensitivity is additive
+  # only when the caller explicitly requests it.
+  if (!is.null(robust)) out$robust <- robust
+  structure(out, class = "gds_examination_control")
+}
+
+.validate_robust_examination_control <- function(value = NULL) {
+  if (is.null(value)) return(NULL)
+  defaults <- list(
+    method = "huber_ivw",
+    tuning_constant = 1.345,
+    max_iterations = 100L,
+    convergence_tolerance = 1e-8,
+    leverage_limit = 1 - 1e-8
+  )
+  value <- .examination_merge_settings(value, defaults, "robust")
+  if (!is.character(value$method) || length(value$method) != 1L ||
+      is.na(value$method) || !identical(value$method, "huber_ivw")) {
+    stop("robust method must be 'huber_ivw'.", call. = FALSE)
+  }
+  if (!is.numeric(value$tuning_constant) ||
+      length(value$tuning_constant) != 1L ||
+      !is.finite(value$tuning_constant) || value$tuning_constant <= 0) {
+    stop("robust tuning_constant must be a positive finite number.", call. = FALSE)
+  }
+  value$max_iterations <- .examination_positive_integer(
+    value$max_iterations,
+    "robust max_iterations"
+  )
+  if (!is.numeric(value$convergence_tolerance) ||
+      length(value$convergence_tolerance) != 1L ||
+      !is.finite(value$convergence_tolerance) ||
+      value$convergence_tolerance <= 0) {
+    stop(
+      "robust convergence_tolerance must be a positive finite number.",
+      call. = FALSE
+    )
+  }
+  if (!is.numeric(value$leverage_limit) ||
+      length(value$leverage_limit) != 1L ||
+      !is.finite(value$leverage_limit) ||
+      value$leverage_limit <= 0 || value$leverage_limit >= 1) {
+    stop("robust leverage_limit must be strictly between zero and one.", call. = FALSE)
+  }
+  value
 }
 
 .examination_merge_settings <- function(value, defaults, name) {

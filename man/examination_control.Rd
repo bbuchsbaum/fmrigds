@@ -16,7 +16,8 @@ examination_control(
   retain_n = 5L,
   staging = list(tempdir = NULL),
   tolerance = list(rank = sqrt(.Machine$double.eps), leverage = 1e-08, degeneracy =
-    1e-12)
+    1e-12),
+  robust = NULL
 )
 }
 \arguments{
@@ -40,6 +41,12 @@ removed on success or failure.}
 
 \item{tolerance}{Named list of numerical tolerances: \code{rank}, \code{leverage}, and
 \code{degeneracy}.}
+
+\item{robust}{Optional named list enabling a separately interpreted robust
+sensitivity fit. \code{NULL} (the default) performs no additional work and
+preserves the core examination result. Supported entries are \code{method},
+\code{tuning_constant}, \code{max_iterations}, \code{convergence_tolerance}, and
+\code{leverage_limit}.}
 }
 \value{
 An object of class \code{gds_examination_control}.

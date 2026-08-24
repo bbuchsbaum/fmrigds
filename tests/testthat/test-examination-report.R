@@ -45,7 +45,28 @@ test_that("self-contained report links cohort views to retained subjects", {
   expect_false(grepl("<link[^>]+href=", html))
   expect_false(grepl("<img[^>]+src=", html))
   expect_false(grepl("https?://", html))
+  expect_false(grepl("Robust estimator sensitivity", html, fixed = TRUE))
   expect_error(write_report(exam, path), "already exists")
+})
+
+test_that("report presents opt-in robust sensitivity without changing review", {
+  exam <- examine_group(
+    reduce(as_plan(.group_examination_fixture()), method = "meta:fe"),
+    retain = "s10",
+    control = examination_control(robust = list())
+  )
+  path <- tempfile(fileext = ".html")
+  on.exit(unlink(path), add = TRUE)
+  write_report(exam, path, subjects = "s10")
+  html <- paste(readLines(path, warn = FALSE), collapse = "\n")
+
+  expect_match(html, "Robust estimator sensitivity", fixed = TRUE)
+  expect_match(html, "Robust downweighting sensitivity", fixed = TRUE)
+  expect_match(html, "not an outlier probability", fixed = TRUE)
+  expect_match(html, "mean_downweight_factor", fixed = TRUE)
+  expect_match(html, "effect_shift_primary_se_energy", fixed = TRUE)
+  expect_match(html, "no robust p-value is implied", fixed = TRUE)
+  expect_false(any(exam$subject_data$review_source == "robust", na.rm = TRUE))
 })
 
 test_that("no-review report uses restrained language", {

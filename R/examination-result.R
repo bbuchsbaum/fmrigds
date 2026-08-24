@@ -18,7 +18,7 @@
     array(value, c(n_subject, n_contrast, n_estimand))
   }
 
-  list(
+  out <- list(
     subjects = model_context$subjects,
     contrasts = scan_context$contrasts,
     estimands = rownames(model_context$estimand_matrix),
@@ -70,6 +70,14 @@
     ),
     geometry_pass1_energy = 0
   )
+  if (!is.null(control$robust)) {
+    out$robust <- .initialize_robust_sensitivity(
+      scan_context,
+      model_context,
+      control
+    )
+  }
+  out
 }
 
 .update_examination_accumulator <- function(state,
@@ -114,6 +122,19 @@
       opts = opts,
       tolerance = control$tolerance
     )
+    if (!is.null(state$robust)) {
+      state$robust <- .accumulate_robust_sensitivity(
+        state$robust,
+        beta,
+        var,
+        fit,
+        diagnostic,
+        block,
+        contrast_index = k,
+        model_context = model_context,
+        control = control
+      )
+    }
     state <- .accumulate_examination_maps(
       state,
       diagnostic$maps,
@@ -376,31 +397,45 @@
     "subject", "contrast", "estimand", "mode", "ranking_stage", "influence_energy",
     "max_abs_delta_stat", "abs_delta_q95_approx", "eligible_n", "stable"
   ), drop = FALSE]
+  robust_sensitivity <- if (!is.null(state$robust)) {
+    .finalize_robust_sensitivity(
+      state$robust,
+      compiled,
+      model_context,
+      control
+    )
+  } else {
+    NULL
+  }
 
-  structure(
-    list(
-      subject_data = subject_data,
-      contrast_data = contrast_data,
-      estimand_data = estimand_data,
-      availability = availability,
-      cohort = cohort,
-      embedding = NULL,
-      group_maps = group_maps,
-      subject_maps = NULL,
-      sensitivity = sensitivity,
-      conclusion = list(availability = posthoc_availability, results = NULL),
-      pairwise = NULL,
-      config = list(
-        method = model_context$method,
-        formula = cohort$formula,
-        estimand_matrix = model_context$estimand_matrix,
-        weight_contract = model_context$weight_contract,
-        variance_mode = model_context$variance_mode,
-        control = control,
-        retained_subjects = subject_data$subject[subject_data$retained]
-      ),
-      provenance = provenance
+  out <- list(
+    subject_data = subject_data,
+    contrast_data = contrast_data,
+    estimand_data = estimand_data,
+    availability = availability,
+    cohort = cohort,
+    embedding = NULL,
+    group_maps = group_maps,
+    subject_maps = NULL,
+    sensitivity = sensitivity,
+    conclusion = list(availability = posthoc_availability, results = NULL),
+    pairwise = NULL,
+    config = list(
+      method = model_context$method,
+      formula = cohort$formula,
+      estimand_matrix = model_context$estimand_matrix,
+      weight_contract = model_context$weight_contract,
+      variance_mode = model_context$variance_mode,
+      control = control,
+      retained_subjects = subject_data$subject[subject_data$retained]
     ),
+    provenance = provenance
+  )
+  if (!is.null(robust_sensitivity)) {
+    out$robust_sensitivity <- robust_sensitivity
+  }
+  structure(
+    out,
     class = "gds_examination"
   )
 }
@@ -886,17 +921,26 @@
 #' @return A compact `summary.gds_examination` object.
 #' @export
 summary.gds_examination <- function(object, ...) {
+  out <- list(
+    cohort = object$cohort,
+    review_queue = object$subject_data[
+      object$subject_data$review_status == "review",
+      c("subject", "review_priority", "review_source", "review_reason"),
+      drop = FALSE
+    ],
+    availability = object$availability,
+    retained_subjects = object$config$retained_subjects
+  )
+  if (!is.null(object$robust_sensitivity)) {
+    out$robust_sensitivity <- list(
+      method = object$robust_sensitivity$method,
+      mode = object$robust_sensitivity$mode,
+      contrast_data = object$robust_sensitivity$contrast_data,
+      estimand_data = object$robust_sensitivity$estimand_data
+    )
+  }
   structure(
-    list(
-      cohort = object$cohort,
-      review_queue = object$subject_data[
-        object$subject_data$review_status == "review",
-        c("subject", "review_priority", "review_source", "review_reason"),
-        drop = FALSE
-      ],
-      availability = object$availability,
-      retained_subjects = object$config$retained_subjects
-    ),
+    out,
     class = "summary.gds_examination"
   )
 }
@@ -916,6 +960,21 @@ print.summary.gds_examination <- function(x, ...) {
   )
   cat("  variance mode: ", x$cohort$variance_mode, "\n", sep = "")
   cat("  review cases: ", nrow(x$review_queue), "\n", sep = "")
+  if (!is.null(x$robust_sensitivity)) {
+    available <- sum(
+      x$robust_sensitivity$contrast_data$available_n,
+      na.rm = TRUE
+    )
+    total <- sum(
+      x$robust_sensitivity$contrast_data$feature_n,
+      na.rm = TRUE
+    )
+    cat(
+      "  robust sensitivity: ", x$robust_sensitivity$method,
+      " (", available, "/", total, " feature fits available)\n",
+      sep = ""
+    )
+  }
   if (nrow(x$review_queue)) print(x$review_queue, row.names = FALSE)
   invisible(x)
 }

@@ -20,6 +20,11 @@
 #' stability-aware criterion is met. Random-effects screening is labeled
 #' `"tau2_fixed_full"`; exact retained-subject refits are labeled
 #' `"tau2_refit_exact"` and never alter the original review queue.
+#' When `control$robust` is explicitly enabled, the object also contains a
+#' `robust_sensitivity` component. This is an alternate Huber M-functional
+#' fit, not a replacement reducer or an outlier probability. It reports effect
+#' shifts and downweight factors separately, supplies no robust hypothesis
+#' test or p-value, and never changes `review_status` or `review_priority`.
 #'
 #' @examples
 #' subject_ids <- paste0("sub-", 1:8)

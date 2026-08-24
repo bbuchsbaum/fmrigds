@@ -444,6 +444,52 @@
   paste0("<div class=\"map-grid\">", paste0(cards, collapse = ""), "</div>")
 }
 
+.html_robust_sensitivity <- function(x) {
+  sensitivity <- x$robust_sensitivity
+  if (is.null(sensitivity)) return("")
+  contract <- data.frame(
+    field = c(
+      "method", "mode", "tuning constant", "variance contract",
+      "robust hypothesis inference"
+    ),
+    value = c(
+      sensitivity$method,
+      sensitivity$mode,
+      sensitivity$config$tuning_constant,
+      sensitivity$provenance$tau2_contract,
+      sensitivity$provenance$robust_inference
+    ),
+    stringsAsFactors = FALSE
+  )
+  paste0(
+    "<div class=\"panel wide\"><h2>Robust estimator sensitivity</h2>",
+    "<p class=\"muted\">", .html_escape(sensitivity$interpretation),
+    " Downweight factors are estimator weights; they are not an outlier probability or a subject classification.</p>",
+    "<div class=\"two-col compact-grid\"><div><h3>Estimator contract</h3>",
+    .html_table(contract), "</div><div><h3>Feature availability</h3>",
+    .html_table(sensitivity$contrast_data), "</div></div>",
+    "<h3>Effect sensitivity</h3>",
+    "<p class=\"muted\">Shifts compare the alternate robust effect with the primary reducer. Primary-SE units use the primary fit's standard error; no robust p-value is implied.</p>",
+    .html_table(sensitivity$estimand_data), "</div>"
+  )
+}
+
+.html_subject_robust_sensitivity <- function(x, subject) {
+  sensitivity <- x$robust_sensitivity
+  if (is.null(sensitivity)) return("")
+  profile <- sensitivity$subject_data[
+    sensitivity$subject_data$subject == subject,
+    ,
+    drop = FALSE
+  ]
+  paste0(
+    "<div class=\"conclusion-box\"><h3>Robust downweighting sensitivity</h3>",
+    "<p class=\"muted\">These Huber downweight factors describe the alternate estimator's response to this subject. They are not an outlier probability, classification, or review criterion.</p>",
+    .html_table(profile, empty = "Robust sensitivity is unavailable for this subject."),
+    "</div>"
+  )
+}
+
 .html_subject_section <- function(x, subject) {
   id <- .html_id(subject)
   subject_row <- x$subject_data[x$subject_data$subject == subject, , drop = FALSE]
@@ -493,7 +539,8 @@
     .html_table(qc, empty = "No additional covariates were supplied."),
     "</div><div><h3>Ranked localization</h3>",
     .html_table(regions, empty = "No parcel or sample labels are available for localization."),
-    "</div></div><div class=\"conclusion-box\"><h3>Threshold-dependent conclusion sensitivity</h3>",
+    "</div></div>", .html_subject_robust_sensitivity(x, subject),
+    "<div class=\"conclusion-box\"><h3>Threshold-dependent conclusion sensitivity</h3>",
     "<p class=\"muted\">This selected recomputation is separate from the continuous influence diagnostics above.</p>",
     .html_table(
       conclusion,
@@ -633,7 +680,8 @@ write_report <- function(x,
     .html_embedding(x), "</div><div class=\"panel\"><h2>Availability</h2>",
     .html_table(unavailable, empty = "All requested diagnostics are available."),
     "</div><div class=\"panel wide\"><h2>Subject x contrast x estimand</h2>",
-    .html_heatmap(x), "</div><div class=\"panel wide\"><h2>Threshold-dependent conclusion sensitivity</h2>",
+    .html_heatmap(x), "</div>", .html_robust_sensitivity(x),
+    "<div class=\"panel wide\"><h2>Threshold-dependent conclusion sensitivity</h2>",
     "<p class=\"muted\">Full and selected-deletion results are stored separately from continuous influence. Only methods with a declared case-deletion contract are recomputed.</p>",
     .html_table(
       conclusion_summary,
