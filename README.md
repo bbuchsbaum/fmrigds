@@ -219,6 +219,46 @@ receive exact refits, with both modes recorded in the result. See
 `vignette("group-examination")` for the result contract, availability states,
 and interpretation of the plots.
 
+### Experimental cancellation and spatial dispersion
+
+`experimental_cancellation()` uses one effect and uncertainty map per subject:
+
+```r
+diagnostics <- experimental_cancellation(
+  subject_maps,
+  delta = 0.25,       # smallest meaningful subject effect, in beta units
+  equivalence = 0.25, # practically null population mean
+  prevalence = 0.20,
+  shift_radius = 1
+)
+
+names(assays(diagnostics))
+# "cancellation_probability" "shift_rescue_fraction"
+```
+
+The outputs answer different questions. `cancellation_probability` is the
+voxelwise probability that meaningful positive and negative effects are both
+prevalent while the population mean is practically zero. It is calculated
+directly from the cohort's `beta` and genuine `var` or `se` assays; split-half
+maps are neither required nor accepted.
+
+`shift_rescue_fraction` instead asks whether activation location varies between
+subjects inside a small local area. Each subject is compared with an
+inverse-variance-weighted template made from all other subjects. The result is
+the fraction of local pattern mismatch removed by an accepted small
+translation. Automatic regions come from meaningful subject-level signal, not
+from sign cancellation: a voxel is supported when at least 20% of subjects pass
+a nominal 0.95 measurement-model meaningful-effect gate somewhere within the
+search radius, with the location threshold adjusted over the searched offsets.
+A same-signed activation that wanders locally can therefore be detected even
+when `cancellation_probability` is low. Supplied anatomical or functional
+`regions` can be used instead.
+
+The API is experimental. Spatial rescue is a descriptive diagnostic, not
+corrected whole-brain inference: a subject is excluded from its template, but
+its displacement is estimated and summarized from the same subject map. See
+`?experimental_cancellation` for the exact estimands, gates, and `NA` behavior.
+
 ### Repeated-measures mixed models
 
 For common neuroimaging repeated-measures workflows, `reduce()` also supports a
@@ -318,7 +358,8 @@ read the source vignettes directly on GitHub, or run
 - [Group examination](vignettes/group-examination.Rmd) --- model surprise, influence, residual geometry, and review reports
 - [fmristore HDF5 ingestion](vignettes/fmristore-ingestion.Rmd) --- reading fmristore HDF5 files
 - [Technical details](notes/TECHNICAL_SPECIFICATION.md) --- full design specification
-- **Function reference:** `?gds`, `?compute`, `?reduce`, `?align`, `?mask`, and `?map_to`
+- **Function reference:** `?gds`, `?compute`, `?reduce`, `?align`, `?mask`,
+  `?map_to`, and `?experimental_cancellation`
 
 ## Release Focus
 
