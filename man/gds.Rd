@@ -42,7 +42,9 @@ gds(source, format = c("auto", ls(.adapter_registry)), prefer = NULL, ...)
 Common metadata arguments include \code{col_data}, \code{row_data}, and
 \code{contrast_data}. For stacked repeated-measures tabular data,
 \code{contrast_data_cols} can name one or more columns to collapse into
-contrast-level metadata during ingestion.}
+contrast-level metadata during ingestion. File-backed adapters also accept
+\code{source_identity = "sha256"} (the default) or \code{"none"}; the latter records
+an explicit not-requested identity state rather than silently omitting it.}
 }
 \value{
 An object of class \code{c("gds", "group_data")}

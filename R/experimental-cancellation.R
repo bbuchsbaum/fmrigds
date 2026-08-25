@@ -541,7 +541,11 @@ experimental_cancellation <- function(split_a,
 
   dimnames(probability) <- list(NULL, "meta", contrasts(split_a))
   dimnames(rescue) <- dimnames(probability)
-  metadata_out <- utils::modifyList(
+  merged_lineages <- .merge_provenance_lineages(
+    metadata(split_a),
+    metadata(split_b)
+  )
+  metadata_out <- .merge_gds_metadata(
     gds_metadata(),
     list(
       experimental = list(
@@ -556,9 +560,14 @@ experimental_cancellation <- function(split_a,
         min_subjects = min_subjects,
         cross_fit = "A_to_B_and_B_to_A",
         shift_receipts = shift_receipts
-      )
+      ),
+      synthetic_var = isTRUE(metadata(split_a)$synthetic_var) ||
+        isTRUE(metadata(split_b)$synthetic_var),
+      sample_labels_synthetic = isTRUE(metadata(split_a)$sample_labels_synthetic) ||
+        isTRUE(metadata(split_b)$sample_labels_synthetic)
     )
   )
+  metadata_out$provenance <- merged_lineages$provenance
   metadata_out <- add_provenance_node(
     metadata_out,
     "experimental_cancellation",
@@ -569,7 +578,11 @@ experimental_cancellation <- function(split_a,
       shift_radius = shift_radius,
       patch_radius = patch_radius,
       candidate_threshold = candidate_threshold
-    )
+    ),
+    inputs = unique(c(
+      merged_lineages$parents_a,
+      merged_lineages$parents_b
+    ))
   )
 
   new_gds(

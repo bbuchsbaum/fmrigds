@@ -93,7 +93,9 @@
 #'   Common metadata arguments include `col_data`, `row_data`, and
 #'   `contrast_data`. For stacked repeated-measures tabular data,
 #'   `contrast_data_cols` can name one or more columns to collapse into
-#'   contrast-level metadata during ingestion.
+#'   contrast-level metadata during ingestion. File-backed adapters also accept
+#'   `source_identity = "sha256"` (the default) or `"none"`; the latter records
+#'   an explicit not-requested identity state rather than silently omitting it.
 #'
 #' @return A [`gds_plan`]
 #' @export
@@ -106,6 +108,9 @@ gds <- function(source,
   adapter <- get_adapter(adapter_name)
 
   dots <- list(...)
+  source_policy <- dots$source_identity %||%
+    if (is.list(source)) source$source_identity %||% NULL else NULL
+  dots$source_identity <- .normalize_source_identity_policy(source_policy %||% "sha256")
   # Allow callers to pass subject-level covariates for meta-regression via col_data
   col_data <- NULL
   if ("col_data" %in% names(dots)) {
@@ -137,6 +142,15 @@ gds <- function(source,
   handle <- adapter$open(source)
   probe_result <- do.call(adapter$probe, c(list(handle), dots, list(temporal_policy = temporal_policy, contrast_matrix = contrast_matrix, contrast_names = contrast_names)))
   adapter$close(handle)
+
+  identity_records <- probe_result$source_identity_records %||% list()
+  identity_policy <- probe_result$source_identity_policy %||% dots$source_identity
+  probe_result$source_identity_records <- NULL
+  probe_result$source_identity_policy <- NULL
+  if (length(identity_records)) {
+    entities <- .source_entities_from_files(identity_records, identity_policy)
+    probe_result$metadata <- .append_source_entities(probe_result$metadata, entities)
+  }
 
   adapter_columns <- probe_result$columns
   probe_result$columns <- NULL

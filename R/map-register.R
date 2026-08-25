@@ -19,10 +19,12 @@ register_map <- function(x, family, overwrite = FALSE) {
     }
     maps[[family$name]] <- family
     x$metadata$map_families <- maps
+    x$metadata <- .ensure_nonfile_source(x$metadata, "memory", "map-registration-input")
     x$metadata <- add_provenance_node(
       x$metadata,
       "register_map",
-      params = list(family = family$name, type = family$type)
+      params = list(family = family$name, type = family$type),
+      inputs = .provenance_current_inputs(x$metadata)
     )
     return(x)
   }
@@ -94,4 +96,3 @@ get_map_family <- function(x, name) {
   }
   invisible(NULL)
 }
-

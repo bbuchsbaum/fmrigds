@@ -27,7 +27,7 @@ new_gds <- function(assays,
   col_data <- .normalise_col_data(col_data, subjects)
   row_data <- .normalise_row_data(row_data, dims[1L])
 
-  metadata <- utils::modifyList(gds_metadata(), metadata)
+  metadata <- .merge_gds_metadata(gds_metadata(), metadata)
 
   structure(
     list(
@@ -50,7 +50,9 @@ new_gds <- function(assays,
 #'
 #' @param schema_version Schema version string
 #' @param units Named list of assay units
-#' @param provenance Provenance structure (`graph`, `log`, `digest`)
+#' @param provenance Versioned provenance structure containing portable source
+#'   entities, addressable activities, explicit input edges, and graph receipts.
+#'   Legacy list-only graphs remain readable but are marked incomplete.
 #' @param software Software metadata (package name, version, R version)
 #' @param alignment Optional alignment metadata
 #' @param map_families Named list of registered map families
@@ -63,9 +65,9 @@ new_gds <- function(assays,
 #' @return Metadata list
 #' @name gds_metadata
 #' @export
-gds_metadata <- function(schema_version = "0.1.0",
+gds_metadata <- function(schema_version = "0.2.0",
                          units = list(),
-                         provenance = list(graph = list(), log = character(), digest = NULL),
+                         provenance = NULL,
                          software = list(
                            package = "fmrigds",
                            version = .pkg_version(),
@@ -81,7 +83,7 @@ gds_metadata <- function(schema_version = "0.1.0",
   list(
     schema_version = schema_version,
     units = units,
-    provenance = provenance,
+    provenance = .normalize_provenance(provenance),
     software = software,
     alignment = alignment,
     map_families = map_families,
@@ -108,23 +110,21 @@ provenance_node <- function(op_name,
                             params,
                             inputs = list(),
                             timestamp = Sys.time(),
-                            software = list(package = "fmrigds", version = .pkg_version()),
+                            software = list(
+                              package = "fmrigds",
+                              version = .pkg_version(),
+                              RVersion = as.character(getRversion())
+                            ),
                             hash = NULL) {
-  if (is.null(hash)) {
-    hash <- digest::digest(list(op_name = op_name, params = params, inputs = inputs))
-  }
-
-  structure(
-    list(
-      op = op_name,
-      params = params,
-      inputs = inputs,
-      timestamp = timestamp,
-      software = software,
-      hash = hash
-    ),
-    class = "gds_provenance_node"
-  )
+  descriptor <- .activity_descriptor(op_name, params, inputs, software)
+  id <- paste0("activity-", substr(.portable_sha256(list(
+    descriptor = descriptor,
+    occurrence = .next_portable_occurrence("activity"),
+    timestamp = .iso_utc(timestamp)
+  ))$value, 1L, 20L))
+  node <- .new_activity_record(op_name, params, inputs, id, timestamp, software)
+  if (!is.null(hash)) node$legacyHash <- as.character(hash)
+  node
 }
 
 #' Append a provenance node to metadata
@@ -133,32 +133,80 @@ provenance_node <- function(op_name,
 #' @param op_name Operation name
 #' @param params Named list of parameters
 #' @param inputs Parent node identifiers
+#' @param id Optional unique activity occurrence identifier. Plan execution uses
+#'   the plan node identifier; other callers normally let fmrigds mint one.
+#' @param timestamp Timestamp of the activity occurrence.
+#' @param software Portable software identity stored with the activity.
 #'
 #' @return Updated metadata list
 #' @export
 add_provenance_node <- function(metadata,
                                 op_name,
                                 params,
-                                inputs = list()) {
-  if (is.null(metadata$provenance)) {
-    metadata$provenance <- list(graph = list(), log = character(), digest = NULL)
+                                inputs = NULL,
+                                id = NULL,
+                                timestamp = Sys.time(),
+                                software = list(
+                                  package = "fmrigds",
+                                  version = .pkg_version(),
+                                  RVersion = as.character(getRversion())
+                                )) {
+  provenance <- .normalize_provenance(metadata$provenance %||% NULL)
+  if (identical(provenance$status, "legacy-incomplete") && length(provenance$graph)) {
+    stop(
+      "Cannot append to legacy provenance without explicit addressable endpoints; ",
+      "retain it as incomplete or start a new lineage receipt.",
+      call. = FALSE
+    )
+  }
+  if (is.null(inputs)) {
+    if (length(provenance$graph)) {
+      stop(
+        "`inputs` is required when appending to a non-empty provenance graph.",
+        call. = FALSE
+      )
+    }
+    inputs <- character()
+  }
+  inputs <- as.character(unlist(inputs, use.names = FALSE))
+  descriptor <- .activity_descriptor(op_name, params, inputs, software)
+  id <- id %||% .next_activity_id(provenance, descriptor)
+  if (!is.character(id) || length(id) != 1L || is.na(id) || !nzchar(id)) {
+    stop("Provenance activity `id` must be one non-empty string.", call. = FALSE)
+  }
+  existing_ids <- c(
+    vapply(provenance$entities %||% list(), `[[`, character(1L), "id"),
+    vapply(provenance$graph %||% list(), `[[`, character(1L), "id")
+  )
+  if (id %in% existing_ids) {
+    stop("Duplicate provenance id: ", id, call. = FALSE)
+  }
+  missing <- setdiff(inputs, existing_ids)
+  if (length(missing)) {
+    stop("Unknown provenance input endpoint(s): ", paste(missing, collapse = ", "), call. = FALSE)
   }
 
-  node <- provenance_node(op_name, params, inputs)
-  metadata$provenance$graph <- c(metadata$provenance$graph, list(node))
+  node <- .new_activity_record(op_name, params, inputs, id, timestamp, software)
+  provenance$graph <- c(provenance$graph, list(node))
 
   log_entry <- sprintf(
     "[%s] %s(%s)",
-    format(node$timestamp, "%Y-%m-%d %H:%M:%S"),
+    node$timestamp,
     op_name,
     paste0(
       names(params),
       "=",
-      vapply(params, function(value) paste(format(value), collapse = "|"), character(1L)),
+      vapply(params, function(value) {
+        tryCatch(.canonical_portable_json(value), error = function(e) paste(class(value), collapse = "/"))
+      }, character(1L)),
       collapse = ", "
     )
   )
-  metadata$provenance$log <- c(metadata$provenance$log, log_entry)
+  provenance$log <- c(provenance$log, log_entry)
+  provenance <- .refresh_provenance(provenance)
+  problems <- .provenance_graph_problems(provenance, check_declared = TRUE)
+  if (length(problems)) stop(paste(problems, collapse = "; "), call. = FALSE)
+  metadata$provenance <- provenance
 
   metadata
 }

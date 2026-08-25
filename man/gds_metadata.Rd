@@ -5,9 +5,9 @@
 \title{Construct default metadata for a GDS object}
 \usage{
 gds_metadata(
-  schema_version = "0.1.0",
+  schema_version = "0.2.0",
   units = list(),
-  provenance = list(graph = list(), log = character(), digest = NULL),
+  provenance = NULL,
   software = list(package = "fmrigds", version = .pkg_version(), R_version =
     getRversion()),
   alignment = NULL,
@@ -24,7 +24,9 @@ gds_metadata(
 
 \item{units}{Named list of assay units}
 
-\item{provenance}{Provenance structure (\code{graph}, \code{log}, \code{digest})}
+\item{provenance}{Versioned provenance structure containing portable source
+entities, addressable activities, explicit input edges, and graph receipts.
+Legacy list-only graphs remain readable but are marked incomplete.}
 
 \item{software}{Software metadata (package name, version, R version)}
 

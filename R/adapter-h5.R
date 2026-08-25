@@ -38,12 +38,18 @@ register_h5_adapter <- function() {
       call. = FALSE
     )
   }
-  list(file = hdf5r::H5File$new(source, mode = mode), path = source)
+  pre_read_stat <- .source_stat(source)
+  list(
+    file = hdf5r::H5File$new(source, mode = mode),
+    path = source,
+    pre_read_stat = pre_read_stat
+  )
 }
 
-.h5_probe <- function(handle, ...) {
+.h5_probe <- function(handle, source_identity = "sha256", ...) {
   file_path <- handle$path
   h5 <- handle$file
+  source_identity <- .normalize_source_identity_policy(source_identity)
   subjects <- .h5_read_dataset(h5, "/gds/axes/subjects")
   contrasts <- .h5_read_dataset(h5, "/gds/axes/contrasts")
   # Schema version validation
@@ -71,16 +77,21 @@ register_h5_adapter <- function() {
   on.exit(space_group$close(), add = TRUE)
   type <- as.character(.h5_read_attr(space_group, "type"))
   space <- switch(type,
-    voxel = space_voxel(
-      dim = .h5_read_dataset(h5, "/gds/space/voxel/dim"),
-      affine = matrix(
-        .h5_read_dataset(h5, "/gds/space/voxel/affine"),
-        nrow = 4,
-        byrow = TRUE
-      ),
-      mask_idx = if (space_group$exists("voxel/mask_idx")) .h5_read_dataset(h5, "/gds/space/voxel/mask_idx") else NULL,
-      storage = "packed"
-    ),
+    voxel = {
+      mask_idx <- if (space_group$exists("voxel/mask_idx")) {
+        .h5_read_dataset(h5, "/gds/space/voxel/mask_idx")
+      } else NULL
+      space_voxel(
+        dim = .h5_read_dataset(h5, "/gds/space/voxel/dim"),
+        affine = matrix(
+          .h5_read_dataset(h5, "/gds/space/voxel/affine"),
+          nrow = 4,
+          byrow = TRUE
+        ),
+        mask_idx = mask_idx,
+        storage = if (is.null(mask_idx)) "dense" else "packed"
+      )
+    },
     parcels = space_parcels(.h5_read_dataset(h5, "/gds/space/parcels/labels")),
     sample_labels = {
       labels <- if (space_group$exists("sample_labels/labels")) {
@@ -103,6 +114,29 @@ register_h5_adapter <- function() {
   }
   row_data <- .h5_read_samples_table(h5, sample_ids)
   contrast_data <- .h5_read_contrasts_table(h5, as.character(contrasts))
+  stored_metadata <- tryCatch({
+    if (!.h5_safe_exists(h5, "/gds/metadata/json")) {
+      list()
+    } else {
+      json <- as.character(.h5_read_dataset(h5, "/gds/metadata/json"))
+      jsonlite::fromJSON(paste(json, collapse = ""), simplifyVector = FALSE)
+    }
+  }, error = function(e) {
+    warning("Could not decode stored GDS metadata: ", conditionMessage(e), call. = FALSE)
+    list()
+  })
+  # Original receipts describe the data embedded in the container; when the
+  # container is re-opened, only its new container receipt is live-verified.
+  stored_metadata <- .deactivate_source_verification(stored_metadata)
+  identity_records <- list(list(
+    path = file_path,
+    role = "h5-container",
+    ordinal = 1L,
+    kind = "file",
+    expected_stat = handle$pre_read_stat
+  ))
+  metadata <- .merge_gds_metadata(gds_metadata(), stored_metadata)
+  metadata$source_file <- handle$path
   out <- list(
     assays = assay_names,
     dims = gds_dims(sample = dims_raw[1], subject = dims_raw[2], contrast = dims_raw[3]),
@@ -110,7 +144,9 @@ register_h5_adapter <- function() {
     contrasts = as.character(contrasts),
     space = space,
     maps = maps,
-    metadata = list(schema_version = schema_num, source_file = handle$path),
+    metadata = metadata,
+    source_identity_records = identity_records,
+    source_identity_policy = source_identity,
     columns = list(),
     col_data = col_data,
     row_data = row_data,

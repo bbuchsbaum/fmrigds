@@ -291,7 +291,8 @@
     covariance = covariance_mode,
     theta_mode = theta_mode,
     sampling_variance = "known_diagonal",
-    hash = digest::digest(list(X = design$X, W_block = design$W_block))
+    hash = digest::digest(list(X = design$X, W_block = design$W_block)),
+    portable = .portable_design_receipt(design$X, coef_names)
   )
 
   list(

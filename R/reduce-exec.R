@@ -101,7 +101,8 @@ apply_reduce <- function(node, arrays, weights, subjects, col_data = NULL, contr
       method = reducer$name,
       formula = node$formula %||% NULL,
       columns = cols,
-      hash = digest::digest(opts_root$X)
+      hash = digest::digest(opts_root$X),
+      portable = .portable_design_receipt(opts_root$X, cols)
     )
   }
   for (k in seq_len(n_contrast)) {
@@ -132,7 +133,8 @@ apply_reduce <- function(node, arrays, weights, subjects, col_data = NULL, contr
         method = reducer$name,
         formula = node$formula %||% NULL,
         columns = cols,
-        hash = digest::digest(X)
+        hash = digest::digest(X),
+        portable = .portable_design_receipt(X, cols)
       )
     }
 
@@ -166,7 +168,8 @@ apply_reduce <- function(node, arrays, weights, subjects, col_data = NULL, contr
           method = reducer$name,
           formula = node$formula %||% NULL,
           columns = cols,
-          hash = digest::digest(X)
+          hash = digest::digest(X),
+          portable = .portable_design_receipt(X, cols)
         )
       }
     }

@@ -66,9 +66,10 @@ register_fmristore_adapter <- function() {
 .fmri_open <- function(source, mode = "r", ...) {
   stopifnot(identical(mode, "r"))
   paths <- if (is.character(source)) source else stop("Unsupported source for fmristore adapter", call. = FALSE)
+  pre_read_stats <- lapply(paths, .source_stat)
   # Open first file for probe; keep all paths for multi-subject composition
   h5 <- hdf5r::H5File$new(paths[[1]], mode = "r")
-  list(paths = paths, h5 = h5)
+  list(paths = paths, h5 = h5, pre_read_stats = pre_read_stats)
 }
 
 .fmri_close <- function(handle) {
@@ -101,15 +102,42 @@ register_fmristore_adapter <- function() {
 
 ## h5 helpers come from R/h5-utils.R: .h5_safe_exists(), .h5_first_dataset_in_group()
 
-.fmri_probe <- function(handle, temporal_policy = c("as_is","mean","design"), contrast_matrix = NULL, contrast_names = NULL, ...) {
+.fmri_probe <- function(handle, temporal_policy = c("as_is","mean","design"), contrast_matrix = NULL, contrast_names = NULL, source_identity = "sha256", ...) {
   h5 <- handle$h5
+  source_identity <- .normalize_source_identity_policy(source_identity)
+  source_records <- lapply(seq_along(handle$paths), function(i) list(
+    path = handle$paths[[i]],
+    role = "fmristore-container",
+    ordinal = i,
+    pair = i,
+    kind = "file",
+    expected_stat = handle$pre_read_stats[[i]]
+  ))
+  source_metadata <- function(extra = list()) {
+    utils::modifyList(
+      list(schema_version = "0.2.0", source_files = handle$paths),
+      extra
+    )
+  }
+  finish_probe <- function(out) {
+    out$source_identity_records <- source_records
+    out$source_identity_policy <- source_identity
+    probe_contract(out)
+  }
   # Delegate to h5 adapter if /gds present
   if (.h5_safe_exists(h5, "/gds")) {
     # Use existing h5 adapter for probe
     h5_close <- FALSE
     adapter <- get_adapter("h5")
     # Build a pseudo handle compatible with h5 adapter
-    out <- adapter$probe(list(file = h5, path = handle$paths[[1]]))
+    out <- adapter$probe(
+      list(
+        file = h5,
+        path = handle$paths[[1]],
+        pre_read_stat = handle$pre_read_stats[[1L]]
+      ),
+      source_identity = source_identity
+    )
     return(probe_contract(out))
   }
 
@@ -227,12 +255,13 @@ register_fmristore_adapter <- function() {
       contrasts = as.character(contrasts),
       space = space_par,
       maps = maps,
-      metadata = list(schema_version = "0.1.0", source_files = handle$paths,
-                      cluster_ids = cluster_ids,
-                      temporal_policy = temporal_policy),
+      metadata = source_metadata(list(
+        cluster_ids = cluster_ids,
+        temporal_policy = temporal_policy
+      )),
       columns = list()
     )
-    return(probe_contract(out))
+    return(finish_probe(out))
   }
 
   # Path A: LatentNeuroVec-like layout
@@ -294,10 +323,10 @@ register_fmristore_adapter <- function() {
       contrasts = contrasts,
       space = sp,
       maps = list(),
-      metadata = list(schema_version = "0.1.0", source_files = handle$paths),
+      metadata = source_metadata(),
       columns = list()
     )
-    return(probe_contract(out))
+    return(finish_probe(out))
   }
 
   # Path A: LabeledVolumeSet-like layout
@@ -372,10 +401,10 @@ register_fmristore_adapter <- function() {
     contrasts = as.character(labels),
     space = space,
     maps = list(),
-    metadata = list(schema_version = "0.1.0", source_files = handle$paths),
+    metadata = source_metadata(),
     columns = list()
   )
-  probe_contract(out)
+  finish_probe(out)
 }
 
 .fmri_read <- function(handle,

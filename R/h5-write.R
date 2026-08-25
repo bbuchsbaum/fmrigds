@@ -10,7 +10,10 @@ write_gds_h5 <- function(gds,
   }
   dir.create(dirname(file), recursive = TRUE, showWarnings = FALSE)
   h5 <- hdf5r::H5File$new(file, mode = "w")
-  on.exit(h5$close())
+  # Several convenience create_dataset() calls below return transient handles.
+  # close_all() guarantees those identifiers are flushed and closed before a
+  # newly written container can be probed and byte-identified.
+  on.exit(h5$close_all())
 
   g <- h5$create_group("gds")
   on.exit(g$close(), add = TRUE)

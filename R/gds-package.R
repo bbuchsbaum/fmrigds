@@ -68,4 +68,7 @@
   if (exists(".set_threads_from_option", mode = "function")) {
     .set_threads_from_option()
   }
+  if (exists(".register_neuropublish_method", mode = "function")) {
+    .register_neuropublish_method()
+  }
 } # nocov end

@@ -80,6 +80,19 @@ register_nftab_adapter <- function() {
   # --- Build col_data / row_data ---
   col_data <- .nftab_extract_col_data(design, subjects, subject_col)
 
+  source_metadata <- .metadata_with_source_entities(
+    list(
+      schema_version = "0.2.0",
+      source = "nftab",
+      dataset_id = manifest$dataset_id %||% "<unknown>"
+    ),
+    list(.source_nonfile_entity(
+      "nftab",
+      "dataset",
+      1L,
+      reason = "nftab object identity is not a byte identity receipt"
+    ))
+  )
   out <- list(
     assays   = names(feature_map),
     dims     = dims,
@@ -87,11 +100,7 @@ register_nftab_adapter <- function() {
     contrasts = contrasts,
     space    = space,
     maps     = list(),
-    metadata = list(
-      schema_version = "0.1.0",
-      source         = "nftab",
-      dataset_id     = manifest$dataset_id %||% "<unknown>"
-    ),
+    metadata = source_metadata,
     columns  = list(
       effect_cols  = feature_map,
       subject_col  = subject_col,
