@@ -797,3 +797,104 @@ test_that("catalog as_gds/subset/discover cover remaining cold branches", {
   # so exercise write-format / posthoc already covered elsewhere.
   expect_true(TRUE)
 })
+
+# ---------------------------------------------------------------------------
+# Tiny remaining gaps to clear 90%
+# ---------------------------------------------------------------------------
+
+test_that("optimizer/verb/align leftovers close the final coverage gap", {
+  # .merge_subset null-field branches
+  merged_null <- fmrigds:::.merge_subset(
+    list(op = "subset_axis", sample = NULL, subject = "s1", contrast = "c1"),
+    list(op = "subset_axis", sample = 1:2, subject = NULL, contrast = NULL)
+  )
+  expect_equal(merged_null$sample, 1:2)
+  expect_equal(merged_null$subject, "s1")
+  expect_equal(merged_null$contrast, "c1")
+
+  # trailing subset-only combine (line 29) and trailing derive-only coalesce (52)
+  only_sub <- fmrigds:::.combine_subsets(list(
+    list(op = "subset_axis", sample = 1:2, subject = NULL, contrast = NULL)
+  ))
+  expect_equal(length(only_sub), 1L)
+  only_der <- fmrigds:::.coalesce_derives(list(
+    list(op = "derive", what = "t", options = list())
+  ))
+  expect_equal(length(only_der), 1L)
+  # fuse else branch with non-mask nodes only
+  fused <- fmrigds:::.fuse_masks(list(
+    list(op = "reduce", method = "fixed"),
+    list(op = "write", format = "h5")
+  ))
+  expect_equal(length(fused), 2L)
+
+  g <- new_gds(
+    assays = list(beta = array(1:4, c(2, 2, 1)), var = array(1, c(2, 2, 1))),
+    space = space_sample_labels(c("a", "b")),
+    subjects = c("s1", "s2"),
+    contrasts = "c1"
+  )
+  expect_error(map_to(g, space_sample_labels("x"), matrix(1, 1, 2), uncertainty = list()), "gds_uncertainty_rule")
+  plan_comb <- map_to(
+    g,
+    space_sample_labels("x"),
+    matrix(c(1, 0), nrow = 1),
+    combine = "stouffer"
+  )
+  expect_s3_class(plan_comb, "gds_plan")
+
+  expect_error(write_out(g, path = "out.h5", options = "nope"), "must be a list")
+  expect_error(write_out(g, path = ""), "non-empty string")
+
+  # align_matrix Matrix / list / error paths
+  expect_equal(fmrigds:::.align_matrix(diag(2)), diag(2))
+  expect_equal(fmrigds:::.align_matrix(Matrix::Diagonal(2)), diag(2))
+  expect_equal(fmrigds:::.align_matrix(list(matrix = diag(2))), diag(2))
+  expect_error(fmrigds:::.align_matrix("bad"), "matrix or list")
+  expect_error(
+    apply_align(
+      list(by_subject = list(s1 = diag(2)), to = space_sample_labels("x"),
+           uncertainty = UncertaintyRule("independent")),
+      arrays = list(z = array(1, c(2, 1, 1))),
+      subjects = "s1",
+      space = space_sample_labels(c("a", "b"))
+    ),
+    "beta and var"
+  )
+
+  # gds-verb null/empty early returns
+  expect_null(fmrigds:::.align_col_data_for_subjects(NULL, "s1"))
+  expect_null(fmrigds:::.align_col_data_for_subjects(data.frame(a = 1), NULL))
+  expect_equal(
+    fmrigds:::.align_col_data_for_subjects(data.frame(a = 1, row.names = "s1"), character()),
+    data.frame(a = 1, row.names = "s1")
+  )
+  expect_null(fmrigds:::.align_row_data_for_samples(NULL, "a"))
+  expect_null(fmrigds:::.align_contrast_data_for_contrasts(NULL, "c1"))
+  expect_equal(
+    fmrigds:::.align_contrast_data_for_contrasts(
+      data.frame(a = 1, row.names = "c1"),
+      character()
+    ),
+    data.frame(a = 1, row.names = "c1")
+  )
+
+  # stouffer zero-weight row (denom <= 0)
+  z <- array(c(1, 2, 3), dim = c(3, 1, 1))
+  M <- matrix(c(0, 0, 0, 1, 0, 0), nrow = 2, byrow = TRUE)
+  st <- apply_map_to(
+    list(
+      op = "map",
+      target_space = space_sample_labels(c("t1", "t2")),
+      map = M,
+      uncertainty = UncertaintyRule("none"),
+      combine = "stouffer"
+    ),
+    list(z = z)
+  )
+  expect_true(all(is.na(st$arrays$z[1, , ])))
+
+  # Force builtin adapter registration under covr via :::
+  suppressWarnings(fmrigds:::register_builtin_adapters())
+  expect_true(!is.null(get_adapter("nifti")))
+})
