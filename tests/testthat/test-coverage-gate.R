@@ -631,7 +631,8 @@ test_that("sample label helpers and register_builtin_adapters cover cold paths",
   )
 
   register_builtin_adapters()
-  expect_true("tabular" %in% ls(fmrigds:::.adapter_registry))
+  expect_true(!is.null(get_adapter("tabular")))
+  expect_true(!is.null(get_adapter("memory")))
 })
 
 # ---------------------------------------------------------------------------
