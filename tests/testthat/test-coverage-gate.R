@@ -348,7 +348,12 @@ test_that("new_gds validation and space.default error paths", {
   cd <- fmrigds:::.normalise_contrast_data(positional, c("c1", "c2"))
   expect_equal(rownames(cd), c("c1", "c2"))
 
-  expect_error(space(1L), "No applicable 'space\\(\\)' method|neuroim2")
+  space_err <- tryCatch(space(1L), error = identity)
+  expect_true(inherits(space_err, "error"))
+  expect_match(
+    conditionMessage(space_err),
+    "inherited method|No applicable 'space\\(\\)' method|neuroim2"
+  )
 })
 
 # ---------------------------------------------------------------------------
@@ -409,8 +414,15 @@ test_that("col/row/contrast data alignment helpers cover guards", {
     ),
     "Dropping extra rows"
   )
-  expect_error(
+  row_err <- tryCatch(
     fmrigds:::.align_row_data_for_samples(data.frame(a = 1:2), c("a", "b", "c")),
+    error = identity
+  )
+  expect_true(inherits(row_err, "error"))
+  expect_match(conditionMessage(row_err), "missing samples")
+  # Positional nrow guard when sample_labels are absent.
+  expect_error(
+    fmrigds:::.align_row_data_for_samples(data.frame(a = 1:2), NULL, n_samples = 5),
     "one row per sample"
   )
 
