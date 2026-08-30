@@ -17,8 +17,8 @@ test_that("plan optimizer rewrite helpers coalesce subsets/derives/masks", {
   nodes <- list(
     list(op = "subset_axis", sample = 1:3, subject = NULL, contrast = NULL),
     list(op = "derive", what = "t", options = list(a = 1)),
-    list(op = "subset_axis", sample = 2:4, subject = "s1", contrast = NULL),
     list(op = "derive", what = c("z"), options = list(b = 2)),
+    list(op = "subset_axis", sample = 2:4, subject = "s1", contrast = NULL),
     list(op = "mask_policy", policy = MaskPolicy(rule = "intersection")),
     list(op = "mask_policy", policy = MaskPolicy(rule = "threshold", threshold = 0.5)),
     list(op = "reduce", method = "fixed")
@@ -183,7 +183,7 @@ test_that("scalar-map helpers and two_sample/one_sample guards", {
   expect_error(two_sample(g, group = "missing"), "Grouping column")
   expect_error(two_sample(g, group = "group", level = "B"), "`baseline` is required")
   expect_error(
-    two_sample(g, group = "group", baseline = "A", level = "Z"),
+    two_sample(g, group = "group", baseline = "X", level = "Z"),
     "No subjects match"
   )
   expect_error(
@@ -342,7 +342,10 @@ test_that("new_gds validation and space.default error paths", {
     fmrigds:::.normalise_contrast_data(data.frame(a = 1, row.names = "z"), "c1"),
     "rownames matching"
   )
-  cd <- fmrigds:::.normalise_contrast_data(data.frame(a = 1:2), c("c1", "c2"))
+  # Duplicated rownames force the positional assignment path.
+  positional <- data.frame(a = 1:2, row.names = c("a", "b"))
+  attr(positional, "row.names") <- c("dup", "dup")
+  cd <- fmrigds:::.normalise_contrast_data(positional, c("c1", "c2"))
   expect_equal(rownames(cd), c("c1", "c2"))
 
   expect_error(space(1L), "No applicable 'space\\(\\)' method|neuroim2")
@@ -356,13 +359,18 @@ test_that("col/row/contrast data alignment helpers cover guards", {
   expect_error(fmrigds:::.align_col_data_for_subjects(1, "s1"), "data.frame")
   expect_error(
     fmrigds:::.align_col_data_for_subjects(data.frame(a = 1), "s1"),
+    "missing subjects"
+  )
+  na_rows <- data.frame(a = 1)
+  attr(na_rows, "row.names") <- NA_integer_
+  expect_error(
+    fmrigds:::.align_col_data_for_subjects(na_rows, "s1"),
     "rownames matching subjects"
   )
+  dup_rows <- data.frame(a = 1:2, row.names = c("s1", "s2"))
+  attr(dup_rows, "row.names") <- c("s1", "s1")
   expect_error(
-    fmrigds:::.align_col_data_for_subjects(
-      data.frame(a = 1:2, row.names = c("s1", "s1")),
-      "s1"
-    ),
+    fmrigds:::.align_col_data_for_subjects(dup_rows, "s1"),
     "unique"
   )
   expect_error(
@@ -409,13 +417,18 @@ test_that("col/row/contrast data alignment helpers cover guards", {
   expect_error(fmrigds:::.align_contrast_data_for_contrasts(1, "c1"), "data.frame")
   expect_error(
     fmrigds:::.align_contrast_data_for_contrasts(data.frame(a = 1), "c1"),
+    "missing contrasts"
+  )
+  na_con <- data.frame(a = 1)
+  attr(na_con, "row.names") <- NA_integer_
+  expect_error(
+    fmrigds:::.align_contrast_data_for_contrasts(na_con, "c1"),
     "rownames matching contrasts"
   )
+  dup_con <- data.frame(a = 1:2, row.names = c("c1", "c2"))
+  attr(dup_con, "row.names") <- c("c1", "c1")
   expect_error(
-    fmrigds:::.align_contrast_data_for_contrasts(
-      data.frame(a = 1:2, row.names = c("c1", "c1")),
-      "c1"
-    ),
+    fmrigds:::.align_contrast_data_for_contrasts(dup_con, "c1"),
     "unique"
   )
   expect_error(
