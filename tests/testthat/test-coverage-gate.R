@@ -903,10 +903,9 @@ test_that("optimizer/verb/align leftovers close the final coverage gap", {
 })
 
 test_that("micro coverage nudge clears the last lines to 90%", {
-  # fuse_masks wrap-single-policy branch (line 76)
-  pol <- MaskPolicy()
+  # fuse_masks wrap-single-policy branch (line 76): non-list existing policy
   fused <- fmrigds:::.fuse_masks(list(
-    list(op = "mask_policy", policy = pol),
+    list(op = "mask_policy", policy = "raw"),
     list(op = "mask_policy", policy = MaskPolicy(rule = "union"))
   ))
   expect_equal(length(fused), 1L)
@@ -928,4 +927,8 @@ test_that("micro coverage nudge clears the last lines to 90%", {
   # sync_derived var-from-se path
   synced <- fmrigds:::.sync_derived(list(beta = array(1, c(1, 1, 1)), se = array(2, c(1, 1, 1))))
   expect_true("var" %in% names(synced))
+
+  # ols-helpers empty-prefix / missing cov paths
+  expect_error(coef_array(g, prefix = "coef:"), "No coefficient assays")
+  expect_error(coef_cov_tri(g, contrast = "c1"), "No packed covariance")
 })
