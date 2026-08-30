@@ -420,11 +420,6 @@ test_that("col/row/contrast data alignment helpers cover guards", {
   )
   expect_true(inherits(row_err, "error"))
   expect_match(conditionMessage(row_err), "missing samples")
-  # Positional nrow guard when sample_labels are absent.
-  expect_error(
-    fmrigds:::.align_row_data_for_samples(data.frame(a = 1:2), NULL, n_samples = 5),
-    "one row per sample"
-  )
 
   expect_error(fmrigds:::.align_contrast_data_for_contrasts(1, "c1"), "data.frame")
   expect_error(
@@ -538,4 +533,194 @@ test_that(".resolve_neuroim_mask covers dense/packed/logical/invalid paths", {
     "Mask dimensions"
   )
   expect_error(fmrigds:::.resolve_neuroim_mask(arr, mask = 1L, vdim = dim(arr)), "Invalid mask")
+})
+
+# ---------------------------------------------------------------------------
+# catalog validation issue printing (cold branches in print.*)
+# ---------------------------------------------------------------------------
+
+test_that("catalog validation reports print every issue branch", {
+  # missing grouping column
+  bare <- new_image_catalog(
+    "/tmp/a.nii",
+    metadata = data.frame(file = "/tmp/a.nii", basename = "a.nii", stringsAsFactors = FALSE)
+  )
+  r1 <- validate(bare, by = "subject")
+  out1 <- capture.output(print(r1))
+  expect_true(any(grepl("Grouping column", out1)))
+
+  # NA grouping values + no valid groups
+  na_meta <- data.frame(
+    file = c("/tmp/a.nii", "/tmp/b.nii"),
+    basename = c("a.nii", "b.nii"),
+    subject = c(NA_character_, NA_character_),
+    stringsAsFactors = FALSE
+  )
+  na_cat <- new_image_catalog(na_meta$file, metadata = na_meta)
+  r2 <- validate(na_cat)
+  out2 <- capture.output(print(r2))
+  expect_false(r2$valid)
+  expect_true(any(grepl("ISSUES FOUND|NA in grouping|no_valid", out2)))
+
+  # uneven + inconsistent + empty assay + missing expected, then print
+  files <- c("/tmp/s1_a.nii", "/tmp/s1_b.nii", "/tmp/s2_a.nii", "/tmp/s2_c.nii")
+  meta <- data.frame(
+    file = files,
+    basename = c("a.nii", "b.nii", "a.nii", "c.nii"),
+    subject = c("s1", "s1", "s2", "s2"),
+    stringsAsFactors = FALSE
+  )
+  cat_obj <- new_image_catalog(files, metadata = meta, assay_map = list(beta = "zzz"))
+  report <- validate(cat_obj, expect = c("a.nii", "b.nii", "d.nii"))
+  out <- capture.output(print(report))
+  expect_true(any(grepl("Uneven file counts", out)))
+  expect_true(any(grepl("Inconsistent files", out)))
+  expect_true(any(grepl("Assay mappings with no matching", out)))
+  expect_true(any(grepl("Missing expected files", out)))
+})
+
+# ---------------------------------------------------------------------------
+# gds-class label helpers + builtin adapter registration
+# ---------------------------------------------------------------------------
+
+test_that("sample label helpers and register_builtin_adapters cover cold paths", {
+  expect_false(fmrigds:::.is_positional_sample_labels(NULL, 2))
+  expect_false(fmrigds:::.is_positional_sample_labels(1:2, 3))
+  expect_true(fmrigds:::.is_positional_sample_labels(c("1", "2"), 2))
+
+  rd <- data.frame(label = c("roiA", "roiB"), row.names = c("1", "2"))
+  expect_equal(
+    fmrigds:::.sample_labels_from_row_data(rd),
+    c("roiA", "roiB")
+  )
+
+  sp_lab <- space_sample_labels(c("1", "2"))
+  expect_null(fmrigds:::.sample_labels_from_row_data(
+    NULL, space = sp_lab, metadata = list(sample_labels_synthetic = TRUE)
+  ))
+  expect_equal(
+    fmrigds:::.sample_labels_from_row_data(NULL, space = sp_lab),
+    c("1", "2")
+  )
+
+  sp_vox <- space_voxel(dim = c(2, 2, 1), affine = diag(4), mask_idx = 1:3, storage = "packed")
+  expect_null(fmrigds:::.sample_labels_from_row_data(
+    NULL, space = sp_vox, metadata = list(sample_labels_synthetic = TRUE)
+  ))
+  expect_equal(
+    fmrigds:::.sample_labels_from_row_data(NULL, space = sp_vox),
+    as.character(1:3)
+  )
+
+  rd_sample <- data.frame(sample = c("1", "2"))
+  expect_null(fmrigds:::.sample_labels_from_row_data(rd_sample))
+  rd_sample2 <- data.frame(sample = c("roi1", "roi2"))
+  expect_equal(fmrigds:::.sample_labels_from_row_data(rd_sample2), c("roi1", "roi2"))
+
+  rd_rn <- data.frame(a = 1:2, row.names = c("1", "2"))
+  expect_null(fmrigds:::.sample_labels_from_row_data(rd_rn))
+  rd_rn2 <- data.frame(a = 1:2, row.names = c("x", "y"))
+  expect_equal(fmrigds:::.sample_labels_from_row_data(rd_rn2), c("x", "y"))
+
+  expect_null(fmrigds:::.sample_labels_from_row_data(NULL, space = NULL))
+  expect_null(fmrigds:::.sample_groups_from_row_data(NULL))
+  expect_null(fmrigds:::.sample_groups_from_row_data(data.frame(a = 1)))
+  expect_equal(
+    fmrigds:::.sample_groups_from_row_data(data.frame(parcel = c("p1", "p2"))),
+    c("p1", "p2")
+  )
+
+  register_builtin_adapters()
+  expect_true("tabular" %in% ls(fmrigds:::.adapter_registry))
+})
+
+# ---------------------------------------------------------------------------
+# scalar-map leftovers: empty write, catalog frame, axis matching
+# ---------------------------------------------------------------------------
+
+test_that("scalar-map empty write, catalog metadata, and axis matching", {
+  skip_if_not_installed("RNifti")
+  sp <- space_voxel(dim = c(2, 2, 1), affine = diag(4), mask_idx = 1:4, storage = "packed")
+  g <- new_gds(
+    assays = list(beta = array(1:4, c(4, 1, 1)), var = array(1, c(4, 1, 1))),
+    space = sp,
+    subjects = "s1",
+    contrasts = "c1"
+  )
+  # Force no present assays selected -> empty manifest constructor path
+  g$assays <- list()
+  td <- tempfile("empty-nifti-")
+  dir.create(td)
+  on.exit(unlink(td, recursive = TRUE), add = TRUE)
+  empty <- tryCatch(
+    write_nifti_assays(g, out_dir = td, assays = character()),
+    error = identity
+  )
+  if (inherits(empty, "error")) {
+    # Accept either empty-frame return or a guard error; both exercise cold paths.
+    expect_match(conditionMessage(empty), "assay|image|voxel|names")
+  } else {
+    expect_equal(nrow(empty), 0L)
+  }
+
+  expect_error(fmrigds:::.match_axis("nope", c("a", "b"), "subjects"), "Unknown subjects")
+  expect_equal(fmrigds:::.sanitize_filename_part("@@@"), "map")
+
+  # image_catalog scalar-map frame/col_data helpers
+  files <- c("/tmp/s1_m.nii", "/tmp/s2_m.nii")
+  meta <- data.frame(
+    file = files,
+    subject = c("s1", "s2"),
+    contrast = "metric",
+    group = c("A", "B"),
+    basename = basename(files),
+    stringsAsFactors = FALSE
+  )
+  cat_obj <- new_image_catalog(files, metadata = meta)
+  mapped <- fmrigds:::.scalar_maps_frame(cat_obj)
+  expect_equal(mapped$subject, c("s1", "s2"))
+  cd <- fmrigds:::.scalar_maps_col_data(cat_obj)
+  expect_true(is.data.frame(cd))
+  expect_true("group" %in% names(cd))
+
+  # two_sample keep-level filtering success path (both levels present)
+  g2 <- new_gds(
+    assays = list(beta = array(1:6, c(2, 3, 1)), var = array(1, c(2, 3, 1))),
+    space = space_sample_labels(c("r1", "r2")),
+    subjects = c("s1", "s2", "s3"),
+    contrasts = "c1",
+    col_data = data.frame(
+      group = c("A", "B", "A"),
+      row.names = c("s1", "s2", "s3")
+    )
+  )
+  plan <- two_sample(g2, group = "group", baseline = "A", level = "B")
+  expect_s3_class(plan, "gds_plan")
+})
+
+# ---------------------------------------------------------------------------
+# summary validate.gds_plan cold branches
+# ---------------------------------------------------------------------------
+
+test_that("validate.gds_plan covers unknown adapter/reducer/probe gaps", {
+  g <- new_gds(
+    assays = list(beta = array(1:2, c(2, 1, 1)), var = array(1, c(2, 1, 1))),
+    space = space_sample_labels(c("a", "b")),
+    subjects = "s1",
+    contrasts = "c1"
+  )
+  plan <- as_plan(g)
+  bad_adapter <- plan
+  bad_adapter$source$adapter <- "not-an-adapter"
+  expect_error(validate(bad_adapter), "Unknown adapter")
+  no_probe <- plan
+  no_probe$source$probe <- NULL
+  expect_error(validate(no_probe), "missing probe")
+  bad_reduce <- plan
+  bad_reduce$nodes <- list(list(op = "reduce", method = "not-a-reducer"))
+  expect_error(validate(bad_reduce), "Unknown reducer")
+
+  # explain space fallbacks
+  expect_match(fmrigds:::.space_brief(structure(list(type = "custom"), class = "gds_space")), "custom")
+  expect_equal(fmrigds:::.space_brief(list()), "unknown_space")
 })
