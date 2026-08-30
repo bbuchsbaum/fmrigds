@@ -864,7 +864,10 @@ test_that("optimizer/verb/align leftovers close the final coverage gap", {
 
   # gds-verb null/empty early returns
   expect_null(fmrigds:::.align_col_data_for_subjects(NULL, "s1"))
-  expect_null(fmrigds:::.align_col_data_for_subjects(data.frame(a = 1), NULL))
+  expect_equal(
+    fmrigds:::.align_col_data_for_subjects(data.frame(a = 1), NULL),
+    data.frame(a = 1)
+  )
   expect_equal(
     fmrigds:::.align_col_data_for_subjects(data.frame(a = 1, row.names = "s1"), character()),
     data.frame(a = 1, row.names = "s1")
