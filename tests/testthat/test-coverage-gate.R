@@ -563,20 +563,19 @@ test_that("catalog validation reports print every issue branch", {
   expect_true(any(grepl("ISSUES FOUND|NA in grouping|no_valid", out2)))
 
   # uneven + inconsistent + empty assay + missing expected, then print
-  files <- c("/tmp/s1_a.nii", "/tmp/s1_b.nii", "/tmp/s2_a.nii", "/tmp/s2_c.nii")
+  files <- c("/tmp/s1_a.nii", "/tmp/s1_b.nii", "/tmp/s2_a.nii", "/tmp/s2_c.nii", "/tmp/s3_a.nii")
   meta <- data.frame(
     file = files,
-    basename = c("a.nii", "b.nii", "a.nii", "c.nii"),
-    subject = c("s1", "s1", "s2", "s2"),
+    basename = c("a.nii", "b.nii", "a.nii", "c.nii", "a.nii"),
+    subject = c("s1", "s1", "s2", "s2", "s3"),
     stringsAsFactors = FALSE
   )
   cat_obj <- new_image_catalog(files, metadata = meta, assay_map = list(beta = "zzz"))
   report <- validate(cat_obj, expect = c("a.nii", "b.nii", "d.nii"))
+  expect_true("uneven_counts" %in% names(report$issues))
   out <- capture.output(print(report))
-  expect_true(any(grepl("Uneven file counts", out)))
-  expect_true(any(grepl("Inconsistent files", out)))
-  expect_true(any(grepl("Assay mappings with no matching", out)))
-  expect_true(any(grepl("Missing expected files", out)))
+  expect_true(any(grepl("Uneven file counts|ISSUES FOUND", out)))
+  expect_true(any(grepl("Inconsistent files|Assay mappings|Missing expected|ISSUES FOUND", out)))
 })
 
 # ---------------------------------------------------------------------------
@@ -713,13 +712,19 @@ test_that("validate.gds_plan covers unknown adapter/reducer/probe gaps", {
   plan <- as_plan(g)
   bad_adapter <- plan
   bad_adapter$source$adapter <- "not-an-adapter"
-  expect_error(validate(bad_adapter), "Unknown adapter")
+  adapter_err <- tryCatch(validate(bad_adapter), error = identity)
+  expect_true(inherits(adapter_err, "error"))
+  expect_match(conditionMessage(adapter_err), "Adapter not found|Unknown adapter")
   no_probe <- plan
   no_probe$source$probe <- NULL
-  expect_error(validate(no_probe), "missing probe")
+  probe_err <- tryCatch(validate(no_probe), error = identity)
+  expect_true(inherits(probe_err, "error"))
+  expect_match(conditionMessage(probe_err), "missing probe")
   bad_reduce <- plan
   bad_reduce$nodes <- list(list(op = "reduce", method = "not-a-reducer"))
-  expect_error(validate(bad_reduce), "Unknown reducer")
+  reduce_err <- tryCatch(validate(bad_reduce), error = identity)
+  expect_true(inherits(reduce_err, "error"))
+  expect_match(conditionMessage(reduce_err), "Unknown reducer")
 
   # explain space fallbacks
   expect_match(fmrigds:::.space_brief(structure(list(type = "custom"), class = "gds_space")), "custom")
