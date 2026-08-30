@@ -901,3 +901,31 @@ test_that("optimizer/verb/align leftovers close the final coverage gap", {
   suppressWarnings(fmrigds:::register_builtin_adapters())
   expect_true(!is.null(get_adapter("nifti")))
 })
+
+test_that("micro coverage nudge clears the last lines to 90%", {
+  # fuse_masks wrap-single-policy branch (line 76)
+  pol <- MaskPolicy()
+  fused <- fmrigds:::.fuse_masks(list(
+    list(op = "mask_policy", policy = pol),
+    list(op = "mask_policy", policy = MaskPolicy(rule = "union"))
+  ))
+  expect_equal(length(fused), 1L)
+  expect_true(is.list(fused[[1]]$policy))
+
+  g <- new_gds(
+    assays = list(beta = array(1:4, c(2, 2, 1)), var = array(1, c(2, 2, 1))),
+    space = space_sample_labels(c("a", "b")),
+    subjects = c("s1", "s2"),
+    contrasts = "c1"
+  )
+  expect_error(align(g, family = 1L), "MapFamily")
+  expect_error(mask(g, policy = list()), "gds_mask_policy")
+  expect_error(
+    relabel_subjects(g, c(s1 = "x", s2 = "x")),
+    "unique"
+  )
+
+  # sync_derived var-from-se path
+  synced <- fmrigds:::.sync_derived(list(beta = array(1, c(1, 1, 1)), se = array(2, c(1, 1, 1))))
+  expect_true("var" %in% names(synced))
+})
