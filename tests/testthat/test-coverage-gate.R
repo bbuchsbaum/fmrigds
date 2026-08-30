@@ -931,4 +931,64 @@ test_that("micro coverage nudge clears the last lines to 90%", {
   # ols-helpers empty-prefix / missing cov paths
   expect_error(coef_array(g, prefix = "coef:"), "No coefficient assays")
   expect_error(coef_cov_tri(g, contrast = "c1"), "No packed covariance")
+
+  # posthoc-exec: structured attachments must be a list; return must be named
+  register_posthoc(
+    "test:cov-bad-attach",
+    fun = function(arrays, opts) list(arrays = arrays, attachments = "nope"),
+    requires = character(0),
+    provides = character(0),
+    overwrite = TRUE
+  )
+  on.exit(try(unregister_posthoc("test:cov-bad-attach"), silent = TRUE), add = TRUE)
+  expect_error(
+    apply_posthoc(list(method = "test:cov-bad-attach", options = list()), list(p = array(0.1, c(1, 1, 1)))),
+    "attachments must be a list"
+  )
+  register_posthoc(
+    "test:cov-unnamed",
+    fun = function(arrays, opts) list(array(1, c(1, 1, 1))),
+    requires = character(0),
+    provides = character(0),
+    overwrite = TRUE
+  )
+  on.exit(try(unregister_posthoc("test:cov-unnamed"), silent = TRUE), add = TRUE)
+  expect_error(
+    apply_posthoc(list(method = "test:cov-unnamed", options = list()), list(p = array(0.1, c(1, 1, 1)))),
+    "named list of arrays"
+  )
+
+  # probe_contract cold type / contrast_data guards
+  base_probe <- list(
+    assays = "beta",
+    dims = gds_dims(sample = 2L, subject = 1L, contrast = 1L),
+    subjects = "s1",
+    contrasts = "c1",
+    space = space_sample_labels(c("a", "b")),
+    maps = list(),
+    metadata = list(),
+    columns = list()
+  )
+  bad_meta <- base_probe
+  bad_meta$metadata <- "nope"
+  expect_error(probe_contract(bad_meta), "metadata")
+  bad_cols <- base_probe
+  bad_cols$columns <- "nope"
+  expect_error(probe_contract(bad_cols), "columns")
+  bad_cd <- base_probe
+  bad_cd$contrast_data <- "nope"
+  expect_error(probe_contract(bad_cd), "contrast_data")
+  bad_cd_nrow <- base_probe
+  bad_cd_nrow$contrast_data <- data.frame(label = c("c1", "c2"))
+  expect_error(probe_contract(bad_cd_nrow), "contrast_data rows")
+
+  # propagate_variance non-matrix guard
+  expect_error(
+    fmrigds:::propagate_variance_independent(
+      M = list(1),
+      beta = array(1, c(1, 1, 1)),
+      var = array(1, c(1, 1, 1))
+    ),
+    "matrix or Matrix"
+  )
 })
