@@ -442,8 +442,10 @@ as_fmri_frame.gds <- function(
       )
     ),
     active_assay = frame_names[[1L]],
-    metadata = projection$frame_metadata %||% list(
-      legacy_gds = metadata(x)
+    metadata = .fmrigds_unaligned_metadata(
+      projection$frame_metadata %||% list(
+        legacy_gds = metadata(x)
+      )
     ),
     provenance = projection$frame_provenance %||% provenance
   )

@@ -455,6 +455,94 @@ group_plan <- function(
   list(assays = assays, observations = observations, diagnostics = diagnostics)
 }
 
+# fmridataset's typed metadata contract rejects result diagnostics, axis-aligned
+# vectors, raw data frames, and S3 objects hidden inside generic metadata.
+.fmrigds_serialize_for_metadata <- function(x) {
+  if (is.null(x)) return(NULL)
+  if (inherits(x, "unaligned_record")) {
+    return(lapply(unclass(x), .fmrigds_serialize_for_metadata))
+  }
+  if (is.atomic(x) && !is.object(x)) return(x)
+  if (inherits(x, c(
+    "POSIXt", "Date", "difftime", "package_version",
+    "R_system_version", "numeric_version"
+  ))) {
+    return(as.character(x))
+  }
+  if (is.data.frame(x)) {
+    return(lapply(as.list(x), function(col) {
+      if (is.atomic(col) && !is.object(col)) col else as.character(col)
+    }))
+  }
+  if (is.list(x)) {
+    out <- lapply(x, .fmrigds_serialize_for_metadata)
+    names(out) <- names(x)
+    return(out)
+  }
+  if (is.object(x)) return(as.character(x))
+  x
+}
+
+.fmrigds_unaligned_metadata <- function(metadata = list()) {
+  if (inherits(metadata, "unaligned_record")) {
+    metadata <- unclass(metadata)
+  }
+  if (is.null(metadata)) metadata <- list()
+  if (!is.list(metadata)) {
+    stop("Frame metadata must be a list or unaligned_record.", call. = FALSE)
+  }
+  fmridataset::unaligned_record(.fmrigds_serialize_for_metadata(metadata))
+}
+
+.fmrigds_result_tables <- function(features, diagnostics = list(),
+                                   term_data = NULL,
+                                   source_observation_ids = NULL) {
+  tables <- list()
+  if (length(diagnostics)) {
+    feature_ids <- fmridataset::feature_ids(features)
+    diag_df <- data.frame(
+      .feature_id = feature_ids,
+      stringsAsFactors = FALSE
+    )
+    for (name in names(diagnostics)) {
+      value <- diagnostics[[name]]
+      if (length(value) != length(feature_ids)) {
+        stop(
+          "Diagnostic '", name, "' length (", length(value),
+          ") must match feature count (", length(feature_ids), ").",
+          call. = FALSE
+        )
+      }
+      diag_df[[name]] <- value
+    }
+    tables$diagnostics <- fmridataset::auxiliary_table(
+      diag_df,
+      key = ".feature_id",
+      role = "diagnostics"
+    )
+  }
+  if (!is.null(term_data)) {
+    if (is.data.frame(term_data)) {
+      tables$term_data <- fmridataset::auxiliary_table(
+        term_data,
+        role = "term_data"
+      )
+    } else {
+      stop("`term_data` must be NULL or a data frame.", call. = FALSE)
+    }
+  }
+  if (!is.null(source_observation_ids)) {
+    tables$source_observation_ids <- fmridataset::auxiliary_table(
+      data.frame(
+        source_observation_id = as.character(source_observation_ids),
+        stringsAsFactors = FALSE
+      ),
+      role = "source_observation_ids"
+    )
+  }
+  tables
+}
+
 #' Construct a standardized statistical result frame
 #'
 #' @param assays Named observation-by-feature result assays.
@@ -481,18 +569,22 @@ result_frame <- function(assays, observations, features, method,
       !nzchar(method)) {
     stop("`method` must be one non-empty reducer name.", call. = FALSE)
   }
-  metadata <- utils::modifyList(list(
+  metadata <- .fmrigds_unaligned_metadata(utils::modifyList(list(
     result_schema_version = 1L,
     result_kind = "statistical",
-    method = method,
-    term_data = term_data,
+    method = method
+  ), metadata))
+  tables <- .fmrigds_result_tables(
+    features = features,
     diagnostics = diagnostics,
+    term_data = term_data,
     source_observation_ids = source_observation_ids
-  ), metadata)
+  )
   fmridataset::fmri_frame(
     assays = assays,
     observations = observations,
     features = features,
+    tables = tables,
     active_assay = if ("estimate" %in% names(assays)) "estimate" else names(assays)[[1L]],
     metadata = metadata,
     provenance = provenance
