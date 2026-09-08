@@ -3,6 +3,8 @@
 <!-- badges: start -->
 [![R-CMD-check](https://github.com/bbuchsbaum/fmrigds/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/bbuchsbaum/fmrigds/actions/workflows/R-CMD-check.yaml)
 [![pkgdown](https://github.com/bbuchsbaum/fmrigds/actions/workflows/pkgdown.yaml/badge.svg)](https://github.com/bbuchsbaum/fmrigds/actions/workflows/pkgdown.yaml)
+[![test-coverage](https://github.com/bbuchsbaum/fmrigds/actions/workflows/test-coverage.yaml/badge.svg)](https://github.com/bbuchsbaum/fmrigds/actions/workflows/test-coverage.yaml)
+[![Codecov test coverage](https://codecov.io/gh/bbuchsbaum/fmrigds/branch/main/graph/badge.svg)](https://app.codecov.io/gh/bbuchsbaum/fmrigds?branch=main)
 <!-- badges: end -->
 
 **Format-agnostic group-level analysis for fMRI**
