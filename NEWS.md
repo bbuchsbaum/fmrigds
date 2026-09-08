@@ -1,5 +1,26 @@
 # fmrigds 0.1.0.9000
 
+## Experimental cancellation and spatial dispersion
+
+- Added `experimental_cancellation()` for two complementary diagnostics from a
+  single cohort of subject-level voxel maps. Both outputs use one `beta` plus
+  genuine `var` or `se` map per subject; within-subject split halves are not
+  required.
+- `cancellation_probability` estimates voxelwise sign cancellation under a
+  random-effects model: meaningful positive and negative effects must both be
+  sufficiently prevalent while the population mean remains practically zero.
+- `shift_rescue_fraction` measures between-subject localisation variability in
+  a local region. It reports the mean fraction of leave-one-subject-out pattern
+  mismatch removed by accepted small translations, with variance weighting,
+  signal-mass retention, positive signed-correlation, and gain gates.
+- Spatial support is selected independently of sign cancellation, allowing a
+  same-signed activation that moves locally across subjects to receive a rescue
+  estimate even when `cancellation_probability` is low. Automatic support uses
+  a high-confidence subject-level meaningful-effect gate before counting local
+  prevalence, rather than maximizing soft probabilities across a search
+  neighborhood. Spatial rescue remains an experimental descriptive diagnostic
+  rather than corrected whole-brain inference.
+
 ## Documentation
 
 - Standardized every vignette and pkgdown article on the red `interaction`
