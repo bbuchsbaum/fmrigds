@@ -167,6 +167,10 @@
 
 .frame_fit_block_size <- function(n_observation, n_feature, n_input_arrays,
                                   memory_budget, block_size) {
+  if (!is.numeric(n_feature) || length(n_feature) != 1L ||
+      is.na(n_feature) || n_feature < 1L) {
+    stop("Frame group fitting requires at least one feature.", call. = FALSE)
+  }
   if (!is.numeric(memory_budget) || length(memory_budget) != 1L ||
     !is.finite(memory_budget) || memory_budget <= 0) {
     stop("`memory_budget` must be one positive finite byte count.", call. = FALSE)
@@ -189,7 +193,7 @@
   if (block_size > maximum) {
     stop("`block_size` exceeds the requested memory_budget.", call. = FALSE)
   }
-  min(block_size, n_feature)
+  as.integer(min(block_size, n_feature))
 }
 
 .frame_result_rows <- function(coefficient_names) {
