@@ -499,7 +499,13 @@ group_plan <- function(
                                    source_observation_ids = NULL) {
   tables <- list()
   if (length(diagnostics)) {
-    feature_ids <- fmridataset::feature_ids(features)
+    feature_ids <- if (inherits(features, "axis_frame")) {
+      fmridataset::axis_ids(features)
+    } else if (inherits(features, c("fmri_frame", "fmri_view"))) {
+      fmridataset::feature_ids(features)
+    } else {
+      fmridataset::axis_ids(fmridataset::feature_axis(features))
+    }
     diag_df <- data.frame(
       .feature_id = feature_ids,
       stringsAsFactors = FALSE
