@@ -1,9 +1,38 @@
 .frame_fit_selection <- function(frame) {
   if (inherits(frame, "fmri_view")) {
+    base <- frame$base
+    # Newer fmridataset stores compact axis_selection objects on views
+    # (`observation` / `feature`). Older builds used expanded integer indexes.
+    observations <- if (!is.null(frame$observation_index)) {
+      as.integer(frame$observation_index)
+    } else if (!is.null(frame$observation)) {
+      match(
+        fmridataset::observation_ids(frame),
+        fmridataset::observation_ids(base),
+        nomatch = NA_integer_
+      )
+    } else {
+      integer()
+    }
+    features <- if (!is.null(frame$feature_index)) {
+      as.integer(frame$feature_index)
+    } else if (!is.null(frame$feature)) {
+      match(
+        fmridataset::feature_ids(frame),
+        fmridataset::feature_ids(base),
+        nomatch = NA_integer_
+      )
+    } else {
+      integer()
+    }
+    if (anyNA(observations) || anyNA(features)) {
+      stop("View selection could not be mapped onto the base frame axes.",
+           call. = FALSE)
+    }
     list(
-      base = frame$base,
-      observations = frame$observation_index,
-      features = frame$feature_index
+      base = base,
+      observations = as.integer(observations),
+      features = as.integer(features)
     )
   } else {
     list(
