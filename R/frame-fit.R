@@ -1,9 +1,38 @@
 .frame_fit_selection <- function(frame) {
   if (inherits(frame, "fmri_view")) {
+    base <- frame$base
+    # Newer fmridataset stores compact axis_selection objects on views
+    # (`observation` / `feature`). Older builds used expanded integer indexes.
+    observations <- if (!is.null(frame$observation_index)) {
+      as.integer(frame$observation_index)
+    } else if (!is.null(frame$observation)) {
+      match(
+        fmridataset::observation_ids(frame),
+        fmridataset::observation_ids(base),
+        nomatch = NA_integer_
+      )
+    } else {
+      integer()
+    }
+    features <- if (!is.null(frame$feature_index)) {
+      as.integer(frame$feature_index)
+    } else if (!is.null(frame$feature)) {
+      match(
+        fmridataset::feature_ids(frame),
+        fmridataset::feature_ids(base),
+        nomatch = NA_integer_
+      )
+    } else {
+      integer()
+    }
+    if (anyNA(observations) || anyNA(features)) {
+      stop("View selection could not be mapped onto the base frame axes.",
+           call. = FALSE)
+    }
     list(
-      base = frame$base,
-      observations = frame$observation_index,
-      features = frame$feature_index
+      base = base,
+      observations = as.integer(observations),
+      features = as.integer(features)
     )
   } else {
     list(
@@ -138,6 +167,10 @@
 
 .frame_fit_block_size <- function(n_observation, n_feature, n_input_arrays,
                                   memory_budget, block_size) {
+  if (!is.numeric(n_feature) || length(n_feature) != 1L ||
+      is.na(n_feature) || n_feature < 1L) {
+    stop("Frame group fitting requires at least one feature.", call. = FALSE)
+  }
   if (!is.numeric(memory_budget) || length(memory_budget) != 1L ||
     !is.finite(memory_budget) || memory_budget <= 0) {
     stop("`memory_budget` must be one positive finite byte count.", call. = FALSE)
@@ -160,7 +193,7 @@
   if (block_size > maximum) {
     stop("`block_size` exceeds the requested memory_budget.", call. = FALSE)
   }
-  min(block_size, n_feature)
+  as.integer(min(block_size, n_feature))
 }
 
 .frame_result_rows <- function(coefficient_names) {
@@ -455,6 +488,144 @@ group_plan <- function(
   list(assays = assays, observations = observations, diagnostics = diagnostics)
 }
 
+# fmridataset's typed metadata contract rejects result diagnostics, axis-aligned
+# vectors, raw data frames, and S3 objects hidden inside generic metadata.
+.fmrigds_serialize_for_metadata <- function(x) {
+  if (is.null(x)) return(NULL)
+  if (inherits(x, "unaligned_record")) {
+    return(lapply(unclass(x), .fmrigds_serialize_for_metadata))
+  }
+  if (is.atomic(x) && !is.object(x)) return(x)
+  if (inherits(x, c(
+    "POSIXt", "Date", "difftime", "package_version",
+    "R_system_version", "numeric_version"
+  ))) {
+    return(as.character(x))
+  }
+  if (is.data.frame(x)) {
+    return(lapply(as.list(x), function(col) {
+      if (is.atomic(col) && !is.object(col)) col else as.character(col)
+    }))
+  }
+  if (is.list(x)) {
+    out <- lapply(x, .fmrigds_serialize_for_metadata)
+    names(out) <- names(x)
+    return(out)
+  }
+  if (is.object(x)) return(as.character(x))
+  x
+}
+
+.fmrigds_unaligned_metadata <- function(metadata = list()) {
+  if (inherits(metadata, "unaligned_record")) {
+    metadata <- unclass(metadata)
+  }
+  if (is.null(metadata)) metadata <- list()
+  if (!is.list(metadata)) {
+    stop("Frame metadata must be a list or unaligned_record.", call. = FALSE)
+  }
+  fmridataset::unaligned_record(.fmrigds_serialize_for_metadata(metadata))
+}
+
+.fmrigds_serialize_frame_tables <- function(tables = list()) {
+  if (is.null(tables) || !length(tables)) return(list())
+  if (!is.list(tables) || is.null(names(tables)) ||
+      anyNA(names(tables)) || any(!nzchar(names(tables))) ||
+      anyDuplicated(names(tables))) {
+    stop("Frame tables must be a uniquely named list.", call. = FALSE)
+  }
+  lapply(tables, function(tbl) {
+    if (!inherits(tbl, "fmri_auxiliary_table")) {
+      stop("Frame tables must be fmri_auxiliary_table objects.", call. = FALSE)
+    }
+    list(
+      data = as.data.frame(fmridataset::table_data(tbl)),
+      key = fmridataset::table_key(tbl),
+      role = fmridataset::table_role(tbl),
+      metadata = .fmrigds_serialize_for_metadata(tbl$metadata %||% list())
+    )
+  })
+}
+
+.fmrigds_restore_frame_tables <- function(serialized = NULL) {
+  if (is.null(serialized) || !length(serialized)) return(list())
+  if (!is.list(serialized)) {
+    stop("Stored frame tables must be a named list.", call. = FALSE)
+  }
+  lapply(serialized, function(spec) {
+    if (!is.list(spec) || is.null(spec$data)) {
+      stop("Stored frame table entries require a data frame.", call. = FALSE)
+    }
+    fmridataset::auxiliary_table(
+      data = as.data.frame(spec$data),
+      key = spec$key,
+      role = spec$role %||% "auxiliary",
+      metadata = spec$metadata %||% list()
+    )
+  })
+}
+
+.fmrigds_result_tables <- function(features, diagnostics = list(),
+                                   term_data = NULL,
+                                   source_observation_ids = NULL) {
+  tables <- list()
+  if (length(diagnostics)) {
+    if (!is.list(diagnostics) || is.null(names(diagnostics)) ||
+        anyNA(names(diagnostics)) || any(!nzchar(names(diagnostics))) ||
+        anyDuplicated(names(diagnostics))) {
+      stop("`diagnostics` must be a uniquely named list when non-empty.",
+           call. = FALSE)
+    }
+    feature_ids <- if (inherits(features, "axis_frame")) {
+      fmridataset::axis_ids(features)
+    } else if (inherits(features, c("fmri_frame", "fmri_view"))) {
+      fmridataset::feature_ids(features)
+    } else {
+      fmridataset::axis_ids(fmridataset::feature_axis(features))
+    }
+    diag_df <- data.frame(
+      .feature_id = feature_ids,
+      stringsAsFactors = FALSE
+    )
+    for (name in names(diagnostics)) {
+      value <- diagnostics[[name]]
+      if (length(value) != length(feature_ids)) {
+        stop(
+          "Diagnostic '", name, "' length (", length(value),
+          ") must match feature count (", length(feature_ids), ").",
+          call. = FALSE
+        )
+      }
+      diag_df[[name]] <- value
+    }
+    tables$diagnostics <- fmridataset::auxiliary_table(
+      diag_df,
+      key = ".feature_id",
+      role = "diagnostics"
+    )
+  }
+  if (!is.null(term_data)) {
+    if (is.data.frame(term_data)) {
+      tables$term_data <- fmridataset::auxiliary_table(
+        term_data,
+        role = "term_data"
+      )
+    } else {
+      stop("`term_data` must be NULL or a data frame.", call. = FALSE)
+    }
+  }
+  if (!is.null(source_observation_ids)) {
+    tables$source_observation_ids <- fmridataset::auxiliary_table(
+      data.frame(
+        source_observation_id = as.character(source_observation_ids),
+        stringsAsFactors = FALSE
+      ),
+      role = "source_observation_ids"
+    )
+  }
+  tables
+}
+
 #' Construct a standardized statistical result frame
 #'
 #' @param assays Named observation-by-feature result assays.
@@ -481,18 +652,22 @@ result_frame <- function(assays, observations, features, method,
       !nzchar(method)) {
     stop("`method` must be one non-empty reducer name.", call. = FALSE)
   }
-  metadata <- utils::modifyList(list(
+  metadata <- .fmrigds_unaligned_metadata(utils::modifyList(list(
     result_schema_version = 1L,
     result_kind = "statistical",
-    method = method,
-    term_data = term_data,
+    method = method
+  ), metadata))
+  tables <- .fmrigds_result_tables(
+    features = features,
     diagnostics = diagnostics,
+    term_data = term_data,
     source_observation_ids = source_observation_ids
-  ), metadata)
+  )
   fmridataset::fmri_frame(
     assays = assays,
     observations = observations,
     features = features,
+    tables = tables,
     active_assay = if ("estimate" %in% names(assays)) "estimate" else names(assays)[[1L]],
     metadata = metadata,
     provenance = provenance

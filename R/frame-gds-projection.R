@@ -258,7 +258,10 @@ as_gds.fmri_frame <- function(
     frame_assay_names = assay_names,
     gds_assay_names = unname(mapped_names),
     frame_metadata = x$metadata %||% x$base$metadata %||% list(),
-    frame_provenance = x$provenance %||% x$base$provenance %||% NULL
+    frame_provenance = x$provenance %||% x$base$provenance %||% NULL,
+    frame_tables = .fmrigds_serialize_frame_tables(
+      x$tables %||% x$base$tables %||% list()
+    )
   )
   metadata <- utils::modifyList(metadata, list(frame_projection = projection))
   g <- new_gds(
@@ -441,9 +444,12 @@ as_fmri_frame.gds <- function(
         contrast, target = "contrast"
       )
     ),
+    tables = .fmrigds_restore_frame_tables(projection$frame_tables),
     active_assay = frame_names[[1L]],
-    metadata = projection$frame_metadata %||% list(
-      legacy_gds = metadata(x)
+    metadata = .fmrigds_unaligned_metadata(
+      projection$frame_metadata %||% list(
+        legacy_gds = metadata(x)
+      )
     ),
     provenance = projection$frame_provenance %||% provenance
   )
