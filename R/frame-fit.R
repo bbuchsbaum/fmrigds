@@ -527,11 +527,55 @@ group_plan <- function(
   fmridataset::unaligned_record(.fmrigds_serialize_for_metadata(metadata))
 }
 
+.fmrigds_serialize_frame_tables <- function(tables = list()) {
+  if (is.null(tables) || !length(tables)) return(list())
+  if (!is.list(tables) || is.null(names(tables)) ||
+      anyNA(names(tables)) || any(!nzchar(names(tables))) ||
+      anyDuplicated(names(tables))) {
+    stop("Frame tables must be a uniquely named list.", call. = FALSE)
+  }
+  lapply(tables, function(tbl) {
+    if (!inherits(tbl, "fmri_auxiliary_table")) {
+      stop("Frame tables must be fmri_auxiliary_table objects.", call. = FALSE)
+    }
+    list(
+      data = as.data.frame(fmridataset::table_data(tbl)),
+      key = fmridataset::table_key(tbl),
+      role = fmridataset::table_role(tbl),
+      metadata = .fmrigds_serialize_for_metadata(tbl$metadata %||% list())
+    )
+  })
+}
+
+.fmrigds_restore_frame_tables <- function(serialized = NULL) {
+  if (is.null(serialized) || !length(serialized)) return(list())
+  if (!is.list(serialized)) {
+    stop("Stored frame tables must be a named list.", call. = FALSE)
+  }
+  lapply(serialized, function(spec) {
+    if (!is.list(spec) || is.null(spec$data)) {
+      stop("Stored frame table entries require a data frame.", call. = FALSE)
+    }
+    fmridataset::auxiliary_table(
+      data = as.data.frame(spec$data),
+      key = spec$key,
+      role = spec$role %||% "auxiliary",
+      metadata = spec$metadata %||% list()
+    )
+  })
+}
+
 .fmrigds_result_tables <- function(features, diagnostics = list(),
                                    term_data = NULL,
                                    source_observation_ids = NULL) {
   tables <- list()
   if (length(diagnostics)) {
+    if (!is.list(diagnostics) || is.null(names(diagnostics)) ||
+        anyNA(names(diagnostics)) || any(!nzchar(names(diagnostics))) ||
+        anyDuplicated(names(diagnostics))) {
+      stop("`diagnostics` must be a uniquely named list when non-empty.",
+           call. = FALSE)
+    }
     feature_ids <- if (inherits(features, "axis_frame")) {
       fmridataset::axis_ids(features)
     } else if (inherits(features, c("fmri_frame", "fmri_view"))) {

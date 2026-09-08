@@ -66,3 +66,52 @@ test_that("typed metadata helpers cover cold branches to clear 90%", {
   expect_true("source_observation_ids" %in% names(rf$tables))
   expect_identical(rf$metadata$result_kind, "statistical")
 })
+
+test_that("unnamed diagnostics are rejected and GDS round trip keeps tables", {
+  space <- fmridataset::index_space(2L, id_policy = "ephemeral")
+  feats <- fmridataset::feature_axis(
+    data.frame(.feature_id = fmridataset::feature_ids(space)),
+    space = space
+  )
+  expect_error(
+    result_frame(
+      assays = list(estimate = matrix(1:4, nrow = 2)),
+      observations = data.frame(.obs_id = c("a", "b")),
+      features = feats,
+      method = "ols:voxelwise",
+      diagnostics = list(TRUE, FALSE)
+    ),
+    "uniquely named"
+  )
+
+  fixture_frame <- fmridataset::fmri_frame(
+    assays = list(
+      beta = matrix(seq_len(8), nrow = 4),
+      variance = matrix(runif(8, 0.01, 0.05), nrow = 4)
+    ),
+    observations = data.frame(
+      .obs_id = paste0("obs-", 1:4),
+      subject_id = c("s1", "s1", "s2", "s2"),
+      contrast_id = c("a", "b", "a", "b")
+    ),
+    features = feats,
+    tables = list(
+      diagnostics = fmridataset::auxiliary_table(
+        data.frame(
+          .feature_id = fmridataset::feature_ids(space),
+          converged = c(TRUE, FALSE),
+          stringsAsFactors = FALSE
+        ),
+        key = ".feature_id",
+        role = "diagnostics"
+      )
+    )
+  )
+  g <- as_gds(fixture_frame, subject = "subject_id", contrast = "contrast_id")
+  restored <- fmridataset::as_fmri_frame(g)
+  expect_true("diagnostics" %in% names(restored$tables))
+  expect_identical(
+    fmridataset::table_data(restored$tables$diagnostics)$converged,
+    c(TRUE, FALSE)
+  )
+})
