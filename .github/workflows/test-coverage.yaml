@@ -38,9 +38,11 @@ jobs:
             install_path = file.path(normalizePath(Sys.getenv("RUNNER_TEMP"), winslash = "/"), "package")
           )
           print(cov)
-          pct <- round(covr::percent_coverage(cov), 2)
+          pct_raw <- covr::percent_coverage(cov)
+          pct <- round(pct_raw, 2)
           cat(sprintf("Overall coverage: %s%%\n", pct))
           writeLines(as.character(pct), "coverage-percent.txt")
+          writeLines(format(pct_raw, digits = 15, scientific = FALSE), "coverage-percent-raw.txt")
           covr::to_cobertura(cov)
         shell: Rscript {0}
 
@@ -55,6 +57,23 @@ jobs:
           plugins: noop
           disable_search: true
           use_oidc: true
+
+      - name: Enforce 90% coverage threshold
+        run: |
+          pct_raw <- as.numeric(readLines("coverage-percent-raw.txt"))
+          threshold <- 90
+          if (is.na(pct_raw) || pct_raw < threshold) {
+            stop(
+              sprintf(
+                "Coverage is %s%%, below the required %s%% threshold",
+                format(pct_raw, digits = 15, scientific = FALSE),
+                threshold
+              ),
+              call. = FALSE
+            )
+          }
+          cat(sprintf("Coverage threshold passed: %s%% >= %s%%\n", pct_raw, threshold))
+        shell: Rscript {0}
 
       - name: Show testthat output
         if: always()
