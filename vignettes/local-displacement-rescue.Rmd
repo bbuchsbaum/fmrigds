@@ -1,0 +1,558 @@
+---
+title: Local displacement rescue with paired split maps
+output:
+  rmarkdown::html_vignette:
+    toc: yes
+    toc_depth: 2
+    css: albers.css
+    includes:
+      in_header: albers-header.html
+resource_files:
+- albers.css
+- albers.js
+- albers-header.html
+- fonts
+vignette: |
+  %\VignetteIndexEntry{Local displacement rescue with paired split maps}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE, comment = "#>", message = FALSE,
+  fig.width = 7, fig.height = 4.2, dpi = 144,
+  out.width = "100%"
+)
+library(fmrigds)
+library(ggplot2)
+
+plot_theme <- theme_minimal(base_size = 12) + theme(
+  panel.grid.minor = element_blank(),
+  plot.title = element_text(face = "bold", size = 14),
+  strip.text = element_text(face = "bold"),
+  legend.position = "bottom",
+  plot.background = element_rect(fill = "white", colour = NA)
+)
+scenario_labels <- c(
+  aligned = "Aligned feature", shifted = "Displaced feature",
+  polarity = "Polarity mixture"
+)
+scenario_colour <- c(
+  "Aligned feature" = "#176B75", "Displaced feature" = "#B54436",
+  "Polarity mixture" = "#735890"
+)
+```
+
+A weak group result at one voxel can coexist with a reproducible local feature
+in individual subjects. If that feature moves slightly between subjects, its
+positive core and negative surroundings can average away at a fixed coordinate.
+Local Displacement Rescue (LDR) asks whether bounded translations help explain
+the paired subject maps and whether an ordinary fixed-coordinate test misses
+the feature.
+
+This tutorial follows that question from two split maps to a fitted ROI model
+and a corrected search. You will see the data, inspect the model's
+counterfactual, and distinguish a displaced feature from two alternatives that
+should not receive a rescue flag. All examples use exported fmrigds functions
+and synthetic data; no downloads are needed.
+
+**LDR is experimental.** Its reference model describes translations of a compact
+signed feature. A rescue result does not identify the anatomical or preprocessing
+cause of that displacement. The examples below illustrate behavior in a small,
+favorable simulation; they do not establish error control or power for real fMRI
+data.
+
+## Start with independent paired splits
+
+Each input is a realized subject-level GDS with a `beta` assay and genuine `var`
+or `se`. The two GDS objects must have the same voxel geometry, mask, subjects
+in the same order, and contrast labels. Split effects share the subject's latent
+signal, while measurement noise must be independent between splits. For real
+data, construct the two estimates from independent observations; copying an
+estimate or splitting its voxels does not provide independent replication.
+
+Our example is an eleven-voxel strip with 2 mm spacing, represented as a
+`c(11, 1, 1)` voxel grid. The feature has a positive core and two negative
+neighbors. Across 24 subjects it moves by -2, 0, or +2 mm; each subject retains
+the same shift in both splits. This deliberately small geometry makes every
+measurement visible and keeps the computations short.
+
+```{r simulate-pairs}
+n_subject <- 24L
+n_voxel <- 11L
+center <- 6L                         # full-volume voxel index, one-based
+position_mm <- (seq_len(n_voxel) - center) * 2
+noise_sd <- 0.08
+subject_ids <- paste0("s", seq_len(n_subject))
+feature <- numeric(n_voxel)
+feature[5:7] <- c(-0.6, 1.2, -0.6)
+
+shift_feature <- function(x, displacement) {
+  source <- seq_along(x) - displacement
+  valid <- source >= 1L & source <= length(x)
+  shifted <- numeric(length(x))
+  shifted[valid] <- x[source[valid]]
+  shifted
+}
+
+simulate_pair <- function(mode, seed = 5401L) {
+  set.seed(seed)
+  shifts <- rep(c(-1L, 0L, 1L), length.out = n_subject)
+  signs <- rep(c(-1, 1), length.out = n_subject)
+  beta_a <- beta_b <- matrix(0, n_voxel, n_subject)
+  for (i in seq_len(n_subject)) {
+    signal <- switch(mode,
+      aligned = feature,
+      shifted = shift_feature(feature, shifts[i]),
+      polarity = signs[i] * feature
+    )
+    beta_a[, i] <- signal + rnorm(n_voxel, sd = noise_sd)
+    beta_b[, i] <- signal + rnorm(n_voxel, sd = noise_sd)
+  }
+  make_gds <- function(beta) {
+    new_gds(
+      assays = list(
+        beta = array(beta, c(n_voxel, n_subject, 1L)),
+        var = array(noise_sd^2, c(n_voxel, n_subject, 1L))
+      ),
+      space = space_voxel(c(n_voxel, 1L, 1L), diag(c(2, 2, 2, 1))),
+      subjects = subject_ids,
+      contrasts = "task"
+    )
+  }
+  list(a = make_gds(beta_a), b = make_gds(beta_b))
+}
+
+split_maps <- simulate_pair("shifted")
+dim(assay(split_maps$a, "beta"))      # sample x subject x contrast
+```
+
+Here the variance is known because we generated the noise. In real data it must
+come from the first-level estimation procedure. Do not replace missing
+variances with the between-subject variance or a constant placeholder.
+
+```{r paired-split-figure, echo=FALSE, fig.height=4.8, fig.cap="Paired observations of the displaced feature. Each row is the same subject in both panels; the dashed line marks the prespecified anchor at 0 mm. Positive and negative lobes move together. Small differences between panels are independently generated measurement noise.", fig.alt="Two heatmaps of 24 subjects by eleven voxel positions. The red positive core alternates between minus two, zero, and plus two millimetres in both splits, with blue negative neighbors."}
+split_plot <- do.call(rbind, lapply(c("a", "b"), function(label) {
+  data.frame(
+    position = rep(position_mm, n_subject),
+    subject = rep(seq_len(n_subject), each = n_voxel),
+    beta = as.vector(assay(split_maps[[label]], "beta")),
+    split = paste("Split", toupper(label))
+  )
+}))
+ggplot(split_plot, aes(position, subject, fill = beta)) +
+  geom_tile(width = 2, height = 1) +
+  geom_vline(xintercept = 0, linetype = "dashed", colour = "#242424") +
+  facet_wrap(~ split) +
+  scale_fill_gradient2(low = "#244D79", mid = "#FAF8F1", high = "#BA4235",
+                       midpoint = 0, name = "Effect") +
+  scale_x_continuous(breaks = seq(-8, 8, 4)) +
+  scale_y_reverse(breaks = c(1, 6, 12, 18, 24)) +
+  labs(x = "Position relative to anchor (mm)", y = "Subject",
+       title = "The local pattern repeats across splits") +
+  plot_theme + theme(panel.grid = element_blank())
+```
+
+## Fit the prespecified ROI
+
+`local_displacement_rescue()` fits one center and one contrast. A patch radius
+of 8 mm uses nine voxels around our anchor; a shift radius of 2 mm permits the
+three translations used in the simulation. These radii describe the scientific
+search and should be chosen before inspecting results.
+
+```{r roi-fit}
+roi <- local_displacement_rescue(
+  split_maps$a, split_maps$b,
+  center = center,
+  patch_radius_mm = 8,
+  shift_radius_mm = 2,
+  folds = 3L,
+  n_resamples = 0L
+)
+
+roi_summary <- data.frame(
+  quantity = c("ROI p-value", "Counterfactual t increase", "Shift-prior RMS (mm)"),
+  value = c(
+    assay(roi, "ldr_p")[center, 1, 1],
+    assay(roi, "mni_loss")[center, 1, 1],
+    assay(roi, "shift_rms_mm")[center, 1, 1]
+  )
+)
+knitr::kable(roi_summary, digits = 3)
+```
+
+With `n_resamples = 0`, the ROI p-value is `NA`: calibration has not been run.
+It is neither a nonsignificant result nor a zero p-value. The two finite
+quantities are model diagnostics:
+
+- **`mni_loss`** is the counterfactual fixed-coordinate t statistic minus the
+  observed t statistic. The counterfactual retains each subject's observed
+  center value and adds the fitted change from setting its displacement to zero.
+  A positive value means that this model-based correction strengthens the
+  ordinary group statistic. It is not an effect size or a corrected p-value.
+- **`shift_rms_mm`** is the mean RMS of the shift priors selected in training
+  folds. It is not a map of estimated subject motions or a direct measurement
+  of registration error.
+
+The function learns its template and displacement scale from training subjects
+and evaluates model evidence in held-out subjects. For each held-out subject,
+it integrates over possible shifts rather than choosing the best local peak.
+Displacement must improve on both an aligned positive-amplitude model and an
+aligned signed-amplitude model. The latter comparison matters when some
+subjects express the opposite polarity of the same stationary pattern.
+
+"Exact" refers to the discrete-shift reference model. Template parameters are
+still fitted iteratively. We inspect convergence and a longer run below; this
+example exposes an unresolved convergence limit in the current fitter.
+
+## Compare three explanations for the group average
+
+We now keep the feature, subjects, and noise realization fixed while changing
+the latent explanation. The aligned case uses the same location for every
+subject; the polarity case reverses the feature's sign in half the subjects.
+
+```{r comparison-inputs}
+examples <- list(
+  aligned = simulate_pair("aligned"),
+  shifted = split_maps,
+  polarity = simulate_pair("polarity")
+)
+```
+
+```{r group-average-figure, echo=FALSE, fig.height=3.8, fig.cap="Thin gray lines show individual subject profiles after averaging their two splits; colored lines show the group mean. Both displacement and polarity mixing can attenuate the mean at the anchor, but their spatial explanations differ. These are observed effects, not estimated shifts.", fig.alt="Three profile panels. The aligned group has a sharp positive mean at zero. Displaced subjects peak at different positions and their mean is attenuated at zero. Opposite-polarity subjects average to approximately zero everywhere."}
+profiles <- do.call(rbind, lapply(names(examples), function(mode) {
+  pair <- examples[[mode]]
+  pooled <- (assay(pair$a, "beta") + assay(pair$b, "beta")) / 2
+  data.frame(position = rep(position_mm, n_subject),
+             subject = rep(seq_len(n_subject), each = n_voxel),
+             effect = as.vector(pooled), scenario = scenario_labels[[mode]])
+}))
+profiles$scenario <- factor(profiles$scenario, levels = scenario_labels)
+group_mean <- aggregate(effect ~ position + scenario, profiles, mean)
+ggplot(profiles, aes(position, effect)) +
+  geom_hline(yintercept = 0, colour = "#C6C6C6") +
+  geom_vline(xintercept = 0, linetype = "dashed", colour = "#C6C6C6") +
+  geom_line(aes(group = subject), colour = "#999999", alpha = 0.35) +
+  geom_line(data = group_mean, aes(colour = scenario), linewidth = 1.1) +
+  facet_wrap(~ scenario, nrow = 1) +
+  scale_colour_manual(values = scenario_colour, guide = "none") +
+  scale_x_continuous(breaks = c(-8, 0, 8)) +
+  labs(x = "Position relative to anchor (mm)", y = "Effect",
+       title = "A weak average can have different causes") + plot_theme
+```
+
+```{r comparison-rois, include=FALSE}
+roi_fits <- lapply(names(examples), function(mode) {
+  if (mode == "shifted") return(roi)
+  pair <- examples[[mode]]
+  local_displacement_rescue(
+    pair$a, pair$b, center = center,
+    patch_radius_mm = 8, shift_radius_mm = 2,
+    folds = 3L, n_resamples = 0L
+  )
+})
+names(roi_fits) <- names(examples)
+roi_comparison <- do.call(rbind, lapply(names(roi_fits), function(mode) {
+  info <- metadata(roi_fits[[mode]])$ldr
+  data.frame(
+    scenario = scenario_labels[[mode]],
+    statistic = c("Observed", "Model counterfactual"),
+    value = c(info$ordinary_t, info$counterfactual_t)
+  )
+}))
+roi_comparison$scenario <- factor(roi_comparison$scenario, levels = scenario_labels)
+stopifnot(all(is.finite(roi_comparison$value)))
+roi_changes <- do.call(rbind, lapply(names(roi_fits), function(mode) {
+  info <- metadata(roi_fits[[mode]])$ldr
+  data.frame(
+    scenario = scenario_labels[[mode]],
+    change = info$counterfactual_t - info$ordinary_t,
+    label = sprintf("t: %.2f to %.2f", info$ordinary_t, info$counterfactual_t)
+  )
+}))
+roi_changes$scenario <- factor(roi_changes$scenario, levels = rev(scenario_labels))
+```
+
+```{r counterfactual-figure, echo=FALSE, fig.height=3.5, fig.cap="Model-based increases in the one-sample t statistic at the anchor. Labels give the observed and counterfactual values. Even a stationary polarity mixture can have a large fitted increase, so this diagnostic must be interpreted alongside the model comparisons and calibrated evidence.", fig.alt="Horizontal segments show the increase from observed to counterfactual t. The stationary polarity mixture has a larger increase than the displaced example, illustrating why the increase alone cannot establish rescue."}
+ggplot(roi_changes, aes(change, scenario, colour = scenario)) +
+  geom_vline(xintercept = 0, colour = "#C6C6C6") +
+  geom_segment(aes(x = 0, xend = change, yend = scenario), linewidth = 1.2) +
+  geom_point(size = 3) +
+  geom_text(aes(label = label), hjust = 0, nudge_x = 0.4,
+            colour = "#303030", size = 3.5) +
+  scale_colour_manual(values = scenario_colour, guide = "none") +
+  scale_x_continuous(expand = expansion(mult = c(0.02, 0.55))) +
+  labs(x = "Counterfactual t minus observed t", y = NULL,
+       title = "A counterfactual increase alone can mislead") + plot_theme +
+  theme(panel.grid.major.y = element_blank())
+```
+
+In the displaced example, the observed t statistic is
+`r sprintf("%.2f", metadata(roi)$ldr$ordinary_t)` and the counterfactual is
+`r sprintf("%.2f", metadata(roi)$ldr$counterfactual_t)`: the fitted increase is
+small here. More strikingly, the polarity mixture has a larger increase even
+though its feature never moves. This is why LDR includes an aligned
+signed-amplitude competitor and requires additional evidence. A positive
+`mni_loss` on its own cannot establish spatial rescue.
+
+### Calibrate a single ROI
+
+For a prespecified ROI, request resampling explicitly. Paired subject sign flips
+calibrate activation. Parametric bootstraps from each aligned competitor
+calibrate displacement and the counterfactual t increase. Each resample reruns
+the cross-fitted fitting procedure, including displacement-scale selection.
+
+```{r calibrated-roi}
+roi_calibrated <- local_displacement_rescue(
+  split_maps$a, split_maps$b,
+  center = center, patch_radius_mm = 8, shift_radius_mm = 2,
+  folds = 3L, n_resamples = 19L, seed = 27L
+)
+calibration <- metadata(roi_calibrated)$ldr$calibration
+knitr::kable(data.frame(
+  component = c("Activation", "Displacement", "Counterfactual t increase", "LDR conjunction"),
+  p_value = c(calibration$p_activation, calibration$p_displacement,
+              calibration$p_loss, calibration$p_ldr)
+), digits = 3)
+```
+
+The conjunction takes the largest of the component p-values. Each displacement
+and loss component must also pass both aligned-model comparisons. Nineteen
+resamples keep this tutorial quick but allow no p-value below
+`r sprintf("%.2f", calibration$minimum_p)`. These coarse Monte Carlo values are
+for illustration. Increase the resampling budget for an analysis, and remember
+that the aligned-model bootstrap depends on its fitted noise and signal models.
+
+Here the ROI conjunction is
+`r sprintf("%.2f", calibration$p_ldr)`: the activation and counterfactual-loss
+components do not establish the ROI rescue claim. Knowing that the simulation
+contains shifts does not make every fitted test sensitive to them. Retain that
+negative result when reporting this example.
+
+Repeatedly applying this ROI test across voxels does **not** correct the spatial
+search. Use the map interface when the claim concerns a family of locations.
+
+## Correct a prespecified search family
+
+`local_displacement_rescue_map()` first screens for reproducible activation and
+variation in the template's spatial-derivative directions. The derivative model
+is a local approximation to translation. Noise correlation is estimated from
+training subjects' split differences and used in held-out fits.
+
+The search here is explicitly limited to voxels 5, 6, and 7, at -2, 0, and +2 mm.
+We chose this set from the simulation design. The resulting correction covers
+these three centers and the requested patch/shift configuration; it is not a
+whole-brain result.
+
+```{r corrected-search}
+search_centers <- 5:7
+search_resamples <- 99L
+run_search <- function(pair) {
+  local_displacement_rescue_map(
+    pair$a, pair$b,
+    centers = search_centers,
+    patch_radius_mm = 8, shift_radius_mm = 2,
+    folds = 3L,
+    covariance_shrinkage = 0.5,
+    n_resamples = search_resamples, seed = 11L,
+    alpha = 0.05, min_prevalence = 0.7
+  )
+}
+rescue_map <- run_search(split_maps)
+```
+
+Activation and the ordinary fixed-coordinate test use maximum statistics from
+complete subject sign-flip rescans. Displacement uses a wild bootstrap of
+centered cross-split derivative-energy contributions, sharing each subject's
+multiplier across the search. The maximum in each resample includes all searched
+centers and scales. `ldr_fwer_p` is the maximum of the corrected activation and
+displacement p-values.
+
+Only screen-significant candidates reach the exact discrete-shift model. A
+nonzero `ldr_flag` additionally requires improvement over both aligned
+competitors, positive `mni_loss`, fitted prevalence of at least
+`min_prevalence`, and a nonsignificant corrected ordinary test. This exact refit
+can remove a screen discovery; it cannot create one. The flag's nonzero value
+is `-log10(ldr_fwer_p)`.
+
+```{r search-table}
+at_centers <- function(result, name) {
+  as.numeric(assay(result, name)[search_centers, 1, 1])
+}
+search_summary <- data.frame(
+  position_mm = position_mm[search_centers],
+  activation_p = at_centers(rescue_map, "ldr_activation_fwer_p"),
+  displacement_p = at_centers(rescue_map, "ldr_displacement_fwer_p"),
+  ordinary_p = at_centers(rescue_map, "ordinary_fwer_p"),
+  ldr_p = at_centers(rescue_map, "ldr_fwer_p"),
+  rescue_flag = at_centers(rescue_map, "ldr_flag") > 0
+)
+knitr::kable(search_summary, digits = 3)
+```
+
+`ldr_fwer_p` describes the screen conjunction. The flag contains the extra
+exact-model and ordinary-test conditions. Read both: a small screen p-value
+alone is not the full rescue decision. A nonsignificant ordinary test also does
+not prove the absence of an effect at that coordinate.
+
+**The map p-value is not a multiplicity-adjusted version of the ROI p-value.**
+The map uses directional activation and derivative-energy screen statistics;
+its exact confirmation is a sign-and-prevalence filter, not the calibrated ROI
+conjunction. Thus a map flag can coexist with the nonsignificant ROI result
+above. Specify which procedure supplied the evidence rather than treating the
+two p-values as interchangeable or choosing an interface after seeing its result.
+
+```{r control-searches, include=FALSE}
+searches <- list(aligned = run_search(examples$aligned), shifted = rescue_map,
+                 polarity = run_search(examples$polarity))
+component_assays <- c(
+  "Activation" = "ldr_activation_fwer_p",
+  "Displacement" = "ldr_displacement_fwer_p",
+  "Ordinary test" = "ordinary_fwer_p"
+)
+search_plot <- do.call(rbind, lapply(names(searches), function(mode) {
+  do.call(rbind, lapply(names(component_assays), function(component) {
+    data.frame(
+      scenario = scenario_labels[[mode]], component = component,
+      position = position_mm[search_centers],
+      p = at_centers(searches[[mode]], component_assays[[component]])
+    )
+  }))
+}))
+search_plot$scenario <- factor(search_plot$scenario, levels = scenario_labels)
+flag_counts <- vapply(searches, function(x) sum(assay(x, "ldr_flag") > 0), integer(1L))
+stopifnot(
+  all(is.finite(search_plot$p)),
+  all(search_plot$p >= 1 / (search_resamples + 1)),
+  all(search_plot$p <= 1),
+  all(search_summary$ldr_p >= search_summary$activation_p),
+  all(search_summary$ldr_p >= search_summary$displacement_p),
+  assay(rescue_map, "ldr_flag")[center, 1, 1] > 0,
+  flag_counts[["aligned"]] == 0L, flag_counts[["polarity"]] == 0L,
+  all(is.na(assay(rescue_map, "ldr_fwer_p")[-search_centers, 1, 1]))
+)
+```
+
+```{r search-evidence-figure, echo=FALSE, fig.height=4.2, fig.cap="Component p-values from the same three-center search in each scenario. Values above the dashed line pass the 0.05 threshold. Rescue requires activation and displacement to pass while the ordinary test fails, followed by exact confirmation. The p-values have a lower bound of 0.01 because each search uses 99 resamples.", fig.alt="Three panels compare activation, displacement, and ordinary-test corrected evidence at minus two, zero, and plus two millimetres. A dashed line marks p equals 0.05; each component also has a distinct point shape."}
+ggplot(search_plot, aes(position, -log10(p), colour = component,
+                        shape = component, group = component)) +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", colour = "#777777") +
+  geom_line(linewidth = 0.6, position = position_dodge(width = 0.35)) +
+  geom_point(size = 2.6, position = position_dodge(width = 0.35)) +
+  facet_wrap(~ scenario, nrow = 1) +
+  scale_colour_manual(values = c("Activation" = "#176B75",
+                                 "Displacement" = "#B54436",
+                                 "Ordinary test" = "#735890")) +
+  scale_shape_manual(values = c("Activation" = 16, "Displacement" = 17,
+                                "Ordinary test" = 15)) +
+  scale_x_continuous(breaks = c(-2, 0, 2)) +
+  scale_y_continuous(limits = c(0, 2.1), breaks = c(0, 1, -log10(0.05), 2),
+                     labels = c("1", "0.1", "0.05", "0.01")) +
+  labs(x = "Position relative to anchor (mm)", y = "Corrected p-value (log scale)",
+       colour = NULL, shape = NULL,
+       title = "Rescue needs a conjunction of evidence") + plot_theme
+```
+
+The displaced case produces `r flag_counts[["shifted"]]` flagged center(s),
+including the anchor. The aligned case produces
+`r flag_counts[["aligned"]]`, and the polarity mixture produces
+`r flag_counts[["polarity"]]`. These controls show how the method behaves on
+these particular data. They are not an empirical estimate of its false-positive
+rate across repeated datasets.
+
+The polarity case also illustrates why the screen components must be read
+together: small displacement-component p-values alone do not establish a
+reproducible positive feature. The activation requirement prevents a flag in
+this example.
+
+## Check numerical fit quality
+
+The template parameters are estimated iteratively. A positive score or a finite
+p-value does not establish optimizer convergence. Inspect the model receipts at
+`metadata(roi)$ldr$fold_receipts` and compare a longer run when fits hit the
+iteration limit.
+
+```{r longer-roi-fit}
+roi_longer <- local_displacement_rescue(
+  split_maps$a, split_maps$b,
+  center = center, patch_radius_mm = 8, shift_radius_mm = 2,
+  folds = 3L, iterations = 100L, n_resamples = 0L
+)
+```
+
+```{r optimizer-receipts, echo=FALSE}
+count_converged <- function(result) {
+  sum(vapply(metadata(result)$ldr$fold_receipts, function(fold) {
+    sum(vapply(fold[c("aligned", "heterogeneity", "jitter")],
+               function(model) model$converged, logical(1L)))
+  }, integer(1L)))
+}
+stability <- do.call(rbind, lapply(list(roi, roi_longer), function(result) {
+  info <- metadata(result)$ldr
+  data.frame(
+    Budget = info$iterations,
+    Converged = count_converged(result),
+    Activation = info$activation_t,
+    Displacement = info$displacement_t,
+    MNI_loss = assay(result, "mni_loss")[center, 1, 1]
+  )
+}))
+knitr::kable(stability, digits = 4, col.names = c(
+  "Iteration limit", "Converged fits", "Activation t", "Displacement t", "MNI loss"
+))
+```
+
+There are nine selected fits: three models in each of three folds. The longer
+run reports `r count_converged(roi_longer)` of nine as converged, while changing
+`mni_loss` by only
+`r format(abs(diff(stability$MNI_loss)), scientific = TRUE, digits = 2)`.
+Similar summaries do not resolve a nonconverged fit. This remains a limitation
+of the example and the current experimental fitter; the earlier p-values and
+map flag should be read as demonstrations of its implemented behavior, not as
+qualification of the method. Neither a higher iteration budget nor a convergence
+flag guarantees a global optimum.
+
+## Move from the example to an analysis
+
+For a full eligible-mask search, set `centers = NULL`. A center is eligible only
+if its entire physical patch lies inside the image and active mask. For packed
+GDS inputs, `center` and `centers` still refer to **full-volume voxel indices**;
+assay rows follow the packed mask order. The simple indexing helpers above apply
+to this dense example.
+
+| Choice | What to decide and record |
+|:--|:--|
+| Split construction | Independent observations within each subject; matching effects, variances, geometry, and ordering. |
+| Patch and shift radii | Physical millimetres; patch radius must be at least twice shift radius, and the grid must permit a nonzero shift. Multiple radii enter the corrected search family. |
+| Search set | Specify the ROI or search mask before examining effects. Changing it after seeing results changes the inferential question. |
+| Resampling budget | The p-value resolution is `1 / (B + 1)`. The map documentation recommends at least 999 resamples for confirmatory use; increasing B does not establish validity of the modeling assumptions. |
+| Fold and noise settings | Record `folds` and `covariance_shrinkage`; choose settings for the design rather than tuning them to obtain a flag. |
+| Exact confirmations | `max_refits = Inf` confirms every admitted candidate. A finite cap can leave candidates unconfirmed; inspect `refits_truncated` in metadata. |
+
+Inspect the receipt alongside the maps:
+
+```{r search-receipt}
+receipt <- metadata(rescue_map)$ldr
+receipt[c("contract", "calibration_scope", "configurations",
+          "admitted_candidates", "completed_refits", "refits_truncated")]
+```
+
+An unsearched or unanalyzable center has missing inferential values and a zero
+flag. A center that fails a component can also have a zero flag. Consequently,
+zero does not mean that displacement has been ruled out; use the component
+maps, exact-refit receipts, and search metadata to distinguish these cases.
+
+The screen uses estimated spatial noise correlation; exact confirmation and
+ROI calibration currently retain the diagonal variance likelihood. The
+counterfactual is model-dependent, the wild-bootstrap calibration is an
+approximation, and these small simulations do not qualify either procedure for
+a new acquisition design. Finally, translations cannot distinguish a common
+displaced feature from different nearby functional areas with indistinguishable
+signed patterns. Anatomy or other independent information is needed to resolve
+that ambiguity.
+
+See `?local_displacement_rescue` and `?local_displacement_rescue_map` for the
+argument and output contracts. The installed method specifications are available
+at `system.file("methods", "ldr-v0.1.md", package = "fmrigds")` and
+`system.file("methods", "ldr-v0.2.md", package = "fmrigds")`.

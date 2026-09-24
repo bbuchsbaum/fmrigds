@@ -260,6 +260,9 @@ interpretation of unavailable values.
 
 ### Local Displacement Rescue reference model
 
+For a worked example with paired split maps, visual comparisons, and corrected
+search results, see `vignette("local-displacement-rescue")`.
+
 `local_displacement_rescue()` is the more demanding, ROI-first reference model
 for asking whether a reproducible positive signed feature requires small
 subject-specific translations. It integrates over shifts in held-out subjects
@@ -413,6 +416,7 @@ vignettes in this repository. After installation, run
 - **Getting Started**: `vignette("fmrigds")` --- core pipeline tutorial
 - **CLI Workflows**: `vignette("cli-workflows")` --- probe, plan, preview, and run analyses from the shell
 - **Repeated Measures**: `vignette("repeated-measures-lmm")` --- restricted Gaussian LMM workflow
+- **Local Displacement Rescue**: `vignette("local-displacement-rescue")` --- paired split maps, visual diagnostics, and corrected spatial searches
 - **Spatial Operations**: `vignette("spatial-operations")` --- masking, alignment, and space mapping
 - **Post-hoc Corrections**: `vignette("as-plan-and-spatial-fdr")` --- standard and spatial FDR
 - **fmristore Integration**: `vignette("fmristore-ingestion")` --- reading fmristore HDF5 files

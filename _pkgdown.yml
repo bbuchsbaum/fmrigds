@@ -26,5 +26,6 @@ articles:
   - spatial-operations
   - as-plan-and-spatial-fdr
   - group-examination
+  - local-displacement-rescue
 - title: Data formats
   contents: fmristore-ingestion
