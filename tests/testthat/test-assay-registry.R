@@ -69,6 +69,9 @@ test_that("default assays are registered on package load", {
   expect_true(!is.null(assay_info("p")))
   expect_true(!is.null(assay_info("chi2")))
   expect_true(!is.null(assay_info("logBF")))
+  expect_true(!is.null(assay_info("ldr_fwer_p")))
+  expect_true(!is.null(assay_info("ldr_flag")))
+  expect_true(!is.null(assay_info("rho_shift")))
 })
 
 test_that("assay roles are correct for default assays", {
@@ -82,4 +85,7 @@ test_that("assay roles are correct for default assays", {
   expect_equal(assay_info("p")$role, "p")
   expect_equal(assay_info("chi2")$role, "chi2")
   expect_equal(assay_info("logBF")$role, "log_evidence")
+  expect_equal(assay_info("ldr_fwer_p")$role, "p")
+  expect_equal(assay_info("ldr_flag")$role, "evidence")
+  expect_equal(assay_info("rho_shift")$units, "fraction")
 })

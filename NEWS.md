@@ -15,6 +15,44 @@
 - Saved plans and provenance record the zero convention. Plan JSON now retains
   full numeric precision, including coverage thresholds.
 
+## Local Displacement Rescue whole-search inference
+
+- Added `local_displacement_rescue_map()` for cross-fitted tangent screening
+  over every complete active-mask patch or an explicitly supplied search set.
+  Local noise correlation is estimated from training-subject paired-split
+  differences and used in held-out generalized least-squares scoring.
+- Activation and ordinary fixed-coordinate maps use maximum statistics from
+  complete sign-flip rescans. Displacement uses a subject-level wild bootstrap
+  of centered cross-split derivative energy with shared spatial multipliers.
+  All requested centers and patch/shift configurations are included in the
+  corrected family, and corrected p-values are checked against their
+  pointwise counterparts.
+- A corrected `ldr_flag` additionally requires exact discrete-shift
+  confirmation against aligned-positive and aligned signed-amplitude models,
+  positive MNI loss, activation prevalence above `min_prevalence`, and failure
+  of corrected ordinary MNI inference. Exact confirmation is a one-way filter
+  and cannot manufacture a screen discovery.
+- Added deterministic one- and three-dimensional oracles for physical
+  derivatives, split-difference covariance, subject-order invariance,
+  aligned/polarity/null false attribution, corrected-p invariants, and a 3D
+  search benchmark.
+
+## Local Displacement Rescue reference model
+
+- Added `local_displacement_rescue()` as an exact, one-center paired-split
+  reference model for compact signed features with bounded subject-specific
+  translations. Shift uncertainty is integrated in held-out subjects rather
+  than replaced by a selected local maximum.
+- Displacement evidence must beat both an aligned positive-feature model and
+  an aligned signed-amplitude heterogeneity model. The latter competitor
+  prevents a stable polarity mixture from being misattributed to translations
+  of an asymmetric signed template.
+- Optional ROI calibration reruns the complete cross-fitted procedure under
+  paired subject sign flips and parametric bootstraps from both aligned
+  competitor models. The public result remains small: `ldr_p`, counterfactual
+  fixed-coordinate t-statistic loss, and shift RMS in millimetres. It remains
+  the exact single-location reference used to confirm the v0.2 tangent screen.
+
 ## Experimental cancellation diagnostics
 
 - Added `experimental_cancellation()` for voxelwise cases in which meaningful

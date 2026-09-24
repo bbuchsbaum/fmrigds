@@ -258,6 +258,67 @@ spatial-rescue map is a diagnostic rather than corrected whole-brain
 inference. See `?experimental_cancellation` for its evaluation gates and
 interpretation of unavailable values.
 
+### Local Displacement Rescue reference model
+
+`local_displacement_rescue()` is the more demanding, ROI-first reference model
+for asking whether a reproducible positive signed feature requires small
+subject-specific translations. It integrates over shifts in held-out subjects
+and requires the displaced model to outperform both an aligned positive model
+and an aligned signed-amplitude heterogeneity model:
+
+```r
+ldr <- local_displacement_rescue(
+  split_a,
+  split_b,
+  center = center_voxel, # one-based index in the full voxel grid
+  patch_radius_mm = 12,
+  shift_radius_mm = 4,
+  n_resamples = 199      # ROI calibration; increase for smaller p-values
+)
+
+names(assays(ldr))
+# [1] "ldr_p"       "mni_loss"   "shift_rms_mm"
+```
+
+This first implementation is an exact one-center, one-contrast reference
+engine. With `n_resamples > 0`, `ldr_p` is an ROI-level intersection-union
+p-value: paired sign flips calibrate activation, and aligned-model bootstraps
+calibrate displacement and counterfactual MNI loss. Calling the function with
+the default `n_resamples = 0` skips calibration and returns `NA` for `ldr_p`.
+
+`local_displacement_rescue_map()` extends that reference to an explicitly
+corrected search family. It estimates local spatial noise correlation from
+paired split differences, screens derivative-shaped intersubject variation,
+and reruns the complete center-by-scale tangent search under each activation
+sign flip. Displacement maxima use a subject-level wild bootstrap that shares
+each multiplier across the search and therefore retains spatial dependence.
+
+```r
+ldr_map <- local_displacement_rescue_map(
+  split_a,
+  split_b,
+  centers = NULL,          # every complete active-mask patch
+  patch_radius_mm = 12,
+  shift_radius_mm = 4,
+  n_resamples = 999,
+  seed = 2026
+)
+
+assays(ldr_map)[c(
+  "ldr_fwer_p", "ldr_flag", "ordinary_fwer_p",
+  "mni_loss", "shift_rms_mm"
+)]
+```
+
+A nonzero `ldr_flag` requires corrected activation and displacement evidence,
+an exact soft-shift confirmation against both aligned competitors, positive
+MNI loss, exact prevalence of at least `min_prevalence`, and failure of the
+corrected ordinary fixed-coordinate test. Patch and shift scales are part of
+the corrected family. Supplying `centers` narrows the family to that
+prespecified search set. See
+`?local_displacement_rescue_map` and the v0.2 method contract for the complete
+boundary.
+
 ### Repeated-measures mixed models
 
 For common neuroimaging repeated-measures workflows, `reduce()` also supports a
@@ -356,7 +417,7 @@ vignettes in this repository. After installation, run
 - **Post-hoc Corrections**: `vignette("as-plan-and-spatial-fdr")` --- standard and spatial FDR
 - **fmristore Integration**: `vignette("fmristore-ingestion")` --- reading fmristore HDF5 files
 - **Technical Details**: See `notes/TECHNICAL_SPECIFICATION.md` for the full design specification
-- **Function Reference**: `?gds`, `?compute`, `?reduce`, `?align`, `?mask`, `?map_to`, `?experimental_cancellation`
+- **Function Reference**: `?gds`, `?compute`, `?reduce`, `?align`, `?mask`, `?map_to`, `?experimental_cancellation`, `?local_displacement_rescue`, `?local_displacement_rescue_map`
 
 ## Release Focus
 
