@@ -197,8 +197,11 @@
   n_estimand <- length(state$estimands)
   cap <- control$geometry$cap
   residual_threshold <- control$review$surprise$residual_threshold
+  # The shared sample axis can include locations supported only by another
+  # contrast. Entirely unavailable locations are outside this contrast's
+  # coverage denominator, not coverage failures shared by every subject.
   state$contrast_feature_count[contrast_index] <-
-    state$contrast_feature_count[contrast_index] + ncol(beta)
+    state$contrast_feature_count[contrast_index] + sum(colSums(is.finite(beta)) > 0L)
 
   for (i in seq_len(n_subject)) {
     finite_beta <- is.finite(beta[i, ])
@@ -631,7 +634,9 @@
     out[[name]] <- state$quality_data[subjects, name]
   }
   out$coverage_fraction <- vapply(subjects, function(subject) {
-    min(contrast_data$coverage_fraction[contrast_data$subject == subject], na.rm = TRUE)
+    coverage <- contrast_data$coverage_fraction[contrast_data$subject == subject]
+    coverage <- coverage[is.finite(coverage)]
+    if (length(coverage)) min(coverage) else NA_real_
   }, numeric(1))
   out$surprise_score <- vapply(subjects, function(subject) {
     .safe_max(contrast_data$surprise_energy[contrast_data$subject == subject])

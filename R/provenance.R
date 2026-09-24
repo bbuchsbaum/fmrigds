@@ -611,7 +611,8 @@ validate_provenance_graph <- function(x, error = TRUE) {
     mask_policy = list(
       scope = node$policy$scope %||% NULL,
       rule = node$policy$rule %||% NULL,
-      threshold = node$policy$threshold %||% NULL
+      threshold = node$policy$threshold %||% NULL,
+      zero_is_missing = isTRUE(node$policy$zero_is_missing)
     ),
     map = {
       if (is.matrix(node$map)) {

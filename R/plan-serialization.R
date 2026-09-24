@@ -18,7 +18,7 @@ save_plan <- function(plan, file) {
     nodes = lapply(plan$nodes, .serialize_node),
     digest = digest_plan(plan)
   )
-  jsonlite::write_json(data, file, auto_unbox = TRUE, pretty = TRUE)
+  jsonlite::write_json(data, file, auto_unbox = TRUE, pretty = TRUE, digits = 17)
   invisible(file)
 }
 
@@ -75,7 +75,11 @@ load_plan <- function(file) {
     return(finish(list(op = op, family_name = fam_name, type = fam_type)))
   }
   if (op == "mask_policy") {
-    return(finish(list(op = op, scope = node$policy$scope, rule = node$policy$rule, threshold = node$policy$threshold)))
+    return(finish(list(
+      op = op, scope = node$policy$scope, rule = node$policy$rule,
+      threshold = node$policy$threshold,
+      zero_is_missing = isTRUE(node$policy$zero_is_missing)
+    )))
   }
   if (op == "reduce") {
     return(finish(list(
@@ -127,7 +131,11 @@ load_plan <- function(file) {
       formula = formula
     )))
   }
-  if (op == "mask_policy") return(finish(op_mask_policy(MaskPolicy(scope = node$scope %||% "group", rule = node$rule %||% "intersection", threshold = node$threshold %||% 0.95))))
+  if (op == "mask_policy") return(finish(op_mask_policy(MaskPolicy(
+    scope = node$scope %||% "group", rule = node$rule %||% "intersection",
+    threshold = node$threshold %||% 0.95,
+    zero_is_missing = node$zero_is_missing %||% FALSE
+  ))))
   if (op == "align_to_group") return(finish(op_align_to_group(family = NULL, family_name = node$family_name)))
   if (op == "posthoc") return(finish(list(op = "posthoc", method = node$method, options = node$options %||% list())))
   if (op == "write") return(finish(op_write(path = node$path, format = node$format, options = node$options %||% list())))

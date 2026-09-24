@@ -6,12 +6,29 @@ apply_mask_policy <- function(node, arrays, space) {
     policies <- list(policies)
   }
 
-  keep <- rep(TRUE, dim(arrays[[1]])[1])
+  dims <- dim(arrays[[1]])
+  keep <- matrix(TRUE, nrow = dims[1], ncol = dims[3])
   for (policy in policies) {
+    if (isTRUE(policy$zero_is_missing)) {
+      reference <- arrays$beta %||% arrays[[1]]
+      background <- is.finite(reference) & reference == 0
+      if (any(background)) {
+        arrays <- lapply(arrays, function(a) {
+          a[background] <- NA_real_
+          a
+        })
+      }
+    }
     keep <- keep & .mask_compute(policy, arrays)
+    if (any(!keep)) {
+      arrays <- lapply(arrays, function(a) {
+        for (k in seq_len(dims[3])) a[!keep[, k], , k] <- NA_real_
+        a
+      })
+    }
   }
 
-  idx <- which(keep)
+  idx <- which(rowSums(keep) > 0L)
   if (!length(idx)) stop("Mask removed all samples", call. = FALSE)
 
   arrays <- lapply(arrays, function(a) a[idx, , , drop = FALSE])
@@ -32,13 +49,18 @@ apply_mask_policy <- function(node, arrays, space) {
       stop("Custom mask policy requires a function", call. = FALSE)
     }
     res <- policy$custom(arrays)
-    if (length(res) != samples) stop("Custom mask must return vector of length sample", call. = FALSE)
-    return(as.logical(res))
+    if (!is.logical(res) || length(res) != samples || anyNA(res)) {
+      stop("Custom mask must return a non-missing logical vector of length sample", call. = FALSE)
+    }
+    return(matrix(res, nrow = samples, ncol = dims[3]))
   }
 
   keep <- switch(policy$scope,
     group = .mask_group(policy$rule, finite_mat, policy$threshold),
-    subject = .mask_subject(policy$rule, finite_mat, policy$threshold)
+    subject = matrix(
+      .mask_subject(policy$rule, finite_mat, policy$threshold),
+      nrow = samples, ncol = dims[3]
+    )
   )
   keep
 }
@@ -54,8 +76,10 @@ apply_mask_policy <- function(node, arrays, space) {
 
 .mask_group <- function(rule, finite_mat, threshold) {
   dim_s <- dim(finite_mat)
-  reshaped <- array(finite_mat, dim = c(dim_s[1], dim_s[2] * dim_s[3]))
-  prop <- rowMeans(reshaped)
+  prop <- matrix(0, nrow = dim_s[1], ncol = dim_s[3])
+  for (k in seq_len(dim_s[3])) {
+    prop[, k] <- rowMeans(matrix(finite_mat[, , k], nrow = dim_s[1]))
+  }
   switch(rule,
     intersection = prop == 1,
     union = prop > 0,
@@ -90,7 +114,7 @@ apply_mask_policy <- function(node, arrays, space) {
     space$storage <- "packed"
     space$mask_bitmap <- NULL
   }
-  if (inherits(space, "space_parcels")) {
+  if (inherits(space, c("space_parcels", "space_sample_labels"))) {
     space$labels <- space$labels[idx]
   }
   space

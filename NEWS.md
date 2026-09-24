@@ -1,5 +1,20 @@
 # fmrigds 0.1.0.9000
 
+## Explicit background masking
+
+- `MaskPolicy(zero_is_missing = TRUE)` treats exact zero effects as missing
+  observations in every assay before coverage checks and group fitting. The
+  default is `FALSE`, preserving meaningful zeros such as binary 0/1 data.
+  Use `rule = "threshold", threshold = 1 / 3` to require at least 7 finite
+  nonzero effects among 20 selected subjects.
+- Group mask rules now evaluate coverage separately for each contrast, rather
+  than pooling subjects and contrasts. Unsupported contrasts remain missing;
+  samples failing every contrast are removed. Masking also preserves sample
+  labels after filtering. Group examination excludes entirely unavailable
+  locations from each contrast's coverage denominator.
+- Saved plans and provenance record the zero convention. Plan JSON now retains
+  full numeric precision, including coverage thresholds.
+
 ## Experimental cancellation diagnostics
 
 - Added `experimental_cancellation()` for voxelwise cases in which meaningful

@@ -8,21 +8,57 @@ MaskPolicy(
   scope = c("group", "subject"),
   rule = c("intersection", "union", "threshold", "custom"),
   threshold = 0.95,
-  custom = NULL
+  custom = NULL,
+  zero_is_missing = FALSE
 )
 }
 \arguments{
-\item{scope}{Scope of mask computation ("group" or "subject")}
+\item{scope}{Scope of mask computation. \code{"group"} checks coverage across
+subjects separately for each sample and contrast. \code{"subject"} checks
+coverage across contrasts for each subject and requires every subject to
+meet the rule.}
 
 \item{rule}{Mask rule ("intersection", "union", "threshold", "custom")}
 
-\item{threshold}{Fraction for threshold rule}
+\item{threshold}{Minimum fraction of finite observations for the threshold
+rule, between 0 and 1 (inclusive). With \code{zero_is_missing = TRUE}, only
+finite nonzero observations count. The denominator is the number of
+subjects present at this point in the plan for \code{scope = "group"}.}
 
-\item{custom}{Custom function returning logical mask}
+\item{custom}{Custom function returning one non-missing logical value per
+sample. It receives the assays after any zero-to-missing conversion.}
+
+\item{zero_is_missing}{Logical; default \code{FALSE} preserves zeros as valid
+data, including binary 0/1 observations. Set to \code{TRUE} only when exact
+zeros denote background or unavailable observations. Zeros in \code{beta}
+(or the first assay when \code{beta} is absent) become \code{NA} in all assays at
+the same sample/subject/contrast positions before coverage is computed.
+Nonzero values, however small, are preserved.}
 }
 \value{
 A mask policy object
 }
 \description{
 Define a mask policy
+}
+\details{
+Apply \code{\link[=mask]{mask()}} before a group reducer or \code{\link[=examine_group]{examine_group()}}. Masking removes
+samples that fail the rule in every contrast. For group masks, a sample
+retained for some contrasts has all observations set to \code{NA} in failing
+contrasts, so those contrasts do not enter downstream tests or FDR families.
+Coverage is based on the effect assay, not variance validity; reducers still
+enforce their own variance, minimum-observation, and design requirements.
+Reducers requiring complete data may exclude partially observed samples.
+A threshold of \code{1 / 3} requires at least 7 nonzero observations among 20
+subjects when \code{zero_is_missing = TRUE}; the other observations are missing
+in the fit, not zero-valued contributions. Use subject coverage masks when
+available to distinguish genuine zero effects from missing measurements.
+}
+\examples{
+background_policy <- MaskPolicy(
+  rule = "threshold", threshold = 1 / 3, zero_is_missing = TRUE
+)
+# Select subjects first, then mask, then fit:
+# fit <- subject_gds |> mask(background_policy) |> one_sample() |> compute()
+
 }
