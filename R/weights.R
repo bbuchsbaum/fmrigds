@@ -1,5 +1,10 @@
 #' Attach a custom weight array to a GDS
 #'
+#' Stores a weight array as an assay. Note that none of the built-in registered
+#' reducers currently consume custom weight assays: [reduce()] refuses
+#' `weights = "custom"` (and `"n_eff"`) unless the selected reducer declares
+#' support for that scheme, rather than silently ignoring it.
+#'
 #' @param g A realised GDS
 #' @param name Assay-like name for the weights (e.g., "n_eff" or "w_custom")
 #' @param array Numeric 3D array matching `sample x subject x contrast`
@@ -22,6 +27,11 @@ attach_weight <- function(g, name, array) {
 }
 
 #' Convenience helper to use a stored weight array for reduction
+#'
+#' Custom weights are currently unsupported by the built-in registered
+#' reducers; passing the result to [reduce()] with such a reducer raises an
+#' informative error instead of silently running an inverse-variance analysis.
+#' Only reducers that declare `"custom"` in `options_schema$weights` accept it.
 #'
 #' @param g A realised GDS containing the weight assay
 #' @param name Assay name to use as custom weights

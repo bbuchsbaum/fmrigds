@@ -236,7 +236,31 @@ add_op <- function(plan, node) {
 
 # Lazy verbs ---------------------------------------------------------------
 
+#' Lazily subset a plan, source, or realised GDS
+#'
+#' Adds a `subset_axis` node to the plan. Realised [`gds`] objects and
+#' [`gds_source`] bindings are first converted with [as_plan()], so the result
+#' is always a lazy [`gds_plan`]; call [compute()] to materialise it.
+#'
+#' @param x A `gds_plan`, `gds_source`, or realised `gds`
+#' @param sample,subject,contrast Optional indices (positional, logical, or
+#'   names) for the sample, subject, and contrast axes
+#' @param ... Unused
+#' @return A `gds_plan`
+#' @name subset.gds_plan
 #' @export
 subset.gds_plan <- function(x, sample = NULL, subject = NULL, contrast = NULL, ...) {
   add_op(x, op_subset_axis(sample, subject, contrast))
+}
+
+#' @rdname subset.gds_plan
+#' @export
+subset.gds <- function(x, sample = NULL, subject = NULL, contrast = NULL, ...) {
+  subset.gds_plan(as_plan(x), sample = sample, subject = subject, contrast = contrast, ...)
+}
+
+#' @rdname subset.gds_plan
+#' @export
+subset.gds_source <- function(x, sample = NULL, subject = NULL, contrast = NULL, ...) {
+  subset.gds_plan(as_plan(x), sample = sample, subject = subject, contrast = contrast, ...)
 }

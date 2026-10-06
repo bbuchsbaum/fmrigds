@@ -2,6 +2,17 @@
 
 #' Save a plan to JSON
 #'
+#' Writes the plan's source binding, metadata, and operation nodes to a JSON
+#' file. Matrices (including `Matrix` objects) are stored as numeric data with
+#' their dimensions; map families and `map_linear` objects are stored as ASCII
+#' R serializations (the same encoding used for alignments in GDS HDF5 stores).
+#' Function-valued components that cannot be represented faithfully, such as a
+#' custom [MaskPolicy()] function or a covariance provider, cause an error at
+#' save time rather than being silently dropped.
+#'
+#' The file records a digest of the serialized plan, which [load_plan()]
+#' verifies.
+#'
 #' @param plan Plan or object coercible via [as_plan()]
 #' @param file Path to JSON file
 #' @name save_plan
@@ -15,32 +26,99 @@ save_plan <- function(plan, file) {
       probe = .serialize_probe(plan$source$probe)
     ),
     meta = .serialize_plan_meta(plan$meta),
-    nodes = lapply(plan$nodes, .serialize_node),
-    digest = digest_plan(plan)
+    nodes = lapply(plan$nodes, .serialize_node)
   )
-  jsonlite::write_json(data, file, auto_unbox = TRUE, pretty = TRUE)
+  # Digest the plan exactly as it will be reconstructed from the file, so that
+  # load_plan() can detect modification or corruption of the JSON.
+  json <- jsonlite::toJSON(data, auto_unbox = TRUE, digits = NA)
+  reparsed <- .json_simplify(jsonlite::parse_json(json, simplifyVector = FALSE))
+  data$digest <- digest_plan(.plan_from_json_data(reparsed))
+  jsonlite::write_json(data, file, auto_unbox = TRUE, pretty = TRUE, digits = NA)
   invisible(file)
 }
 
 #' Load a plan from JSON
 #'
+#' @section Security:
+#' Map families and `map_linear` operators are restored with
+#' [base::unserialize()], which can execute arbitrary code embedded in a
+#' crafted file. Only call `load_plan()` on files you created or otherwise
+#' trust.
+#'
 #' @param file JSON file produced by [save_plan]
-#' @return A `gds_plan`
+#' @return A `gds_plan`. A warning is issued when the digest stored in the file
+#'   does not match the reconstructed plan (e.g. the file was edited).
 #' @export
 load_plan <- function(file) {
-  data <- jsonlite::read_json(file, simplifyVector = FALSE)
+  data <- .json_simplify(jsonlite::read_json(file, simplifyVector = FALSE))
+  plan <- .plan_from_json_data(data)
+  stored <- data$digest %||% NULL
+  if (!is.null(stored)) {
+    actual <- digest_plan(plan)
+    if (!identical(as.character(stored), actual)) {
+      warning(
+        "Plan digest mismatch in '", file, "': stored ", stored, ", recomputed ", actual,
+        ". The file may have been modified or written by an incompatible version.",
+        call. = FALSE
+      )
+    }
+  }
+  plan
+}
+
+.plan_from_json_data <- function(data) {
   src <- gds_source(
     data$source$adapter,
     data$source$source,
     probe_result = .deserialize_probe(data$source$probe %||% NULL)
   )
   plan <- gds_plan(src, meta = .deserialize_plan_meta(data$meta %||% list()))
-  plan$nodes <- lapply(data$nodes, .deserialize_node)
+  plan$nodes <- lapply(data$nodes %||% list(), .deserialize_node)
   plan <- .ensure_plan_node_ids(plan)
   if (!is.null(src$probe$dims)) {
     plan$metadata <- list(dims = src$probe$dims)
   }
   plan
+}
+
+# JSON arrays are read back as lists (simplifyVector = FALSE keeps the nested
+# structure intact); collapse unnamed lists of same-typed scalars back into
+# atomic vectors so that e.g. subset(contrast = c("a", "b")) round-trips.
+.json_simplify <- function(x) {
+  if (!is.list(x)) return(x)
+  if (length(x)) {
+    nms <- names(x)
+    x <- lapply(x, .json_simplify)
+    names(x) <- nms
+  }
+  if (length(x) && is.null(names(x))) {
+    scalar <- vapply(x, function(e) is.atomic(e) && length(e) == 1L, logical(1))
+    if (all(scalar)) {
+      types <- unique(vapply(x, function(e) if (is.numeric(e)) "numeric" else class(e)[1L], character(1)))
+      if (length(types) == 1L) return(unlist(x, use.names = FALSE))
+    }
+  }
+  x
+}
+
+.matrix_to_json <- function(m) {
+  m <- as.matrix(m)
+  list(nrow = nrow(m), ncol = ncol(m), data = as.numeric(m))
+}
+
+.matrix_from_json <- function(x) {
+  if (is.matrix(x)) return(x)
+  if (is.list(x) && !is.null(x$nrow) && !is.null(x$ncol)) {
+    return(matrix(
+      as.numeric(unlist(x$data, use.names = FALSE)),
+      nrow = as.integer(x$nrow),
+      ncol = as.integer(x$ncol)
+    ))
+  }
+  # Legacy format: list of rows
+  if (is.atomic(x)) return(matrix(as.numeric(x), nrow = 1L))
+  rows <- lapply(x, function(row) as.numeric(unlist(row, use.names = FALSE)))
+  do.call(rbind, rows)
 }
 
 .serialize_node <- function(node) {
@@ -62,12 +140,16 @@ load_plan <- function(file) {
     return(finish(node))
   }
   if (op == "map") {
-    if (is.matrix(node$map)) {
-      node$map <- list(matrix = as.matrix(node$map))
-      node$uncertainty <- .serialize_uncertainty(node$uncertainty)
-      node$target_space <- .serialize_space(node$target_space)
-      return(finish(node))
+    if (is.matrix(node$map) || inherits(node$map, "Matrix")) {
+      node$map <- list(matrix = .matrix_to_json(node$map))
+    } else if (inherits(node$map, "gds_map")) {
+      node$map <- list(serialized = .serialize_map_family_lines(node$map))
+    } else {
+      stop("save_plan() cannot serialize map of class ", paste(class(node$map), collapse = "/"), call. = FALSE)
     }
+    node$uncertainty <- .serialize_uncertainty(node$uncertainty)
+    node$target_space <- .serialize_space(node$target_space)
+    return(finish(node))
   }
   if (op == "align_to_group") {
     fam_name <- node$family_name %||% node$family$name %||% NA_character_
@@ -75,7 +157,18 @@ load_plan <- function(file) {
     return(finish(list(op = op, family_name = fam_name, type = fam_type)))
   }
   if (op == "mask_policy") {
-    return(finish(list(op = op, scope = node$policy$scope, rule = node$policy$rule, threshold = node$policy$threshold)))
+    policy <- node$policy
+    if (!inherits(policy, "gds_mask_policy")) {
+      stop("save_plan() cannot serialize fused/multiple mask policies in one node", call. = FALSE)
+    }
+    if (!is.null(policy$custom) || identical(policy$rule, "custom")) {
+      stop(
+        "save_plan() cannot serialize MaskPolicy(rule = \"custom\") because its `custom` ",
+        "function cannot be stored in JSON; re-apply the custom mask after load_plan().",
+        call. = FALSE
+      )
+    }
+    return(finish(list(op = op, scope = policy$scope, rule = policy$rule, threshold = policy$threshold)))
   }
   if (op == "reduce") {
     return(finish(list(
@@ -110,11 +203,16 @@ load_plan <- function(file) {
     return(finish(do.call(op_subset_axis, args)))
   }
   if (op == "derive") return(finish(do.call(op_derive, node[names(node) != "op"])))
-  if (op == "map" && !is.null(node$map$matrix)) {
-    mat <- as.matrix(node$map$matrix)
+  if (op == "map" && (!is.null(node$map$matrix) || !is.null(node$map$serialized))) {
+    map <- if (!is.null(node$map$serialized)) {
+      .deserialize_map_family_lines(as.character(unlist(node$map$serialized, use.names = FALSE)))
+    } else {
+      .matrix_from_json(node$map$matrix)
+    }
     uncertainty <- .deserialize_uncertainty(node$uncertainty)
     target_space <- .deserialize_space(node$target_space)
-    return(finish(op_map(target_space, mat, uncertainty, node$combine)))
+    combine <- if (.is_empty_json_field(node$combine)) NULL else as.character(node$combine)
+    return(finish(op_map(target_space, map, uncertainty, combine)))
   }
   if (op == "reduce") {
     formula <- node$formula %||% NULL
@@ -162,7 +260,7 @@ load_plan <- function(file) {
     return(list(
       kind = "space_voxel",
       dim = as.integer(x$dim),
-      affine = unclass(x$affine),
+      affine = if (is.null(x$affine)) NULL else .matrix_to_json(unclass(x$affine)),
       mask_idx = x$mask_idx %||% NULL,
       storage = x$storage %||% "dense",
       template_id = x$template_id %||% NULL
@@ -181,7 +279,7 @@ load_plan <- function(file) {
     return(space_parcels(as.character(unlist(x$labels, use.names = FALSE)), lookup = x$lookup %||% NULL))
   }
   if (identical(kind, "space_voxel")) {
-    affine <- .json_to_matrix(x$affine, ncol = 4L)
+    affine <- if (is.list(x$affine) && !is.null(x$affine$nrow)) .matrix_from_json(x$affine) else .json_to_matrix(x$affine, ncol = 4L)
     return(space_voxel(
       dim = as.integer(unlist(x$dim, use.names = FALSE)),
       affine = affine,
@@ -319,6 +417,18 @@ load_plan <- function(file) {
 .serialize_plan_meta <- function(meta) {
   if (is.null(meta)) return(list())
   out <- meta
+  if (length(out$map_families)) out$map_families <- .serialize_map_families(out$map_families)
+  for (nm in names(out)) {
+    el <- out[[nm]]
+    if (is.matrix(el) || inherits(el, "Matrix")) {
+      dn <- dimnames(el) %||% list(NULL, NULL)
+      out[[nm]] <- c(
+        list(`__matrix__` = TRUE),
+        .matrix_to_json(el),
+        list(rownames = dn[[1L]] %||% character(), colnames = dn[[2L]] %||% character())
+      )
+    }
+  }
   if ("col_data" %in% names(out)) out$col_data <- .serialize_data_frame(out$col_data)
   if ("row_data" %in% names(out)) out$row_data <- .serialize_data_frame(out$row_data)
   if ("contrast_data" %in% names(out)) out$contrast_data <- .serialize_data_frame(out$contrast_data)
@@ -328,6 +438,18 @@ load_plan <- function(file) {
 .deserialize_plan_meta <- function(meta) {
   if (is.null(meta)) return(list())
   out <- meta
+  if (length(out$map_families)) out$map_families <- .deserialize_map_families(out$map_families)
+  for (nm in names(out)) {
+    el <- out[[nm]]
+    if (is.list(el) && isTRUE(el[["__matrix__"]])) {
+      m <- .matrix_from_json(el)
+      rn <- as.character(unlist(el$rownames, use.names = FALSE))
+      cn <- as.character(unlist(el$colnames, use.names = FALSE))
+      if (length(rn) == nrow(m)) rownames(m) <- rn
+      if (length(cn) == ncol(m)) colnames(m) <- cn
+      out[[nm]] <- m
+    }
+  }
   if ("col_data" %in% names(out)) out$col_data <- .deserialize_data_frame(out$col_data)
   if ("row_data" %in% names(out)) out$row_data <- .deserialize_data_frame(out$row_data)
   if ("contrast_data" %in% names(out)) out$contrast_data <- .deserialize_data_frame(out$contrast_data)

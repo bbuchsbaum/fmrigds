@@ -20,6 +20,7 @@ apply_map_to <- function(node, arrays) {
     stop("map must be matrix or map_linear", call. = FALSE)
   }
   map <- as.matrix(map)
+  .check_map_columns(map, arrays, context = "map_to()")
 
   has_beta_var <- all(c("beta", "var") %in% names(arrays))
 
@@ -32,9 +33,30 @@ apply_map_to <- function(node, arrays) {
   list(arrays = arrays, space = node$target_space)
 }
 
+.check_map_columns <- function(map, arrays, context = "map_to()") {
+  n_samples <- if (length(arrays)) dim(arrays[[1L]])[1L] else NA_integer_
+  if (!is.na(n_samples) && ncol(map) != n_samples) {
+    stop(sprintf(
+      paste0(
+        "%s: the map has %d columns but the data currently has %d samples. ",
+        "The map must be defined on the current sample axis; earlier mask() or ",
+        "subset() steps change the number of samples, so build the map for the ",
+        "masked/subsetted space (or apply map_to() before masking)."
+      ),
+      context, ncol(map), n_samples
+    ), call. = FALSE)
+  }
+  invisible(TRUE)
+}
+
+# Effect-scale map: beta/var are propagated through the operator, df is
+# propagated by Satterthwaite (df_rule = "satterthwaite") or broadcast when it
+# is constant per subject/contrast; every other assay is dropped and the
+# derived statistics are recomputed (see .reset_after_transform()).
 .map_with_effect_scale <- function(arrays, map, uncertainty) {
   var_source <- arrays$var
   df_source <- arrays$df
+  had_stats <- any(c("z", "p") %in% names(arrays))
 
   res <- switch(uncertainty$mode,
     independent = propagate_variance_independent(map, arrays$beta, arrays$var),
@@ -42,23 +64,16 @@ apply_map_to <- function(node, arrays) {
     stop("Unsupported uncertainty mode: ", uncertainty$mode, call. = FALSE)
   )
 
-  arrays$beta <- res$beta
-  arrays$var <- res$var
-
-  if ("se" %in% names(arrays)) arrays$se <- sqrt(arrays$var)
-
-  if ("t" %in% names(arrays)) {
-    arrays$t <- arrays$beta / sqrt(arrays$var)
-    if ("df" %in% names(arrays) && !is.null(df_source) && identical(uncertainty$df_rule, "satterthwaite")) {
-      arrays$df <- aggregate_df_satterthwaite(map, var_source, df_source)
+  out <- list(beta = res$beta, var = res$var)
+  if (!is.null(df_source)) {
+    out$df <- if (identical(uncertainty$df_rule, "satterthwaite")) {
+      aggregate_df_satterthwaite(map, var_source, df_source)
+    } else {
+      .broadcast_constant_df(df_source, nrow(map))
     }
   }
 
-  if ("z" %in% names(arrays)) {
-    arrays$z <- derive_z(arrays)
-  }
-
-  arrays
+  .reset_after_transform(out, c("beta", "var", "df"), had_stats = had_stats)
 }
 
 .map_without_effect_scale <- function(arrays, map, combine) {
@@ -69,14 +84,17 @@ apply_map_to <- function(node, arrays) {
   if (combine == "stouffer") {
     if (!"z" %in% names(arrays)) stop("Stouffer combine requires z-scores", call. = FALSE)
     arrays <- .combine_stouffer(arrays, map)
+    keep <- c("z", "p")
   } else if (combine == "fisher") {
     if (!"z" %in% names(arrays) && !"p" %in% names(arrays)) {
       stop("Fisher combine requires z-scores or p-values", call. = FALSE)
     }
     arrays <- .combine_fisher(arrays, map)
+    keep <- c("chi2", "df", "p", "z")
   }
 
-  arrays
+  # Only the combiner outputs live on the target sample axis; drop the rest.
+  arrays[intersect(keep, names(arrays))]
 }
 
 .combine_stouffer <- function(arrays, map) {

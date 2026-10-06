@@ -18,16 +18,26 @@ apply_align <- function(family, arrays, subjects, space) {
   n_subjects <- dims[2]
   n_contrasts <- dims[3]
 
+  had_stats <- any(c("z", "p") %in% names(arrays))
+  satterthwaite <- identical(uncertainty$df_rule, "satterthwaite")
+
   new_beta <- array(NA_real_, dim = c(n_target, n_subjects, n_contrasts))
   new_var <- array(NA_real_, dim = c(n_target, n_subjects, n_contrasts))
-  new_df <- if ("df" %in% names(arrays)) array(NA_real_, dim = c(n_target, n_subjects, n_contrasts)) else NULL
+  new_df <- if (!is.null(arrays$df) && satterthwaite) {
+    array(NA_real_, dim = c(n_target, n_subjects, n_contrasts))
+  } else {
+    NULL
+  }
 
   for (j in seq_len(n_subjects)) {
     subj_id <- subject_names[j]
     mat <- .align_matrix(operators[[subj_id]])
+    if (nrow(mat) != n_target) {
+      stop("align(): all subject operators must map to the same number of target samples", call. = FALSE)
+    }
+    .check_map_columns(mat, arrays, context = sprintf("align() [subject '%s']", subj_id))
     beta_j <- arrays$beta[, j, , drop = FALSE]
     var_j <- arrays$var[, j, , drop = FALSE]
-    df_j <- if (!is.null(new_df)) arrays$df[, j, , drop = FALSE] else NULL
 
     res <- if (uncertainty$mode == "cov_provider") {
       propagate_variance_covariance(mat, beta_j, var_j, uncertainty$cov_provider)
@@ -39,19 +49,19 @@ apply_align <- function(family, arrays, subjects, space) {
     new_var[, j, ] <- res$var[, 1, ]
 
     if (!is.null(new_df)) {
-      if (!is.null(df_j) && identical(uncertainty$df_rule, "satterthwaite")) {
-        df_res <- aggregate_df_satterthwaite(mat, var_j, df_j)
-        new_df[, j, ] <- df_res[, 1, ]
-      } else {
-        new_df[, j, ] <- arrays$df[, j, ]
-      }
+      df_res <- aggregate_df_satterthwaite(mat, var_j, arrays$df[, j, , drop = FALSE])
+      new_df[, j, ] <- df_res[, 1, ]
     }
   }
 
-  arrays$beta <- new_beta
-  arrays$var <- new_var
-  if (!is.null(new_df)) arrays$df <- new_df
-  arrays <- .sync_derived(arrays)
+  # Without Satterthwaite aggregation, source-space df can only be carried
+  # over when it is constant per subject/contrast; otherwise it is dropped.
+  if (is.null(new_df) && !is.null(arrays$df)) {
+    new_df <- .broadcast_constant_df(arrays$df, n_target)
+  }
+
+  out <- list(beta = new_beta, var = new_var, df = new_df)
+  arrays <- .reset_after_transform(out, c("beta", "var", "df"), had_stats = had_stats)
 
   list(arrays = arrays, space = target_space)
 }

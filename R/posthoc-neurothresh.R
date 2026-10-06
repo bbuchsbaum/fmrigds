@@ -155,7 +155,7 @@
     allow_voxel_signflip <- isTRUE(opts$allow_voxel_signflip)
     null_spec <- opts$null_fun %||% NULL
 
-    q_out <- array(NA_real_, dim = dims)
+    p_fwer_out <- array(NA_real_, dim = dims)
     sig_out <- array(0, dim = dims)
     tfce_out <- array(NA_real_, dim = dims)
     attachments <- list()
@@ -203,8 +203,9 @@
         tail = tail
       )
 
-      q_full <- .posthoc_tfce_corrected_p(tfce_res, n_full = spec$n_full)
-      q_out[, 1L, k] <- .posthoc_pack_from_full(q_full, spec)
+      # FWER-corrected p-values (not FDR q-values): stored as `p_fwer`.
+      p_fwer_full <- .posthoc_tfce_corrected_p(tfce_res, n_full = spec$n_full)
+      p_fwer_out[, 1L, k] <- .posthoc_pack_from_full(p_fwer_full, spec)
 
       sig_full <- as.numeric(as.logical(tfce_res$sig_mask))
       if (length(sig_full) != spec$n_full) {
@@ -239,7 +240,7 @@
 
     list(
       arrays = list(
-        q = q_out,
+        p_fwer = p_fwer_out,
         sig_mask = sig_out,
         tfce = tfce_out
       ),
@@ -329,6 +330,10 @@
         }
       }
 
+      # Level at which clusters are actually tested: with split_q each tail is
+      # tested at q / 2, so significance counts must use that level too.
+      q_tail <- if (identical(tail, "two") && identical(two_sided_policy, "split_q")) q_level / 2 else q_level
+
       if (tail %in% c("pos", "neg")) {
         c_res <- neurothresh::cluster_fdr(
           stat_vol = stat_vol,
@@ -362,7 +367,6 @@
         }
         result_table <- c_tab
       } else {
-        q_tail <- if (identical(two_sided_policy, "split_q")) q_level / 2 else q_level
         pos <- neurothresh::cluster_fdr(
           stat_vol = stat_vol,
           mask = spec$mask,
@@ -453,12 +457,12 @@
         n_sig_clusters = if (!is.data.frame(result_table) || !("q_cluster" %in% names(result_table))) {
           0L
         } else {
-          as.integer(sum(result_table$q_cluster <= q_level, na.rm = TRUE))
+          as.integer(sum(result_table$q_cluster <= q_tail, na.rm = TRUE))
         },
         null_model = if (!is.null(null_fun_k)) "explicit_null_fun" else "voxel_signflip_fallback",
         tail = tail,
         two_sided_policy = if (tail == "two") two_sided_policy else NA_character_,
-        params = list(q = q_level, cluster_thresh = cluster_thresh, n_perm = n_perm, tail = tail, p_method = "perm"),
+        params = list(q = q_level, q_test = q_tail, cluster_thresh = cluster_thresh, n_perm = n_perm, tail = tail, p_method = "perm"),
         table = result_table
       )
     }

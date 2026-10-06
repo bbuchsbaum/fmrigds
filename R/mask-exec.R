@@ -90,7 +90,7 @@ apply_mask_policy <- function(node, arrays, space) {
     space$storage <- "packed"
     space$mask_bitmap <- NULL
   }
-  if (inherits(space, "space_parcels")) {
+  if (inherits(space, "space_parcels") || inherits(space, "space_sample_labels")) {
     space$labels <- space$labels[idx]
   }
   space

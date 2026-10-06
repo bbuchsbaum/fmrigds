@@ -1,35 +1,3 @@
-.merge_subset <- function(a, b) {
-  merge_field <- function(old, new) {
-    if (is.null(old)) return(new)
-    if (is.null(new)) return(old)
-    intersect(old, new)
-  }
-  list(
-    op = "subset_axis",
-    sample = merge_field(a$sample, b$sample),
-    subject = merge_field(a$subject, b$subject),
-    contrast = merge_field(a$contrast, b$contrast)
-  )
-}
-
-.combine_subsets <- function(nodes) {
-  combined <- NULL
-  out <- list()
-  for (node in nodes) {
-    if (node$op == "subset_axis") {
-      combined <- if (is.null(combined)) node else .merge_subset(combined, node)
-    } else {
-      if (!is.null(combined)) {
-        out <- c(out, list(combined))
-        combined <- NULL
-      }
-      out <- c(out, list(node))
-    }
-  }
-  if (!is.null(combined)) out <- c(list(combined), out)
-  out
-}
-
 .coalesce_derives <- function(nodes) {
   out <- list()
   pending <- NULL
