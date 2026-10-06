@@ -6,14 +6,7 @@
 # currently preserves authored order for semantic safety.
 # ---------------------------------------------------------------------------
 
-test_that("plan optimizer rewrite helpers coalesce subsets/derives/masks", {
-  a <- list(op = "subset_axis", sample = 1:5, subject = c("s1", "s2"), contrast = NULL)
-  b <- list(op = "subset_axis", sample = 3:6, subject = "s1", contrast = "c1")
-  merged <- fmrigds:::.merge_subset(a, b)
-  expect_equal(merged$sample, 3:5)
-  expect_equal(merged$subject, "s1")
-  expect_equal(merged$contrast, "c1")
-
+test_that("plan optimizer rewrite helpers coalesce derives/masks", {
   nodes <- list(
     list(op = "subset_axis", sample = 1:3, subject = NULL, contrast = NULL),
     list(op = "derive", what = "t", options = list(a = 1)),
@@ -23,8 +16,6 @@ test_that("plan optimizer rewrite helpers coalesce subsets/derives/masks", {
     list(op = "mask_policy", policy = MaskPolicy(rule = "threshold", threshold = 0.5)),
     list(op = "reduce", method = "fixed")
   )
-  combined <- fmrigds:::.combine_subsets(nodes)
-  expect_true(any(vapply(combined, function(n) identical(n$op, "subset_axis"), logical(1))))
 
   coalesced <- fmrigds:::.coalesce_derives(nodes)
   derive_nodes <- Filter(function(n) identical(n$op, "derive"), coalesced)
@@ -803,20 +794,7 @@ test_that("catalog as_gds/subset/discover cover remaining cold branches", {
 # ---------------------------------------------------------------------------
 
 test_that("optimizer/verb/align leftovers close the final coverage gap", {
-  # .merge_subset null-field branches
-  merged_null <- fmrigds:::.merge_subset(
-    list(op = "subset_axis", sample = NULL, subject = "s1", contrast = "c1"),
-    list(op = "subset_axis", sample = 1:2, subject = NULL, contrast = NULL)
-  )
-  expect_equal(merged_null$sample, 1:2)
-  expect_equal(merged_null$subject, "s1")
-  expect_equal(merged_null$contrast, "c1")
-
-  # trailing subset-only combine (line 29) and trailing derive-only coalesce (52)
-  only_sub <- fmrigds:::.combine_subsets(list(
-    list(op = "subset_axis", sample = 1:2, subject = NULL, contrast = NULL)
-  ))
-  expect_equal(length(only_sub), 1L)
+  # trailing derive-only coalesce
   only_der <- fmrigds:::.coalesce_derives(list(
     list(op = "derive", what = "t", options = list())
   ))

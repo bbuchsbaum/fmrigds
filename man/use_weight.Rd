@@ -16,7 +16,10 @@ A list(list) suitable to splice into reduce():
 list(weights = "custom", options = list(custom_weights = \if{html}{\out{<array>}}))
 }
 \description{
-Convenience helper to use a stored weight array for reduction
+Custom weights are currently unsupported by the built-in registered
+reducers; passing the result to \code{\link[=reduce]{reduce()}} with such a reducer raises an
+informative error instead of silently running an inverse-variance analysis.
+Only reducers that declare \code{"custom"} in \code{options_schema$weights} accept it.
 }
 \examples{
 # opts <- use_weight(g2, "w_custom")

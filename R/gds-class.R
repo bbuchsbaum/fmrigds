@@ -300,8 +300,10 @@ subjects.gds <- function(x) x$subjects
 
 #' @export
 subjects.gds_plan <- function(x) {
-  # Prefer subjects from the bound source probe, fall back to plan meta
-  x$source$probe$subjects %||% x$meta$subjects
+  # Start from the bound source probe (fall back to plan meta) and replay the
+  # plan's subject-axis operations so the accessor matches compute().
+  out <- x$source$probe$subjects %||% x$meta$subjects
+  .plan_axis_after_nodes(x, out, axis = "subject")
 }
 
 #' Extract contrast identifiers from a GDS object
@@ -317,7 +319,29 @@ contrasts.gds <- function(x) x$contrasts
 
 #' @export
 contrasts.gds_plan <- function(x) {
-  x$source$probe$contrasts %||% (x$meta$contrasts %||% character())
+  out <- x$source$probe$contrasts %||% (x$meta$contrasts %||% character())
+  .plan_axis_after_nodes(x, out, axis = "contrast")
+}
+
+# Replay subset_axis and reduce nodes on a subject/contrast axis.
+.plan_axis_after_nodes <- function(plan, values, axis = c("subject", "contrast")) {
+  axis <- match.arg(axis)
+  for (node in plan$nodes %||% list()) {
+    if (identical(node$op, "subset_axis")) {
+      idx <- node[[axis]]
+      if (!is.null(idx) && !is.null(values)) {
+        values <- values[.coerce_named_index(idx, values, axis = axis)]
+      }
+    } else if (identical(node$op, "reduce")) {
+      if (identical(axis, "subject")) {
+        values <- "meta"
+      } else {
+        red <- get_reducer(.normalize_reducer_name(node$method))
+        if (identical(red$input_shape, "joint_contrast")) values <- "model"
+      }
+    }
+  }
+  values
 }
 
 #' Extract column (subject) metadata from a GDS object
@@ -483,6 +507,13 @@ metadata.gds <- function(x) x$metadata
     if (!is.null(space$dim) && prod(space$dim) != n_samples) {
       stop("Space dimensions do not align with sample count", call. = FALSE)
     }
+  }
+  if (inherits(space, c("space_sample_labels", "space_parcels")) &&
+      !is.null(space$labels) && length(space$labels) != n_samples) {
+    stop(sprintf(
+      "Space has %d labels but the sample dimension is %d; labels must match samples",
+      length(space$labels), n_samples
+    ), call. = FALSE)
   }
   invisible(NULL)
 }

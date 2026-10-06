@@ -10,8 +10,17 @@ load_plan(file)
 \item{file}{JSON file produced by \link{save_plan}}
 }
 \value{
-A \code{gds_plan}
+A \code{gds_plan}. A warning is issued when the digest stored in the file
+does not match the reconstructed plan (e.g. the file was edited).
 }
 \description{
 Load a plan from JSON
 }
+\section{Security}{
+
+Map families and \code{map_linear} operators are restored with
+\code{\link[base:serialize]{base::unserialize()}}, which can execute arbitrary code embedded in a
+crafted file. Only call \code{load_plan()} on files you created or otherwise
+trust.
+}
+

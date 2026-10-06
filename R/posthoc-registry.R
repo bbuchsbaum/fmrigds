@@ -140,8 +140,8 @@ list_posthoc <- function() {
 #'   FDR. Requires a discrete spatial grouping (one parcel/cluster id per
 #'   sample) via `options$group` or a recognised `row_data` column
 #'   (`feature_group`, `spatial_group`, `group`, `parcel`, `parcel_id`).
-#' - `"nt:tfce_fwer"` (needs the optional `neurothresh` package): adds `q`
-#'   (TFCE FWER-corrected p), `sig_mask` (1/0 at `alpha`), and `tfce` (the
+#' - `"nt:tfce_fwer"` (needs the optional `neurothresh` package): adds `p_fwer`
+#'   (TFCE FWER-corrected p-values), `sig_mask` (1/0 at `alpha`), and `tfce` (the
 #'   TFCE-enhanced statistic map).
 #' - `"nt:cluster_fdr_perm"` (needs `neurothresh`): adds `q` (cluster-FDR q
 #'   broadcast to voxels) and `sig_mask`.
@@ -268,7 +268,7 @@ unregister_posthoc <- function(name) {
       "nt:tfce_fwer",
       .posthoc_neurothresh_tfce_fwer(),
       requires = c("z"),
-      provides = c("q", "sig_mask", "tfce"),
+      provides = c("p_fwer", "sig_mask", "tfce"),
       case_deletion = list(
         supported = TRUE,
         mode = "selected_recompute",

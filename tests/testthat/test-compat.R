@@ -43,9 +43,12 @@ test_that("attach_weight and use_weight integrate with reduce", {
   w <- array(1, dim = dim(beta)); w[,1,] <- 100
   g <- attach_weight(g, "w_custom", w)
   opts <- use_weight(g, "w_custom")
-  plan <- reduce(as_plan(gds_source("tabular", list(path="dummy"), list(space=g$space, subjects=g$subjects, contrasts=g$contrasts, assays = names(assays(g)), dims = dim(beta)))), method = "fixed", weights = opts$weights, options = opts$options)
-  # Execute by bypassing adapter read using compute(assays=...) pattern
-  # Instead, call reducer directly to ensure no I/O
-  res <- fmrigds:::apply_reduce(list(method = "meta:fe", options = opts$options), arrays = assays(g), weights = opts$weights, subjects = subjects(g))
-  expect_true("beta" %in% names(res$arrays))
+  expect_equal(opts$weights, "custom")
+  expect_identical(opts$options$custom_weights, w)
+  # Built-in reducers do not consume custom weights: reduce() must refuse
+  # rather than silently fall back to inverse-variance weighting.
+  expect_error(
+    reduce(g, method = "fixed", weights = opts$weights, options = opts$options),
+    "not supported by reducer 'meta:fe'"
+  )
 })

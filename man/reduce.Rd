@@ -25,7 +25,12 @@ restricted repeated-measures Gaussian LMM reducers \code{"lmm:ri"},
 \code{"lmm:ri_slope1_knownvar"}, plus permutation reducers
 \code{"perm:onesample"} and \code{"perm:twosample"}.}
 
-\item{weights}{Weighting scheme (\code{"1/var"}, \code{"n_eff"}, \code{"equal"}, \code{"custom"})}
+\item{weights}{Weighting scheme (\code{"1/var"}, \code{"n_eff"}, \code{"equal"}, \code{"custom"}).
+Registered reducers apply their own weighting, so only the default
+\code{"1/var"} is accepted for every reducer. \code{"equal"} is accepted for
+unweighted and evidence-combining reducers (e.g. \code{"ols:voxelwise"},
+\code{"stouffer"}); other schemes raise an error unless the reducer lists them in
+\code{options_schema$weights}. Unknown \code{method} names also raise an error.}
 
 \item{by}{Grouping variable (e.g., \code{"contrast"})}
 

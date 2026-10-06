@@ -74,6 +74,9 @@
       outv
     }
 
+    # Precompute group membership once (split() instead of repeated which()).
+    members_by_group <- split(which(valid_gid), factor(gid[valid_gid], levels = seq_len(n_groups)))
+
     out_list <- vector("list", length(sources))
     names(out_list) <- names(sources)
     for (out_name in names(sources)) {
@@ -83,23 +86,14 @@
         for (k in seq_len(dims[3L])) {
           pv <- p[, j, k]
           # Aggregate to group-level p-values with Simes
-          p_g <- rep(NA_real_, n_groups)
-          if (n_groups > 0) {
-            for (g in seq_len(n_groups)) {
-              members <- which(valid_gid & gid == g)
-              if (!length(members)) next
-              p_g[g] <- simes(pv[members])
-            }
-          }
+          p_g <- vapply(members_by_group, function(m) {
+            if (!length(m)) NA_real_ else simes(pv[m])
+          }, numeric(1), USE.NAMES = FALSE)
           # Weighted BH across groups
           q_g <- wbh_adjust(p_g, w)
           # Broadcast back to samples within each group
           qv <- rep(NA_real_, length(pv))
-          for (g in seq_len(n_groups)) {
-            members <- which(valid_gid & gid == g)
-            if (!length(members)) next
-            qv[members] <- q_g[g]
-          }
+          qv[valid_gid] <- q_g[gid[valid_gid]]
           out[, j, k] <- qv
         }
       }

@@ -24,8 +24,8 @@ column-wise per subject x contrast.
 FDR. Requires a discrete spatial grouping (one parcel/cluster id per
 sample) via \code{options$group} or a recognised \code{row_data} column
 (\code{feature_group}, \code{spatial_group}, \code{group}, \code{parcel}, \code{parcel_id}).
-\item \code{"nt:tfce_fwer"} (needs the optional \code{neurothresh} package): adds \code{q}
-(TFCE FWER-corrected p), \code{sig_mask} (1/0 at \code{alpha}), and \code{tfce} (the
+\item \code{"nt:tfce_fwer"} (needs the optional \code{neurothresh} package): adds \code{p_fwer}
+(TFCE FWER-corrected p-values), \code{sig_mask} (1/0 at \code{alpha}), and \code{tfce} (the
 TFCE-enhanced statistic map).
 \item \code{"nt:cluster_fdr_perm"} (needs \code{neurothresh}): adds \code{q} (cluster-FDR q
 broadcast to voxels) and \code{sig_mask}.

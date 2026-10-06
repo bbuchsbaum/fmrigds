@@ -4,14 +4,7 @@ apply_reduce <- function(node, arrays, weights, subjects, col_data = NULL, contr
   name <- .normalize_reducer_name(node$method)
   reducer <- get_reducer(name)
   if (is.null(reducer)) {
-    # fallback to legacy paths
-    method <- node$method
-    if (method %in% c("fixed", "random")) {
-      arrays <- .reduce_effects(arrays, method, node$weights, node$options)
-    } else {
-      arrays <- .reduce_evidence(arrays, method)
-    }
-    return(list(arrays = arrays, subjects = "meta"))
+    stop(.unknown_reducer_message(node$method), call. = FALSE)
   }
 
   # Ensure required inputs exist (derive z/p if necessary)
@@ -105,13 +98,20 @@ apply_reduce <- function(node, arrays, weights, subjects, col_data = NULL, contr
     var_mat  <- if (!is.null(var))  .slice_subjects_samples(var, k)  else NULL
     z_mat    <- if (!is.null(z))    .slice_subjects_samples(z, k)    else NULL
     p_mat    <- if (!is.null(p))    .slice_subjects_samples(p, k)    else NULL
-    # Lancaster dfw auto-derive if missing
+    # Lancaster dfw auto-derive if missing. Degrees of freedom may differ per
+    # sample (e.g. after map_to()/align() with Satterthwaite df), so derive a
+    # [samples x subjects] df matrix and run the kernel per distinct df row.
     opts_local <- opts_root
+    lancaster_dfmat <- NULL
     if (identical(reducer$name, "combine:lancaster") && is.null(opts_local$dfw)) {
-      if (!is.null(arrays$df)) {
-        opts_local$dfw <- as.integer(round(as.numeric(arrays$df[1, , k])))
-      } else if (!is.null(arrays$df1)) {
-        opts_local$dfw <- as.integer(round(as.numeric(arrays$df1[1, , k])))
+      df_src <- arrays$df %||% arrays$df1
+      if (!is.null(df_src)) {
+        lancaster_dfmat <- matrix(
+          as.integer(round(as.numeric(df_src[, , k]))),
+          nrow = n_samples,
+          ncol = n_subject
+        )
+        opts_local$dfw <- lancaster_dfmat[1L, ]
       } else {
         opts_local$dfw <- rep.int(1L, n_subject)
       }
@@ -128,7 +128,11 @@ apply_reduce <- function(node, arrays, weights, subjects, col_data = NULL, contr
       )
     }
 
-    res <- reducer$fun(beta_mat, var_mat, X, z_mat, p_mat, arrays$df, arrays$df1, arrays$df2, opts_local)
+    res <- if (!is.null(lancaster_dfmat)) {
+      .lancaster_by_df_rows(reducer, p_mat, lancaster_dfmat, opts_local, arrays)
+    } else {
+      reducer$fun(beta_mat, var_mat, X, z_mat, p_mat, arrays$df, arrays$df1, arrays$df2, opts_local)
+    }
     .warn_on_reduced_effective_n(reducer$name, res$n_eff, n_subject)
     #
     # Handle regression/parametric results (matrix outputs): expand into param-suffixed assays
@@ -288,143 +292,22 @@ apply_reduce <- function(node, arrays, weights, subjects, col_data = NULL, contr
   t(mat)
 }
 
-.reduce_effects <- function(arrays, method, weight_scheme, opts) {
-  # Auto-derive var from se if available for legacy paths
-  if (is.null(arrays$var) && !is.null(arrays$se)) {
-    arrays$var <- derive_var(arrays)
-  }
-  if (!all(c("beta", "var") %in% names(arrays))) {
-    stop("beta and var required for fixed/random reduce", call. = FALSE)
-  }
-  weights <- .compute_weights(weight_scheme, arrays, opts)
-  beta <- arrays$beta
-  var <- arrays$var
-  dims <- dim(beta)
-
-  tau2 <- NULL
-  if (identical(method, "random")) {
-    tau2 <- .estimate_tau2(beta, var, weights)
-    weights <- 1 / (1 / weights + array(tau2, dim = dim(weights)))
-  }
-
-  beta_out <- array(NA_real_, dim = c(dims[1], 1, dims[3]))
-  var_out <- array(NA_real_, dim = c(dims[1], 1, dims[3]))
-  df_out <- if ("df" %in% names(arrays)) array(NA_real_, dim = c(dims[1], 1, dims[3])) else NULL
-
-  for (i in seq_len(dims[1])) {
-    for (k in seq_len(dims[3])) {
-      w <- weights[i, , k]
-      b <- beta[i, , k]
-      v <- var[i, , k]
-      w <- replace(w, !is.finite(w), 0)
-      denom <- sum(w, na.rm = TRUE)
-      if (denom == 0) {
-        beta_out[i, 1, k] <- NA
-        var_out[i, 1, k] <- NA
-        if (!is.null(df_out)) df_out[i, 1, k] <- NA
-        next
-      }
-      beta_out[i, 1, k] <- sum(w * b, na.rm = TRUE) / denom
-      var_out[i, 1, k] <- 1 / denom
-      if (!is.null(df_out)) {
-        df_weight <- .weights_for_df(w)
-        df_out[i, 1, k] <- aggregate_df_satterthwaite(diag(df_weight), array(v, c(length(v), 1, 1)), array(arrays$df[i, , k], c(length(v), 1, 1)))[1, 1, 1]
-      }
+# Run the Lancaster kernel once per group of samples sharing the same
+# per-subject df vector, so each sample is combined with its own df.
+.lancaster_by_df_rows <- function(reducer, p_mat, dfmat, opts, arrays) {
+  n_samples <- nrow(dfmat)
+  keys <- apply(dfmat, 1L, paste, collapse = ",")
+  groups <- split(seq_len(n_samples), factor(keys, levels = unique(keys)))
+  out <- list()
+  for (idx in groups) {
+    opts_g <- opts
+    opts_g$dfw <- dfmat[idx[1L], ]
+    res_g <- reducer$fun(NULL, NULL, NULL, NULL, p_mat[, idx, drop = FALSE],
+                         arrays$df, arrays$df1, arrays$df2, opts_g)
+    for (nm in names(res_g)) {
+      if (is.null(out[[nm]])) out[[nm]] <- rep(NA_real_, n_samples)
+      out[[nm]][idx] <- as.numeric(res_g[[nm]])
     }
   }
-
-  arrays$beta <- beta_out
-  arrays$var <- var_out
-  if (!is.null(df_out)) arrays$df <- df_out
-  if ("se" %in% names(arrays)) arrays$se <- sqrt(var_out)
-  arrays$t <- beta_out / sqrt(var_out)
-  if (("df" %in% names(arrays)) || ("p" %in% names(arrays) && "beta" %in% names(arrays))) {
-    arrays$z <- derive_z(arrays)
-    arrays$p <- derive_p(arrays)
-  }
-  arrays
-}
-
-.reduce_evidence <- function(arrays, method) {
-  z <- if ("z" %in% names(arrays)) arrays$z else NULL
-  if (is.null(z) && "p" %in% names(arrays)) {
-    z <- stats::qnorm(1 - arrays$p / 2) * sign(arrays$beta %||% 1)
-  }
-  if (is.null(z)) stop("Evidence reducer requires z or p", call. = FALSE)
-
-  dims <- dim(z)
-  z_out <- array(NA_real_, dim = c(dims[1], 1, dims[3]))
-  p_out <- array(NA_real_, dim = c(dims[1], 1, dims[3]))
-  chi_out <- array(NA_real_, dim = c(dims[1], 1, dims[3]))
-  df_out <- array(NA_real_, dim = c(dims[1], 1, dims[3]))
-
-  for (i in seq_len(dims[1])) {
-    for (k in seq_len(dims[3])) {
-      z_vals <- z[i, , k]
-      z_vals <- z_vals[is.finite(z_vals)]
-      if (!length(z_vals)) next
-
-      if (identical(method, "stouffer")) {
-        z_comb <- sum(z_vals) / sqrt(length(z_vals))
-        p_comb <- 2 * stats::pnorm(-abs(z_comb))
-        z_out[i, 1, k] <- z_comb
-        p_out[i, 1, k] <- p_comb
-      } else {
-        chi <- -2 * sum(log(2 * stats::pnorm(-abs(z_vals))))
-        dfv <- 2 * length(z_vals)
-        chi_out[i, 1, k] <- chi
-        df_out[i, 1, k] <- dfv
-        p_out[i, 1, k] <- stats::pchisq(chi, dfv, lower.tail = FALSE)
-        z_out[i, 1, k] <- stats::qnorm(1 - p_out[i, 1, k] / 2)
-      }
-    }
-  }
-
-  arrays$z <- z_out
-  arrays$p <- p_out
-  arrays$chi2 <- chi_out
-  arrays$df <- df_out
-  arrays
-}
-
-.compute_weights <- function(scheme, arrays, opts) {
-  dims <- dim(arrays$beta)
-  weights <- array(1, dim = dims)
-  if (scheme == "equal") return(weights)
-  if (scheme == "1/var") {
-    weights <- 1 / arrays$var
-  } else if (scheme == "n_eff" && "n_eff" %in% names(arrays)) {
-    weights <- array(arrays$n_eff, dim = dims)
-  } else if (scheme == "custom") {
-    if (is.null(opts$custom_weights)) stop("custom weights require options$custom_weights", call. = FALSE)
-    weights <- opts$custom_weights
-  }
-  weights
-}
-
-.estimate_tau2 <- function(beta, var, weights) {
-  dims <- dim(beta)
-  tau2 <- array(0, dim = c(dims[1], 1, dims[3]))
-  for (i in seq_len(dims[1])) {
-    for (k in seq_len(dims[3])) {
-      w <- weights[i, , k]
-      b <- beta[i, , k]
-      v <- var[i, , k]
-      w <- replace(w, !is.finite(w), 0)
-      W <- sum(w)
-      if (W <= 0) next
-      b_bar <- sum(w * b) / W
-      Q <- sum(w * (b - b_bar)^2)
-      df <- length(b) - 1
-      if (df <= 0) next
-      C <- W - sum(w^2) / W
-      tau <- max((Q - df) / C, 0)
-      tau2[i, 1, k] <- tau
-    }
-  }
-  tau2
-}
-
-.weights_for_df <- function(w) {
-  w / sum(w)
+  out
 }
