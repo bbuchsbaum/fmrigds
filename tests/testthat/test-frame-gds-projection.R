@@ -1,3 +1,6 @@
+skip_if_not_installed("fmridataset")
+skip_if_not_installed("multidesign")
+
 .rectangular_frame_fixture <- function(instrument = FALSE) {
   subjects <- c("sub-02", "sub-01")
   contrasts <- c("task", "baseline", "followup")

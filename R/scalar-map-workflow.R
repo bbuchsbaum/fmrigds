@@ -375,6 +375,8 @@ write_nifti_assays <- function(g,
   if (!is.logical(keep) || length(keep) != nrow(cd)) {
     stop("`subset` must evaluate to one logical value per subject.", call. = FALSE)
   }
+  # Mirror base::subset(): subjects whose condition is NA are dropped.
+  keep <- keep & !is.na(keep)
   subset(plan, subject = rownames(cd)[keep])
 }
 
@@ -384,9 +386,14 @@ write_nifti_assays <- function(g,
 .gds_col_data <- function(x) col_data(x)
 
 .is_image_assay <- function(arr, sp) {
+  n_vox <- if (identical(sp$storage, "packed") && !is.null(sp$mask_idx)) {
+    length(sp$mask_idx)
+  } else {
+    prod(sp$dim)
+  }
   is.array(arr) &&
     length(dim(arr)) == 3L &&
-    dim(arr)[1L] == length(sp$mask_idx %||% seq_len(prod(sp$dim)))
+    dim(arr)[1L] == n_vox
 }
 
 .array_to_nifti_volume <- function(vec, sp) {

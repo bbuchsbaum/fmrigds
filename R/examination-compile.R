@@ -287,6 +287,8 @@ compile_examination_plan <- function(x,
   if (inherits(space, "space_parcels") || inherits(space, "space_sample_labels")) {
     return(as.character(space$labels))
   }
-  if (!is.null(space$mask_idx)) return(as.character(space$mask_idx))
+  if (identical(space$storage, "packed") && !is.null(space$mask_idx)) {
+    return(as.character(space$mask_idx))
+  }
   as.character(seq_len(plan$source$probe$dims[["sample"]]))
 }

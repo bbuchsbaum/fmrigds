@@ -202,6 +202,7 @@ compute <- function(x,
 #' @export
 digest_plan <- function(plan) {
   if (inherits(plan, "fmri_group_plan")) {
+    .require_frame_deps("digest_plan() on an fmri_group_plan")
     design_digest <- digest::digest(
       list(
         observation_ids = plan$design$observation_ids,
