@@ -11,6 +11,11 @@ save_plan(plan, file)
 
 \item{file}{Path to JSON file}
 }
+\value{
+Invisibly returns \code{file}, the path of the written JSON file. The
+file contains the plan's source, metadata, operation nodes and digest
+and can be restored with \code{\link[=load_plan]{load_plan()}}.
+}
 \description{
 Writes the plan's source binding, metadata, and operation nodes to a JSON
 file. Matrices (including \code{Matrix} objects) are stored as numeric data with

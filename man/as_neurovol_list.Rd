@@ -41,12 +41,22 @@ Extract a single assay from a GDS object and return it as a list of
 \code{neuroim2::NeuroVol} objects, one per subject/contrast combination.
 }
 \examples{
-\dontrun{
-# Extract beta maps as list of NeuroVols (one per subject)
-vols <- as_neurovol_list(gds, assay = "beta")
-vols$sub01  # NeuroVol for subject "sub01"
+if (requireNamespace("neuroim2", quietly = TRUE)) {
+  sp4 <- neuroim2::NeuroSpace(c(4, 4, 2, 4), spacing = c(2, 2, 2))
+  vec4d <- neuroim2::NeuroVec(array(rnorm(128), c(4, 4, 2, 4)), sp4)
+  gds <- as_gds(vec4d, along = "subject", subjects = paste0("sub0", 1:4))
 
-# Extract by contrast
-vols_by_con <- as_neurovol_list(gds, assay = "t", by = "contrast")
+  # Extract beta maps as list of NeuroVols (one per subject)
+  vols <- as_neurovol_list(gds, assay = "beta")
+  print(names(vols))
+  print(vols$sub01)  # NeuroVol for subject "sub01"
+
+  # Extract by contrast (here: one subject with three contrasts)
+  sp3 <- neuroim2::NeuroSpace(c(4, 4, 2, 3), spacing = c(2, 2, 2))
+  vec_con <- neuroim2::NeuroVec(array(rnorm(96), c(4, 4, 2, 3)), sp3)
+  gds_con <- as_gds(vec_con, along = "contrast",
+                    contrasts = c("faces", "places", "objects"))
+  vols_by_con <- as_neurovol_list(gds_con, assay = "beta", by = "contrast")
+  print(names(vols_by_con))
 }
 }

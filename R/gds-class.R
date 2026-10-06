@@ -215,11 +215,14 @@ assay.gds <- function(x, name = "beta", ...) x$assays[[name]]
 #'   [list_posthoc()], [write_nifti_assays()]
 #' @export
 #' @examples
-#' \dontrun{
+#' beta <- array(rnorm(5 * 4), c(5, 4, 1))
+#' var <- array(1, c(5, 4, 1))
+#' g <- new_gds(list(beta = beta, var = var), space_sample_labels(letters[1:5]),
+#'              subjects = paste0("s", 1:4), contrasts = "c1")
+#'
 #' fit <- one_sample(g) |> compute()
 #' list_assays(fit)                       # names + roles of computed assays
 #' list_assays(reducer = "meta:re")       # what random-effects would produce
-#' }
 list_assays <- function(x, reducer = NULL, info = TRUE) {
   if (!is.null(reducer)) {
     red <- get_reducer(.normalize_reducer_name(reducer))

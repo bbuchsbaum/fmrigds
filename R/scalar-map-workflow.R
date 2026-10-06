@@ -21,14 +21,28 @@
 #' @return A realised [`gds`] object.
 #' @export
 #' @examples
-#' \dontrun{
-#' g <- gds_from_scalar_maps(
-#'   files = c("sub-01/maps/auc.nii.gz", "sub-02/maps/auc.nii.gz"),
-#'   subject = c("sub-01", "sub-02"),
-#'   contrast = "auc",
-#'   col_data = participants
-#' )
-#' fit <- group_ols(g, ~ group) |> compute()
+#' if (requireNamespace("neuroim2", quietly = TRUE) &&
+#'     requireNamespace("RNifti", quietly = TRUE)) {
+#'   # Write tiny 4x4x2 subject-level metric maps for four subjects
+#'   dir <- tempfile("scalar_maps_")
+#'   dir.create(dir)
+#'   subj <- c("sub-01", "sub-02", "sub-03", "sub-04")
+#'   files <- file.path(dir, paste0(subj, "_auc.nii.gz"))
+#'   for (f in files) RNifti::writeNifti(array(rnorm(32), c(4, 4, 2)), f)
+#'   participants <- data.frame(subject = subj,
+#'                              group = c("control", "control", "patient", "patient"))
+#'
+#'   # Beta-only maps: a unit-variance placeholder is added (with a warning)
+#'   g <- gds_from_scalar_maps(
+#'     files = files,
+#'     subject = subj,
+#'     contrast = "auc",
+#'     col_data = participants
+#'   )
+#'   print(g)
+#'   fit <- group_ols(g, ~ group) |> compute()
+#'
+#'   unlink(dir, recursive = TRUE)
 #' }
 gds_from_scalar_maps <- function(files,
                                  subject = NULL,
@@ -70,11 +84,19 @@ as_scalar_map_gds <- gds_from_scalar_maps
 #' @return A [`gds_plan`][as_plan()] with an OLS reduce node.
 #' @export
 #' @examples
-#' \dontrun{
+#' # Synthetic voxel-like data: 5 samples x 4 subjects x 1 contrast
+#' beta <- array(rnorm(5 * 4), c(5, 4, 1))
+#' var <- array(1, c(5, 4, 1))
+#' g <- new_gds(list(beta = beta, var = var), space_sample_labels(letters[1:5]),
+#'              subjects = paste0("s", 1:4), contrasts = "c1",
+#'              col_data = data.frame(group = c("control", "control",
+#'                                              "patient", "patient"),
+#'                                    row.names = paste0("s", 1:4)))
+#'
 #' fit <- group_ols(g, ~ group) |> compute()
+#' names(assays(fit))
 #' one <- one_sample(g) |> compute()
-#' two <- two_sample(g, group = "diagnosis", baseline = "control") |> compute()
-#' }
+#' two <- two_sample(g, group = "group", baseline = "control") |> compute()
 group_ols <- function(x,
                       formula = ~ 1,
                       col_data = NULL,
@@ -195,9 +217,28 @@ two_sample <- function(x,
 #'   `written`, and `skipped_reason` columns.
 #' @export
 #' @examples
-#' \dontrun{
-#' fit <- group_ols(g, ~ group) |> compute()
-#' manifest <- write_nifti_assays(fit, "group_maps", prefix = "auc")
+#' if (requireNamespace("neuroim2", quietly = TRUE) &&
+#'     requireNamespace("RNifti", quietly = TRUE)) {
+#'   # Write tiny 4x4x2 subject-level metric maps for four subjects
+#'   dir <- tempfile("scalar_maps_")
+#'   dir.create(dir)
+#'   subj <- c("sub-01", "sub-02", "sub-03", "sub-04")
+#'   files <- file.path(dir, paste0(subj, "_auc.nii.gz"))
+#'   for (f in files) RNifti::writeNifti(array(rnorm(32), c(4, 4, 2)), f)
+#'   participants <- data.frame(subject = subj,
+#'                              group = c("control", "control", "patient", "patient"))
+#'
+#'   g <- suppressWarnings(gds_from_scalar_maps(files, subject = subj,
+#'                                              contrast = "auc",
+#'                                              col_data = participants))
+#'   fit <- group_ols(g, ~ group) |> compute()
+#'   manifest <- write_nifti_assays(fit, file.path(dir, "group_maps"),
+#'                                  prefix = "auc",
+#'                                  assays = c("coef:grouppatient", "t_coef:grouppatient"))
+#'   print(manifest[, c("assay", "written")])
+#'   print(basename(manifest$path))
+#'
+#'   unlink(dir, recursive = TRUE)
 #' }
 write_nifti_assays <- function(g,
                                out_dir,

@@ -47,37 +47,28 @@ data. Supports multiple subjects and multiple contrasts, with proper
 variance/SE handling.
 }
 \examples{
-\dontrun{
-# Example 1: Nested list structure (subjects x contrasts)
-beta <- list(
-  `sub-01` = list(
-    faces = neuroim2::read_vol("sub-01_faces_beta.nii.gz"),
-    places = neuroim2::read_vol("sub-01_places_beta.nii.gz")
-  ),
-  `sub-02` = list(
-    faces = neuroim2::read_vol("sub-02_faces_beta.nii.gz"),
-    places = neuroim2::read_vol("sub-02_places_beta.nii.gz")
-  )
-)
-var <- list(
-  `sub-01` = list(
-    faces = neuroim2::read_vol("sub-01_faces_var.nii.gz"),
-    places = neuroim2::read_vol("sub-01_places_var.nii.gz")
-  ),
-  `sub-02` = list(
-    faces = neuroim2::read_vol("sub-02_faces_var.nii.gz"),
-    places = neuroim2::read_vol("sub-02_places_var.nii.gz")
-  )
-)
+if (requireNamespace("neuroim2", quietly = TRUE)) {
+  sp <- neuroim2::NeuroSpace(c(4, 4, 2), spacing = c(2, 2, 2))
+  make_vol <- function(x) neuroim2::NeuroVol(array(x, c(4, 4, 2)), sp)
+  subj <- c("sub-01", "sub-02")
 
-gds_obj <- gds_from_neurovol_nested(beta, var = var)
+  # Example 1: Nested list structure (subjects x contrasts)
+  beta <- lapply(stats::setNames(subj, subj), function(s)
+    list(faces = make_vol(rnorm(32)), places = make_vol(rnorm(32))))
+  var <- lapply(stats::setNames(subj, subj), function(s)
+    list(faces = make_vol(runif(32, 0.5, 1.5)),
+         places = make_vol(runif(32, 0.5, 1.5))))
 
-# Example 2: List of 4D NeuroVecs (each subject has multi-contrast 4D file)
-beta_vecs <- list(
-  `sub-01` = neuroim2::read_vec("sub-01_allcons_beta.nii.gz"),
-  `sub-02` = neuroim2::read_vec("sub-02_allcons_beta.nii.gz")
-)
-gds_obj <- gds_from_neurovol_nested(beta_vecs,
-                                     contrasts = c("faces", "places", "objects"))
+  gds_obj <- gds_from_neurovol_nested(beta, var = var)
+  print(gds_obj)
+
+  # Example 2: List of 4D NeuroVecs (each subject has a multi-contrast 4D image)
+  sp4 <- neuroim2::NeuroSpace(c(4, 4, 2, 3), spacing = c(2, 2, 2))
+  beta_vecs <- lapply(stats::setNames(subj, subj), function(s)
+    neuroim2::NeuroVec(array(rnorm(96), c(4, 4, 2, 3)), sp4))
+  # Without variance maps a unit-variance placeholder is used (with a warning)
+  gds_obj <- gds_from_neurovol_nested(beta_vecs,
+                                      contrasts = c("faces", "places", "objects"))
+  print(contrasts(gds_obj))
 }
 }

@@ -42,22 +42,25 @@ into a GDS. This handles the common case of multiple subjects with a
 single contrast. For multiple contrasts, use \code{\link[=gds_from_neurovol_nested]{gds_from_neurovol_nested()}}.
 }
 \examples{
-\dontrun{
-# Load beta and variance maps for each subject
-beta_vols <- list(
-  `sub-01` = neuroim2::read_vol("sub-01_beta.nii.gz"),
-  `sub-02` = neuroim2::read_vol("sub-02_beta.nii.gz")
-)
-var_vols <- list(
-  `sub-01` = neuroim2::read_vol("sub-01_var.nii.gz"),
-  `sub-02` = neuroim2::read_vol("sub-02_var.nii.gz")
-)
+if (requireNamespace("neuroim2", quietly = TRUE)) {
+  sp <- neuroim2::NeuroSpace(c(4, 4, 2), spacing = c(2, 2, 2))
+  make_vol <- function(x) neuroim2::NeuroVol(array(x, c(4, 4, 2)), sp)
 
-gds_obj <- gds_from_neurovols(beta_vols, var = var_vols)
+  # Beta and variance maps for each subject
+  beta_vols <- list(
+    `sub-01` = make_vol(rnorm(32)),
+    `sub-02` = make_vol(rnorm(32)),
+    `sub-03` = make_vol(rnorm(32))
+  )
+  var_vols <- lapply(beta_vols, function(v) make_vol(runif(32, 0.5, 1.5)))
 
-# With subject covariates
-covars <- data.frame(age = c(25, 30), group = c("A", "B"),
-                     row.names = c("sub-01", "sub-02"))
-gds_obj <- gds_from_neurovols(beta_vols, var = var_vols, col_data = covars)
+  gds_obj <- gds_from_neurovols(beta_vols, var = var_vols)
+  print(gds_obj)
+
+  # With subject covariates
+  covars <- data.frame(age = c(25, 30, 35), group = c("A", "B", "A"),
+                       row.names = c("sub-01", "sub-02", "sub-03"))
+  gds_obj <- gds_from_neurovols(beta_vols, var = var_vols, col_data = covars)
+  print(col_data(gds_obj))
 }
 }

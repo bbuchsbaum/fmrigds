@@ -159,14 +159,24 @@ summary.image_catalog <- function(object, ...) {
 #' @export
 #'
 #' @examples
-#' \dontrun{
+#' # Create a small study tree (empty placeholder files are enough for discovery)
+#' root <- tempfile("study_")
+#' for (s in c("01", "02", "03")) {
+#'   d <- file.path(root, paste0("sub-", s), "analysis")
+#'   dir.create(d, recursive = TRUE)
+#'   invisible(file.create(file.path(d, c("cope1.nii.gz", "varcope1.nii.gz"))))
+#' }
+#'
 #' # Discover files with subject extraction
 #' catalog <- image_catalog(
-#'   root = "study",
+#'   root = root,
 #'   pattern = "sub-*/analysis/*.nii.gz",
 #'   path_regex = "sub-(?<subject>[^/]+)"
 #' )
-#' }
+#' catalog
+#' catalog$metadata[, c("basename", "subject")]
+#'
+#' unlink(root, recursive = TRUE)
 image_catalog <- function(root,
                           pattern = "**/*.nii*",
                           path_regex = NULL,
@@ -364,10 +374,18 @@ image_catalog <- function(root,
 #' @export
 #'
 #' @examples
-#' \dontrun{
+#' root <- tempfile("study_")
+#' d <- file.path(root, "sub-01")
+#' dir.create(d, recursive = TRUE)
+#' invisible(file.create(file.path(d, c("run-1_faces.nii", "run-2_faces.nii",
+#'                                      "run-1_houses.nii"))))
+#' catalog <- image_catalog(root, "sub-*/*.nii")
+#'
 #' catalog <- assign_meta(catalog, "run", "run-([0-9]+)", source = "basename")
-#' catalog <- assign_meta(catalog, "contrast", "([^_]+)\\.nii", replacement = "\\1")
-#' }
+#' catalog <- assign_meta(catalog, "contrast", "_([^_]+)\\.nii", replacement = "\\1")
+#' catalog$metadata[, c("basename", "run", "contrast")]
+#'
+#' unlink(root, recursive = TRUE)
 assign_meta <- function(catalog,
                         column,
                         pattern,
@@ -412,10 +430,21 @@ assign_meta <- function(catalog,
 #' @export
 #'
 #' @examples
-#' \dontrun{
+#' # Build a tiny study tree with empty placeholder files
+#' root <- tempfile("study_")
+#' for (s in c("01", "02")) {
+#'   d <- file.path(root, paste0("sub-", s))
+#'   dir.create(d, recursive = TRUE)
+#'   invisible(file.create(file.path(d, c("cope1.nii.gz", "varcope1.nii.gz"))))
+#' }
+#' catalog <- image_catalog(root, "sub-*/*.nii.gz",
+#'                          path_regex = "sub-(?<subject>[^/]+)")
+#'
 #' demographics <- data.frame(subject = c("01", "02"), age = c(25, 30))
 #' catalog <- join_meta(catalog, demographics, by = "subject")
-#' }
+#' catalog$metadata[, c("basename", "subject", "age")]
+#'
+#' unlink(root, recursive = TRUE)
 join_meta <- function(catalog,
                       data,
                       by,
@@ -485,19 +514,31 @@ join_meta <- function(catalog,
 #' @export
 #'
 #' @examples
-#' \dontrun{
-#' # By filename pattern
+#' # Build a tiny study tree with empty placeholder files
+#' root <- tempfile("study_")
+#' for (s in c("01", "02")) {
+#'   d <- file.path(root, paste0("sub-", s))
+#'   dir.create(d, recursive = TRUE)
+#'   invisible(file.create(file.path(d, c("cope1.nii.gz", "varcope1.nii.gz"))))
+#' }
+#' catalog <- image_catalog(root, "sub-*/*.nii.gz",
+#'                          path_regex = "sub-(?<subject>[^/]+)")
+#'
+#' # By filename pattern (regex matched against basenames)
 #' catalog <- map_assays(catalog,
 #'   beta = "^cope[0-9]+\\.nii",
 #'   var = "^varcope[0-9]+\\.nii"
 #' )
 #'
 #' # By metadata column value
+#' catalog <- assign_meta(catalog, "stat_type", "^([a-z]+)[0-9]+")
 #' catalog <- map_assays(catalog,
 #'   beta = list(stat_type = "cope"),
 #'   var = list(stat_type = "varcope")
 #' )
-#' }
+#' summary(catalog)
+#'
+#' unlink(root, recursive = TRUE)
 map_assays <- function(catalog, ...) {
   stopifnot(inherits(catalog, "image_catalog"))
 
@@ -563,12 +604,28 @@ map_assays <- function(catalog, ...) {
 #' @export
 #'
 #' @examples
-#' \dontrun{
+#' # Build a tiny study tree with empty placeholder files
+#' root <- tempfile("study_")
+#' for (s in c("01", "02")) {
+#'   d <- file.path(root, paste0("sub-", s))
+#'   dir.create(d, recursive = TRUE)
+#'   invisible(file.create(file.path(d, c("cope1.nii.gz", "varcope1.nii.gz"))))
+#' }
+#' catalog <- image_catalog(root, "sub-*/*.nii.gz",
+#'                          path_regex = "sub-(?<subject>[^/]+)")
+#'
 #' report <- validate(catalog)
 #' print(report)
 #'
 #' report <- validate(catalog, expect = c("cope1.nii.gz", "varcope1.nii.gz"))
-#' }
+#'
+#' # Remove one file to see an inconsistency being reported
+#' invisible(file.remove(file.path(root, "sub-02", "varcope1.nii.gz")))
+#' catalog <- image_catalog(root, "sub-*/*.nii.gz",
+#'                          path_regex = "sub-(?<subject>[^/]+)")
+#' validate(catalog)
+#'
+#' unlink(root, recursive = TRUE)
 validate.image_catalog <- function(x,
                                    by = "subject",
                                    expect = NULL,
@@ -765,9 +822,21 @@ print.catalog_validation_report <- function(x, ...) {
 #' @export
 #'
 #' @examples
-#' \dontrun{
-#' write_catalog(catalog, "my_study_manifest.json")
+#' # Build a tiny study tree with empty placeholder files
+#' root <- tempfile("study_")
+#' for (s in c("01", "02")) {
+#'   d <- file.path(root, paste0("sub-", s))
+#'   dir.create(d, recursive = TRUE)
+#'   invisible(file.create(file.path(d, c("cope1.nii.gz", "varcope1.nii.gz"))))
 #' }
+#' catalog <- image_catalog(root, "sub-*/*.nii.gz",
+#'                          path_regex = "sub-(?<subject>[^/]+)")
+#'
+#' manifest <- tempfile(fileext = ".json")
+#' write_catalog(catalog, manifest)
+#' file.exists(manifest)
+#'
+#' unlink(c(manifest, root), recursive = TRUE)
 write_catalog <- function(catalog, file) {
   stopifnot(inherits(catalog, "image_catalog"))
 
@@ -796,9 +865,23 @@ write_catalog <- function(catalog, file) {
 #' @export
 #'
 #' @examples
-#' \dontrun{
-#' catalog <- read_catalog("my_study_manifest.json")
+#' # Build a tiny study tree with empty placeholder files
+#' root <- tempfile("study_")
+#' for (s in c("01", "02")) {
+#'   d <- file.path(root, paste0("sub-", s))
+#'   dir.create(d, recursive = TRUE)
+#'   invisible(file.create(file.path(d, c("cope1.nii.gz", "varcope1.nii.gz"))))
 #' }
+#' catalog <- image_catalog(root, "sub-*/*.nii.gz",
+#'                          path_regex = "sub-(?<subject>[^/]+)")
+#'
+#' manifest <- tempfile(fileext = ".json")
+#' write_catalog(catalog, manifest)
+#'
+#' catalog2 <- read_catalog(manifest)
+#' catalog2
+#'
+#' unlink(c(manifest, root), recursive = TRUE)
 read_catalog <- function(file) {
   if (!file.exists(file)) {
     stop("Catalog file does not exist: ", file, call. = FALSE)
@@ -838,13 +921,27 @@ read_catalog <- function(file) {
 #' @export
 #'
 #' @examples
-#' \dontrun{
+#' # Build a tiny study tree with empty placeholder files
+#' root <- tempfile("study_")
+#' for (s in c("01", "02")) {
+#'   d <- file.path(root, paste0("sub-", s))
+#'   dir.create(d, recursive = TRUE)
+#'   invisible(file.create(file.path(d, c("cope1.nii.gz", "varcope1.nii.gz"))))
+#' }
+#' catalog <- image_catalog(root, "sub-*/*.nii.gz",
+#'                          path_regex = "sub-(?<subject>[^/]+)")
+#'
+#' catalog <- assign_meta(catalog, "stat_type", "^([a-z]+)[0-9]+")
+#'
 #' # Keep only files from subject "01"
 #' sub_catalog <- subset(catalog, subject == "01")
+#' sub_catalog
 #'
 #' # Multiple conditions
-#' sub_catalog <- subset(catalog, subject %in% c("01", "02") & run == "1")
-#' }
+#' sub_catalog <- subset(catalog, subject %in% c("01", "02") & stat_type == "cope")
+#' sub_catalog$metadata$basename
+#'
+#' unlink(root, recursive = TRUE)
 subset.image_catalog <- function(x, subset, ...) {
   meta <- x$metadata
 
@@ -913,13 +1010,28 @@ unique.image_catalog <- function(x, incomparables = FALSE, column = "subject", .
 #' @export
 #'
 #' @examples
-#' \dontrun{
-#' catalog <- image_catalog("study/", "sub-*/stats/*.nii.gz",
-#'                          path_regex = "sub-(?<subject>[^/]+)") |>
-#'   map_assays(beta = "^cope", var = "^varcope")
+#' if (requireNamespace("neuroim2", quietly = TRUE) &&
+#'     requireNamespace("RNifti", quietly = TRUE)) {
+#'   # Write tiny 4x4x2 beta and SE maps for three subjects
+#'   root <- tempfile("study_")
+#'   for (s in c("01", "02", "03")) {
+#'     d <- file.path(root, paste0("sub-", s), "stats")
+#'     dir.create(d, recursive = TRUE)
+#'     RNifti::writeNifti(array(rnorm(32), c(4, 4, 2)),
+#'                        file.path(d, paste0("sub-", s, "_beta.nii.gz")))
+#'     RNifti::writeNifti(array(0.5, c(4, 4, 2)),
+#'                        file.path(d, paste0("sub-", s, "_se.nii.gz")))
+#'   }
 #'
-#' plan <- as_gds(catalog, mask = "mask.nii.gz")
-#' result <- compute(plan)
+#'   catalog <- image_catalog(root, "sub-*/stats/*.nii.gz",
+#'                            path_regex = "sub-(?<subject>[^/]+)") |>
+#'     map_assays(beta = "_beta", se = "_se")
+#'
+#'   plan <- as_gds(catalog)
+#'   result <- compute(plan)
+#'   print(result)
+#'
+#'   unlink(root, recursive = TRUE)
 #' }
 as_gds.image_catalog <- function(x, mask = NULL, ...) {
   stopifnot(inherits(x, "image_catalog"))

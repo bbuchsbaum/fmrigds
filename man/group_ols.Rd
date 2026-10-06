@@ -50,9 +50,17 @@ workflows. They return a lazy GDS plan; call \code{\link[=compute]{compute()}} t
 fitted maps.
 }
 \examples{
-\dontrun{
+# Synthetic voxel-like data: 5 samples x 4 subjects x 1 contrast
+beta <- array(rnorm(5 * 4), c(5, 4, 1))
+var <- array(1, c(5, 4, 1))
+g <- new_gds(list(beta = beta, var = var), space_sample_labels(letters[1:5]),
+             subjects = paste0("s", 1:4), contrasts = "c1",
+             col_data = data.frame(group = c("control", "control",
+                                             "patient", "patient"),
+                                   row.names = paste0("s", 1:4)))
+
 fit <- group_ols(g, ~ group) |> compute()
+names(assays(fit))
 one <- one_sample(g) |> compute()
-two <- two_sample(g, group = "diagnosis", baseline = "control") |> compute()
-}
+two <- two_sample(g, group = "group", baseline = "control") |> compute()
 }
