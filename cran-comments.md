@@ -13,6 +13,10 @@
 
 ## R CMD check results
 
-0 errors | 0 warnings | 1 note
+Local check (R 4.3.3, Ubuntu 24.04, `_R_CHECK_LIMIT_CORES_=true`):
+0 errors | 0 warnings | 2 notes
 
-* New submission.
+* New submission / Suggests not available for checking: the r-universe
+  packages listed above.
+* Installed package size: about 4 MB of `libs` (RcppArmadillo kernels) and
+  about 5 MB of `doc`, because each HTML vignette embeds the bundled web fonts.

@@ -99,8 +99,8 @@ most users do not need this because \code{\link[=gds]{gds()}} creates the source
 automatically.
 }
 
-If you want that conversion to be explicit, use \code{\link[=as_plan]{as_plan()}} or its alias
-\code{\link[=plan]{plan()}} before calling \code{reduce()}.
+If you want that conversion to be explicit, use \code{\link[=as_plan]{as_plan()}}
+before calling \code{reduce()}.
 
 For worked examples, see \code{vignette("fmrigds")} for the basic source -> plan
 -> compute workflow and \code{vignette("as-plan-and-spatial-fdr")} for chaining
@@ -134,5 +134,5 @@ non-finite effects/design values or non-finite, nonpositive variances.
 }
 
 \seealso{
-\code{\link[=gds]{gds()}}, \code{\link[=compute]{compute()}}, \code{\link[=as_plan]{as_plan()}}, \code{\link[=plan]{plan()}}, \code{\link[=new_gds]{new_gds()}}, \code{\link[=gds_source]{gds_source()}}
+\code{\link[=gds]{gds()}}, \code{\link[=compute]{compute()}}, \code{\link[=as_plan]{as_plan()}}, \code{\link[=new_gds]{new_gds()}}, \code{\link[=gds_source]{gds_source()}}
 }

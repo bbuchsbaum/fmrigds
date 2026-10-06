@@ -36,8 +36,8 @@
 #'   most users do not need this because [gds()] creates the source binding
 #'   automatically.
 #'
-#' If you want that conversion to be explicit, use [as_plan()] or its alias
-#' [plan()] before calling `reduce()`.
+#' If you want that conversion to be explicit, use [as_plan()]
+#' before calling `reduce()`.
 #'
 #' For worked examples, see `vignette("fmrigds")` for the basic source -> plan
 #' -> compute workflow and `vignette("as-plan-and-spatial-fdr")` for chaining
@@ -97,7 +97,7 @@
 #'   `p_g`, `p_perm`, `p_fwer`.
 #'
 #' @return Updated plan
-#' @seealso [gds()], [compute()], [as_plan()], [plan()], [new_gds()], [gds_source()]
+#' @seealso [gds()], [compute()], [as_plan()], [new_gds()], [gds_source()]
 #' @export
 reduce <- function(x,
                    method = c("fixed", "random", "stouffer", "fisher"),
