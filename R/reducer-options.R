@@ -13,9 +13,10 @@ validate_reducer_options <- function(schema, opts) {
       if (is.null(opts[[nm]])) {
         # default to first allowed value
         opts[[nm]] <- allowed[[1L]]
-      } else if (!opts[[nm]] %in% allowed) {
+      } else if (!length(opts[[nm]]) || !isTRUE(all(opts[[nm]] %in% allowed))) {
         stop(sprintf("Invalid option '%s' value '%s'. Allowed: %s. How to fix: choose one of the allowed values.",
-                     nm, as.character(opts[[nm]]), paste(allowed, collapse = ", ")), call. = FALSE)
+                     nm, paste(as.character(opts[[nm]]), collapse = ", "),
+                     paste(allowed, collapse = ", ")), call. = FALSE)
       }
     }
   }

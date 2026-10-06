@@ -102,11 +102,10 @@ BEGIN_RCPP
 END_RCPP
 }
 // set_omp_threads
-void set_omp_threads(const int n);
+void set_omp_threads(SEXP n);
 RcppExport SEXP _fmrigds_set_omp_threads(SEXP nSEXP) {
 BEGIN_RCPP
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< const int >::type n(nSEXP);
+    Rcpp::traits::input_parameter< SEXP >::type n(nSEXP);
     set_omp_threads(n);
     return R_NilValue;
 END_RCPP
@@ -210,8 +209,8 @@ BEGIN_RCPP
 END_RCPP
 }
 // perm_onesample_t_cpp
-Rcpp::List perm_onesample_t_cpp(const arma::mat& beta, const arma::imat& sign_mat, const int tail, const int min_subj);
-RcppExport SEXP _fmrigds_perm_onesample_t_cpp(SEXP betaSEXP, SEXP sign_matSEXP, SEXP tailSEXP, SEXP min_subjSEXP) {
+Rcpp::List perm_onesample_t_cpp(const arma::mat& beta, const arma::imat& sign_mat, const int tail, const int min_subj, const bool skip_first);
+RcppExport SEXP _fmrigds_perm_onesample_t_cpp(SEXP betaSEXP, SEXP sign_matSEXP, SEXP tailSEXP, SEXP min_subjSEXP, SEXP skip_firstSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -219,22 +218,25 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< const arma::imat& >::type sign_mat(sign_matSEXP);
     Rcpp::traits::input_parameter< const int >::type tail(tailSEXP);
     Rcpp::traits::input_parameter< const int >::type min_subj(min_subjSEXP);
-    rcpp_result_gen = Rcpp::wrap(perm_onesample_t_cpp(beta, sign_mat, tail, min_subj));
+    Rcpp::traits::input_parameter< const bool >::type skip_first(skip_firstSEXP);
+    rcpp_result_gen = Rcpp::wrap(perm_onesample_t_cpp(beta, sign_mat, tail, min_subj, skip_first));
     return rcpp_result_gen;
 END_RCPP
 }
 // perm_twosample_t_cpp
-Rcpp::List perm_twosample_t_cpp(const arma::mat& beta, const arma::imat& group_mat, const int tail, const bool welch, const int min_group);
-RcppExport SEXP _fmrigds_perm_twosample_t_cpp(SEXP betaSEXP, SEXP group_matSEXP, SEXP tailSEXP, SEXP welchSEXP, SEXP min_groupSEXP) {
+Rcpp::List perm_twosample_t_cpp(const arma::mat& beta, const arma::imat& group_mat, const Rcpp::IntegerVector& group, const int tail, const bool welch, const int min_group, const bool skip_first);
+RcppExport SEXP _fmrigds_perm_twosample_t_cpp(SEXP betaSEXP, SEXP group_matSEXP, SEXP groupSEXP, SEXP tailSEXP, SEXP welchSEXP, SEXP min_groupSEXP, SEXP skip_firstSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
     Rcpp::traits::input_parameter< const arma::mat& >::type beta(betaSEXP);
     Rcpp::traits::input_parameter< const arma::imat& >::type group_mat(group_matSEXP);
+    Rcpp::traits::input_parameter< const Rcpp::IntegerVector& >::type group(groupSEXP);
     Rcpp::traits::input_parameter< const int >::type tail(tailSEXP);
     Rcpp::traits::input_parameter< const bool >::type welch(welchSEXP);
     Rcpp::traits::input_parameter< const int >::type min_group(min_groupSEXP);
-    rcpp_result_gen = Rcpp::wrap(perm_twosample_t_cpp(beta, group_mat, tail, welch, min_group));
+    Rcpp::traits::input_parameter< const bool >::type skip_first(skip_firstSEXP);
+    rcpp_result_gen = Rcpp::wrap(perm_twosample_t_cpp(beta, group_mat, group, tail, welch, min_group, skip_first));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -254,8 +256,8 @@ static const R_CallMethodDef CallEntries[] = {
     {"_fmrigds_stouffer_combine_cpp", (DL_FUNC) &_fmrigds_stouffer_combine_cpp, 3},
     {"_fmrigds_fisher_combine_cpp", (DL_FUNC) &_fmrigds_fisher_combine_cpp, 2},
     {"_fmrigds_lancaster_combine_cpp", (DL_FUNC) &_fmrigds_lancaster_combine_cpp, 3},
-    {"_fmrigds_perm_onesample_t_cpp", (DL_FUNC) &_fmrigds_perm_onesample_t_cpp, 4},
-    {"_fmrigds_perm_twosample_t_cpp", (DL_FUNC) &_fmrigds_perm_twosample_t_cpp, 5},
+    {"_fmrigds_perm_onesample_t_cpp", (DL_FUNC) &_fmrigds_perm_onesample_t_cpp, 5},
+    {"_fmrigds_perm_twosample_t_cpp", (DL_FUNC) &_fmrigds_perm_twosample_t_cpp, 7},
     {NULL, NULL, 0}
 };
 

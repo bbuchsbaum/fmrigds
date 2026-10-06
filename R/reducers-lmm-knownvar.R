@@ -219,13 +219,18 @@
   if (!identical(dim(beta), dim(sampling_var)) || length(dim(beta)) != 3L) {
     stop(method, " expects aligned beta and var arrays [sample x subject x contrast]", call. = FALSE)
   }
-  if (any(sampling_var <= 0, na.rm = TRUE)) {
-    stop(method, " requires strictly positive sampling variances", call. = FALSE)
-  }
-
   Y <- .stack_joint_beta_cube(beta)
   S <- .stack_joint_beta_cube(sampling_var)
-  valid <- colSums(!is.finite(Y) | !is.finite(S)) == 0L
+  # Non-positive sampling variances invalidate only the affected samples (NA
+  # output); they must not abort the whole run.
+  nonpositive <- colSums(is.finite(S) & S <= 0) > 0L
+  if (any(nonpositive)) {
+    warning(sprintf(
+      "%s: %d of %d samples have non-positive sampling variances and were set to NA.",
+      method, sum(nonpositive), ncol(S)
+    ), call. = FALSE)
+  }
+  valid <- colSums(!is.finite(Y) | !is.finite(S)) == 0L & !nonpositive
   n_samples <- ncol(Y)
   coef_names <- design$X_colnames %||% paste0("X", seq_len(ncol(design$X)))
   p <- length(coef_names)
@@ -282,6 +287,8 @@
       fit_out$corr_intercept_slope[[j]] <- sample_fit$components$corr_intercept_slope
     }
   }
+
+  fit_out <- .lmm_apply_coef_df(fit_out, design)
 
   design_info <- list(
     method = method,
