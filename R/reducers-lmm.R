@@ -1,5 +1,25 @@
 # Restricted repeated-measures Gaussian LMM reducers -------------------------
 
+#' @name reducer-lmm
+#' @rdname reducer-lmm
+#' @section Degrees of freedom (between/within):
+#' Fixed-effect tests use per-coefficient degrees of freedom, exposed as
+#' `df_coef:<term>` assays (the scalar `df_res` assay is unchanged and still
+#' reports `N*K - p`). A design column that is constant within every subject
+#' (a between-subject term, including the intercept) uses
+#' `df = N - rank(X_between)`, where `X_between` holds all between-subject
+#' columns at one row per subject. All other (within-subject) columns use the
+#' residual `N*K - p`. `p_coef:<term>` is computed from `df_coef:<term>`. This
+#' supersedes the single residual-df rule described above for between-subject
+#' terms; it is a containment-style approximation, not Satterthwaite or
+#' Kenward--Roger.
+#'
+#' `converged` reflects the covariance-parameter optimizer: it is 0 when the
+#' optimizer reports failure or a variance parameter is pinned at its upper
+#' search bound (a diverging variance), and 1 otherwise (zero-variance
+#' boundary estimates count as converged).
+NULL
+
 .lmm_default_contrast_data <- function(contrasts) {
   data.frame(
     contrast = contrasts,
@@ -140,11 +160,38 @@
     }
   }
 
+  if (is.null(best)) {
+    if (is.finite(obj0)) {
+      # Only the lambda = 0 (no random intercept) fit is evaluable.
+      lambda <- 0
+      attr(lambda, "converged") <- 1
+      return(lambda)
+    }
+    stop(
+      "lmm:ri failed to optimize the random-intercept variance ratio: the REML/ML ",
+      "objective was non-finite for every candidate lambda (check for a singular ",
+      "fixed-effects design or degenerate data).",
+      call. = FALSE
+    )
+  }
+
   lambda <- exp(best$minimum)
+  # An optimum pinned at the upper search bound means the variance ratio is
+  # diverging; flag it as not converged. The lower bound (lambda -> 0) is a
+  # legitimate boundary estimate and is handled by the lambda = 0 comparison.
+  upper_bound <- max(vapply(intervals, function(iv) iv[[2L]], numeric(1)))
+  converged <- if (best$minimum >= upper_bound - 1e-3) 0 else 1
   if (is.finite(obj0) && obj0 <= best_obj) {
     lambda <- 0
+    converged <- 1
   }
+  attr(lambda, "converged") <- converged
   lambda
+}
+
+.lmm_converged_flag <- function(x) {
+  flag <- attr(x, "converged", exact = TRUE)
+  if (is.null(flag)) 1 else as.numeric(flag)
 }
 
 .lmm_add_inference <- function(fit) {
@@ -154,10 +201,58 @@
   fit
 }
 
+# Between/within ("containment") degrees of freedom ---------------------------
+#
+# A fixed-effect column that is constant within every subject block is a
+# between-subject term. Its information comes from subject-level variation
+# only, so its t-test uses df = N - rank(X_between), where X_between holds the
+# between-subject columns (including the intercept) at one row per subject.
+# Every other (within-subject) column keeps the residual df N*K - p. Using
+# N*K - p for between-subject terms is anti-conservative.
+.lmm_between_within_df <- function(X, n_repeat) {
+  n_obs <- nrow(X)
+  n_repeat <- as.integer(n_repeat)
+  if (n_repeat < 1L || n_obs %% n_repeat != 0L) {
+    return(list(between = rep(FALSE, ncol(X)), df_between = NA_real_))
+  }
+  n_subject <- n_obs %/% n_repeat
+  first_rows <- seq.int(1L, n_obs, by = n_repeat)
+  between <- vapply(seq_len(ncol(X)), function(j) {
+    col <- X[, j]
+    ref <- rep(col[first_rows], each = n_repeat)
+    tol <- 1e-10 * max(1, max(abs(col)))
+    all(abs(col - ref) <= tol)
+  }, logical(1))
+  if (!any(between)) {
+    return(list(between = between, df_between = NA_real_))
+  }
+  Xb <- X[first_rows, between, drop = FALSE]
+  rank_b <- qr(Xb)$rank
+  list(between = between, df_between = as.numeric(n_subject - rank_b))
+}
+
+# Recompute t/p with per-coefficient df and store them as `df_coef` (p x B).
+.lmm_apply_coef_df <- function(fit, design) {
+  info <- .lmm_between_within_df(design$X, design$n_repeat)
+  p <- nrow(fit$coef)
+  B <- ncol(fit$coef)
+  dfmat <- matrix(as.numeric(fit$df_res), nrow = p, ncol = B, byrow = TRUE)
+  if (any(info$between)) {
+    df_b <- info$df_between
+    if (!is.finite(df_b) || df_b < 1) df_b <- NA_real_
+    row_vals <- ifelse(is.finite(as.numeric(fit$df_res)), df_b, NA_real_)
+    dfmat[info$between, ] <- matrix(row_vals, nrow = sum(info$between), ncol = B, byrow = TRUE)
+  }
+  fit$t_coef <- fit$coef / fit$se_coef
+  fit$p_coef <- 2 * stats::pt(-abs(fit$t_coef), df = dfmat)
+  fit$df_coef <- dfmat
+  fit
+}
+
 .lmm_build_result_arrays <- function(fit, coef_names, n_samples) {
   arr3 <- function(x) array(as.numeric(x), dim = c(n_samples, 1L, 1L))
   out <- list()
-  scalar_names <- setdiff(names(fit), c("coef", "se_coef", "t_coef", "p_coef"))
+  scalar_names <- setdiff(names(fit), c("coef", "se_coef", "t_coef", "p_coef", "df_coef"))
   for (nm in scalar_names) {
     out[[nm]] <- arr3(fit[[nm]])
   }
@@ -168,6 +263,9 @@
     out[[paste0("se_coef:", nm)]] <- arr3(fit$se_coef[j, ])
     out[[paste0("t_coef:", nm)]] <- arr3(fit$t_coef[j, ])
     out[[paste0("p_coef:", nm)]] <- arr3(fit$p_coef[j, ])
+    if (!is.null(fit$df_coef)) {
+      out[[paste0("df_coef:", nm)]] <- arr3(fit$df_coef[j, ])
+    }
   }
   out
 }
@@ -296,13 +394,29 @@
   if (is.null(best)) {
     stop("Failed to optimize pooled theta for lmm:ri_slope1", call. = FALSE)
   }
-  best$par
+  par <- best$par
+  # Converged = optimizer reported success and no parameter is pinned at an
+  # upper search bound (a diverging variance). Log-SD parameters at the lower
+  # bound are legitimate zero-variance boundary estimates. For the full
+  # covariance, the unconstrained off-diagonal parameter at either bound is
+  # also flagged.
+  tol <- 1e-3
+  pinned <- par >= bounds$upper - tol
+  if (identical(covariance, "full")) {
+    pinned[2L] <- pinned[2L] || par[2L] <= bounds$lower[2L] + tol
+  }
+  converged <- identical(as.integer(best$convergence), 0L) && !any(pinned)
+  attr(par, "converged") <- as.numeric(converged)
+  par
 }
 
 .lmm_fit_ri_pooled <- function(Y_valid, design, fit_mode) {
   lambda <- .optimize_lmm_ri_theta(Y_valid, design$X, n_repeat = design$n_repeat, fit = fit_mode)
   fit_valid <- lmm_ri_fit_cpp(Y_valid, design$X, n_repeat = design$n_repeat, lambda = lambda, fit = fit_mode)
   fit_valid <- .lmm_add_inference(fit_valid)
+  # The compiled fit only evaluates a fixed lambda; convergence is decided by
+  # the optimizer in R.
+  fit_valid$converged <- rep(.lmm_converged_flag(lambda), ncol(Y_valid))
   fit_valid
 }
 
@@ -343,6 +457,7 @@
     )
     fit_j <- lmm_ri_fit_cpp(yj, design$X, n_repeat = design$n_repeat, lambda = lambda_j, fit = fit_mode)
     fit_j <- .lmm_add_inference(fit_j)
+    fit_j$converged <- .lmm_converged_flag(lambda_j)
 
     fit_valid$coef[, j] <- fit_j$coef[, 1]
     fit_valid$se_coef[, j] <- fit_j$se_coef[, 1]
@@ -380,6 +495,7 @@
     fit = fit_mode
   )
   fit_valid <- .lmm_add_inference(fit_valid)
+  fit_valid$converged <- rep(.lmm_converged_flag(theta_par), ncol(Y_valid))
   list(fit = fit_valid, theta = theta_components, par = theta_par)
 }
 
@@ -447,6 +563,7 @@
       fit = fit_mode
     )
     fit_j <- .lmm_add_inference(fit_j)
+    fit_j$converged <- .lmm_converged_flag(theta_par_j)
 
     sigma2_j <- fit_j$sigma2[[1L]]
     fit_valid$coef[, j] <- fit_j$coef[, 1]
@@ -527,6 +644,8 @@
     fit_out$t_coef <- matrix(NA_real_, nrow = p, ncol = n_samples)
     fit_out$p_coef <- matrix(NA_real_, nrow = p, ncol = n_samples)
   }
+
+  fit_out <- .lmm_apply_coef_df(fit_out, design)
 
   design_info <- list(
     method = "lmm:ri",
@@ -631,6 +750,8 @@
     fit_out$corr_intercept_slope[valid] <- fit_valid$corr_intercept_slope
   }
 
+  fit_out <- .lmm_apply_coef_df(fit_out, design)
+
   design_info <- list(
     method = "lmm:ri_slope1",
     formula = design$formula,
@@ -666,7 +787,7 @@ register_lmm_reducers <- function() {
     name = "lmm:ri",
     fun = .fit_lmm_ri_reducer,
     requires = c("beta"),
-    provides = c("coef", "se_coef", "t_coef", "p_coef", "sigma2", "vc_intercept", "vc_resid", "df_res", "logLik", "converged", "lambda"),
+    provides = c("coef", "se_coef", "t_coef", "p_coef", "df_coef", "sigma2", "vc_intercept", "vc_resid", "df_res", "logLik", "converged", "lambda"),
     options_schema = list(fit = c("REML", "ML"), theta_mode = c("pooled", "voxelwise")),
     input_shape = "joint_contrast"
   )
@@ -675,7 +796,7 @@ register_lmm_reducers <- function() {
     fun = .fit_lmm_ri_slope1_reducer,
     requires = c("beta"),
     provides = c(
-      "coef", "se_coef", "t_coef", "p_coef", "sigma2",
+      "coef", "se_coef", "t_coef", "p_coef", "df_coef", "sigma2",
       "vc_intercept", "vc_slope", "vc_cov_intercept_slope", "vc_resid",
       "df_res", "logLik", "converged",
       "lambda_intercept", "lambda_slope", "lambda_cov_intercept_slope",
@@ -693,7 +814,7 @@ register_lmm_reducers <- function() {
     fun = .fit_lmm_ri_knownvar_reducer,
     requires = c("beta", "var"),
     provides = c(
-      "coef", "se_coef", "t_coef", "p_coef", "sigma2",
+      "coef", "se_coef", "t_coef", "p_coef", "df_coef", "sigma2",
       "vc_intercept", "vc_resid", "sampling_var_mean",
       "df_res", "logLik", "converged"
     ),
@@ -714,7 +835,7 @@ register_lmm_reducers <- function() {
     fun = .fit_lmm_ri_slope1_knownvar_reducer,
     requires = c("beta", "var"),
     provides = c(
-      "coef", "se_coef", "t_coef", "p_coef", "sigma2",
+      "coef", "se_coef", "t_coef", "p_coef", "df_coef", "sigma2",
       "vc_intercept", "vc_slope", "vc_cov_intercept_slope", "vc_resid",
       "corr_intercept_slope", "sampling_var_mean",
       "df_res", "logLik", "converged"

@@ -274,7 +274,8 @@ core_fisher_kernel <- function(beta = NULL, var = NULL, X = NULL, df = NULL, opt
   for (j in seq_len(n_cols)) {
     ok <- is.finite(p[, j])
     if (!any(ok)) next
-    X2[j] <- sum(stats::qchisq(1 - p[ok, j], df = 2 * dfw[ok]))
+    # Upper-tail quantile keeps tiny p-values finite (1 - p rounds to 1).
+    X2[j] <- sum(stats::qchisq(p[ok, j], df = 2 * dfw[ok], lower.tail = FALSE))
     dfc[j] <- 2 * sum(dfw[ok])
   }
   bad <- k < as.integer(min_subj)
@@ -384,22 +385,36 @@ core_lancaster_kernel <- function(beta = NULL, var = NULL, X = NULL, df = NULL, 
   res
 }
 
+# Decide whether row 1 of a permutation matrix is the identity (observed)
+# relabelling. The identity row is excluded from the null set so that the
+# observed statistic is never double counted: p = (1 + #{null >= obs}) /
+# (1 + n_null).
+.perm_first_row_is_identity <- function(mat, identity_row, generated, include_observed) {
+  if (generated) return(isTRUE(include_observed))
+  nrow(mat) >= 1L && identical(as.integer(mat[1L, ]), as.integer(identity_row))
+}
+
 core_perm_onesample_kernel <- function(beta, var = NULL, X = NULL, df = NULL, opts = list()) {
   if (is.null(beta)) stop("perm:onesample requires beta", call. = FALSE)
   n_perm <- opts$n_perm %||% 5000L
+  include_observed <- opts$include_observed %||% FALSE
+  generated <- is.null(opts$signs)
   signs <- opts$signs %||% .make_sign_matrix(
     n_subject = nrow(beta),
     n_perm = n_perm,
     seed = opts$seed %||% NULL,
-    include_observed = opts$include_observed %||% FALSE
+    include_observed = include_observed
   )
+  storage.mode(signs) <- "integer"
+  skip_first <- .perm_first_row_is_identity(signs, rep(1L, nrow(beta)), generated, include_observed)
   tail <- .perm_tail_code(opts$alternative %||% "two.sided")
   if (exists("perm_onesample_t_cpp", mode = "function")) { # nocov start
     res <- perm_onesample_t_cpp(
       beta,
       signs,
       tail = tail,
-      min_subj = opts$min_subjects %||% 2L
+      min_subj = opts$min_subjects %||% 2L,
+      skip_first = skip_first
     )
   } else {
     stop("perm:onesample requires compiled C++ support", call. = FALSE)
@@ -411,20 +426,28 @@ core_perm_twosample_kernel <- function(beta, var = NULL, X = NULL, df = NULL, op
   if (is.null(beta)) stop("perm:twosample requires beta", call. = FALSE)
   group <- .infer_two_sample_group(X, opts)
   n_perm <- opts$n_perm %||% 5000L
+  include_observed <- opts$include_observed %||% TRUE
+  generated <- is.null(opts$group_mat)
   group_mat <- opts$group_mat %||% .make_group_matrix(
     group = group,
     n_perm = n_perm,
     seed = opts$seed %||% NULL,
-    include_observed = opts$include_observed %||% TRUE
+    include_observed = include_observed
   )
+  storage.mode(group_mat) <- "integer"
+  skip_first <- .perm_first_row_is_identity(group_mat, group, generated, include_observed)
   tail <- .perm_tail_code(opts$alternative %||% "two.sided")
   if (exists("perm_twosample_t_cpp", mode = "function")) { # nocov start
+    # The observed statistic is always computed from the true labelling
+    # `group`, never from row 1 of `group_mat`.
     res <- perm_twosample_t_cpp(
       beta,
       group_mat,
+      group = as.integer(group),
       tail = tail,
       welch = identical((opts$variance %||% "welch"), "welch"),
-      min_group = opts$min_group %||% 2L
+      min_group = opts$min_group %||% 2L,
+      skip_first = skip_first
     )
   } else {
     stop("perm:twosample requires compiled C++ support", call. = FALSE)
@@ -478,6 +501,7 @@ register_core_reducers <- function() {
       if (is.null(X)) stop("meta:fe_reg requires X (subjects x p) in options$X", call. = FALSE)
       eps <- opts$eps %||% 1e-12
       S <- nrow(beta); B <- ncol(beta); pcols <- ncol(X)
+      required <- max(as.integer(opts$min_subjects %||% 2L), pcols + 1L)
       coef <- matrix(NA_real_, pcols, B)
       se   <- matrix(NA_real_, pcols, B)
       Q    <- rep(NA_real_, B)
@@ -486,7 +510,7 @@ register_core_reducers <- function() {
         y <- beta[, b]
         ok <- is.finite(y) & is.finite(var[, b]) & var[, b] > 0 &
           rowSums(!is.finite(X)) == 0L
-        if (sum(ok) < (pcols + 1)) next
+        if (sum(ok) < required) next
         Xok <- X[ok, , drop = FALSE]
         wok <- 1 / pmax(var[ok, b], eps)
         yok <- y[ok]
@@ -672,7 +696,9 @@ register_core_reducers <- function() {
 ols_voxelwise_cpp <- function(beta, X, return_cov_tri = FALSE, min_obs = NULL) {
   # beta: subjects x samples; X: subjects x p
   N <- nrow(beta); B <- ncol(beta); p <- ncol(X)
-  min_obs <- if (is.null(min_obs)) p + 1L else max(as.integer(min_obs), p)
+  # At least p + 1 observations are needed for a positive residual df; an
+  # exactly-determined fit has no error estimate and must not be reported.
+  min_obs <- if (is.null(min_obs)) p + 1L else max(as.integer(min_obs), p + 1L)
   Xt <- t(X)
   A_full <- tryCatch(solve(crossprod(X)), error = function(e) NULL)
   coef <- matrix(NA_real_, nrow = p, ncol = B)
@@ -712,7 +738,8 @@ ols_voxelwise_cpp <- function(beta, X, return_cov_tri = FALSE, min_obs = NULL) {
     if (is.null(A)) next
     bh <- A %*% (Xtb %*% yb)
     r <- as.numeric(yb - Xb %*% bh)
-    dff <- max(nb - p, 1)
+    dff <- nb - p
+    if (dff < 1) next
     s2 <- sum(r * r) / dff
     coef[, b] <- as.numeric(bh)
     se[, b] <- sqrt(pmax(diag(A) * s2, 0))

@@ -13,12 +13,24 @@ propagate_variance_covariance(M, beta, var, cov_provider)
 
 \item{var}{Variance array (diagonal entries) in source space}
 
-\item{cov_provider}{Function returning covariance matrix for source indices}
+\item{cov_provider}{Function of source indices returning a square
+correlation (or covariance) matrix for those indices}
 }
 \value{
 List with mapped \code{beta} and \code{var}
 }
 \description{
-Propagate variance using supplied covariance blocks
+\code{cov_provider(idx)} describes the \emph{spatial correlation structure} among the
+source samples \code{idx} that feed one target sample. It may return either a
+correlation matrix or a covariance matrix; in both cases only its correlation
+structure is used (a covariance is converted as with \code{\link[stats:cor]{stats::cov2cor()}}). The
+variances come from \code{var}, so each subject/contrast keeps its own
+uncertainty: for target row \code{w = M[i, idx]} and
+\code{D = diag(sqrt(var[idx, j, k]))},
+\verb{Var_target[i, j, k] = w' D R D w}, where \code{R} is the correlation implied by
+\code{cov_provider(idx)}. When \code{cov_provider} returns a covariance whose diagonal
+equals \code{var[idx, j, k]}, this reproduces \verb{w' Sigma w} exactly. Source indices
+whose provider diagonal is zero or non-finite are treated as uncorrelated
+with the others.
 }
 \keyword{internal}

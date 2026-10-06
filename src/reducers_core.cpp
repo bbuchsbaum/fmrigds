@@ -14,15 +14,23 @@ using arma::uword;
 
 inline bool finite_(double x) { return std::isfinite(x); }
 
-// Runtime control of OpenMP threads
-// [[Rcpp::export]]
-void set_omp_threads(const int n) {
+// Runtime control of OpenMP threads.
+//
+// This is called from .onLoad, where the Rcpp namespace may not be loaded yet.
+// It therefore must not touch any Rcpp runtime callable (RNGScope, or the
+// `dataptr` callable used by Rcpp::as<int>): a failed callable lookup inside a
+// function-local static initializer leaves its guard locked and makes every
+// later Rcpp call in the session hang. Hence rng = false and a raw SEXP
+// argument converted with the R API.
+// [[Rcpp::export(rng = false)]]
+void set_omp_threads(SEXP n) {
+  const int nn = Rf_asInteger(n);
 #ifdef _OPENMP
-  if (n > 0) {
-    omp_set_num_threads(n);
+  if (nn != NA_INTEGER && nn > 0) {
+    omp_set_num_threads(nn);
   }
 #else
-  (void)n; // suppress unused warning when OpenMP is not enabled
+  (void)nn; // suppress unused warning when OpenMP is not enabled
 #endif
 }
 
@@ -241,7 +249,9 @@ Rcpp::List meta_fe_reg_cpp(const arma::mat& beta, const arma::mat& var,
       double v = var(i, b);
       if (finite_(y) && finite_(v) && v > 0.0) {
         double w = 1.0 / std::max(v, eps);
-        double r = y - arma::dot(X.row(i), bh);
+        arma::rowvec xi = X.row(i);
+        if (!xi.is_finite()) continue;
+        double r = y - arma::dot(xi, bh);
         Qb += w * r * r;
       }
     }
@@ -441,7 +451,8 @@ Rcpp::List lancaster_combine_cpp(const arma::mat& pmat,
       double pi = clamp_p(pmat(i, b));
       if (finite_(pi)) {
         int wi = std::max(dfw[i], 1);
-        double chi_i = R::qchisq(1.0 - pi, 2.0 * wi, /*lower_tail*/1, /*log_p*/0);
+        // Upper-tail quantile: qchisq(1 - p) overflows to Inf once 1 - p rounds to 1.
+        double chi_i = R::qchisq(pi, 2.0 * wi, /*lower_tail*/0, /*log_p*/0);
         X2 += chi_i; df_sum += 2 * wi; ++k;
       }
     }
@@ -459,6 +470,14 @@ inline double perm_tail_p(const double obs, const double null_stat, const int ta
   if (tail == 1) return null_stat <= obs ? 1.0 : 0.0;       // less
   if (tail == 2) return null_stat >= obs ? 1.0 : 0.0;       // greater
   return std::fabs(null_stat) >= std::fabs(obs) ? 1.0 : 0.0; // two.sided
+}
+
+// Tail-specific "extremeness" of a statistic: larger is more extreme in the
+// direction of the alternative. Used for max-statistic FWER control.
+inline double perm_tail_extreme(const double t, const int tail) {
+  if (tail == 1) return -t;          // less
+  if (tail == 2) return t;           // greater
+  return std::fabs(t);               // two.sided
 }
 
 inline double mean_from_sums(const double sum, const int n) {
@@ -496,15 +515,23 @@ inline double t_twosample_from_sums(const double sum0, const double sumsq0, cons
   return (m1 - m0) / std::sqrt(se2);
 }
 
-// sign_mat is n_perm x subjects with entries -1/+1.
+// sign_mat is n_perm x subjects with entries -1/+1. The observed statistic is
+// always computed from the unpermuted data. When skip_first is true, row 1 of
+// sign_mat is the identity relabelling and is excluded from the null set so the
+// observed statistic is not double counted. p-values use
+// p = (1 + #{null >= obs}) / (1 + n_null), with "more extreme" defined by the
+// requested tail (two-sided |t|, greater t, less -t), also for the max-stat FWER.
 // [[Rcpp::export]]
 Rcpp::List perm_onesample_t_cpp(const arma::mat& beta,
                                 const arma::imat& sign_mat,
                                 const int tail = 0,
-                                const int min_subj = 2) {
+                                const int min_subj = 2,
+                                const bool skip_first = false) {
   const uword S = beta.n_rows, B = beta.n_cols;
   const uword P = sign_mat.n_rows;
   if (sign_mat.n_cols != S) stop("sign_mat column count must equal number of subjects.");
+  const uword first = (skip_first && P > 0) ? 1 : 0;
+  const double n_null = static_cast<double>(P - first);
 
   NumericVector estimate(B), se(B), stat(B), df(B), p_perm(B), p_fwer(B);
   NumericVector max_null(P);
@@ -513,7 +540,7 @@ Rcpp::List perm_onesample_t_cpp(const arma::mat& beta,
   #pragma omp parallel for schedule(static)
   #endif
   for (long pp = 0; pp < static_cast<long>(P); ++pp) {
-    double max_abs = 0.0;
+    double max_ext = R_NegInf;
     for (uword b = 0; b < B; ++b) {
       double sum = 0.0, sumsq = 0.0;
       int n = 0;
@@ -525,10 +552,11 @@ Rcpp::List perm_onesample_t_cpp(const arma::mat& beta,
         sumsq += yp * yp;
         ++n;
       }
+      if (n < min_subj) continue;
       const double tp = t_onesample_from_sums(sum, sumsq, n);
-      if (finite_(tp)) max_abs = std::max(max_abs, std::fabs(tp));
+      if (finite_(tp)) max_ext = std::max(max_ext, perm_tail_extreme(tp, tail));
     }
-    max_null[pp] = max_abs;
+    max_null[pp] = max_ext;
   }
 
   #ifdef _OPENMP
@@ -561,8 +589,9 @@ Rcpp::List perm_onesample_t_cpp(const arma::mat& beta,
       p_perm[b] = p_fwer[b] = NA_REAL;
       continue;
     }
+    const double obs_ext = perm_tail_extreme(tobs, tail);
     double count = 0.0, count_fwer = 0.0;
-    for (uword pp = 0; pp < P; ++pp) {
+    for (uword pp = first; pp < P; ++pp) {
       double psum = 0.0, psumsq = 0.0;
       int pn = 0;
       for (uword i = 0; i < S; ++i) {
@@ -575,10 +604,10 @@ Rcpp::List perm_onesample_t_cpp(const arma::mat& beta,
       }
       const double tnull = t_onesample_from_sums(psum, psumsq, pn);
       count += perm_tail_p(tobs, tnull, tail);
-      if (max_null[pp] >= std::fabs(tobs)) count_fwer += 1.0;
+      if (max_null[pp] >= obs_ext) count_fwer += 1.0;
     }
-    p_perm[b] = (count + 1.0) / (static_cast<double>(P) + 1.0);
-    p_fwer[b] = (count_fwer + 1.0) / (static_cast<double>(P) + 1.0);
+    p_perm[b] = (count + 1.0) / (n_null + 1.0);
+    p_fwer[b] = (count_fwer + 1.0) / (n_null + 1.0);
   }
 
   return Rcpp::List::create(
@@ -592,17 +621,28 @@ Rcpp::List perm_onesample_t_cpp(const arma::mat& beta,
   );
 }
 
-// group_mat is n_perm x subjects with entries 0/1.
-// Observed effect is mean(group == 1) - mean(group == 0).
+// group_mat is n_perm x subjects with entries 0/1; group is the observed 0/1
+// labelling (length = subjects). The observed effect
+// mean(group == 1) - mean(group == 0) is always computed from `group`, never
+// from a row of group_mat. When skip_first is true, row 1 of group_mat is the
+// identity relabelling and is excluded from the null set.
+// p = (1 + #{null >= obs}) / (1 + n_null).
 // [[Rcpp::export]]
 Rcpp::List perm_twosample_t_cpp(const arma::mat& beta,
                                 const arma::imat& group_mat,
+                                const Rcpp::IntegerVector& group,
                                 const int tail = 0,
                                 const bool welch = true,
-                                const int min_group = 2) {
+                                const int min_group = 2,
+                                const bool skip_first = false) {
   const uword S = beta.n_rows, B = beta.n_cols;
   const uword P = group_mat.n_rows;
   if (group_mat.n_cols != S) stop("group_mat column count must equal number of subjects.");
+  if (static_cast<uword>(group.size()) != S) stop("group length must equal number of subjects.");
+  const uword first = (skip_first && P > 0) ? 1 : 0;
+  const double n_null = static_cast<double>(P - first);
+  std::vector<int> g(S);
+  for (uword i = 0; i < S; ++i) g[i] = group[i];
 
   NumericVector estimate(B), se(B), stat(B), df(B), p_perm(B), p_fwer(B);
   NumericVector max_null(P);
@@ -611,7 +651,7 @@ Rcpp::List perm_twosample_t_cpp(const arma::mat& beta,
   #pragma omp parallel for schedule(static)
   #endif
   for (long pp = 0; pp < static_cast<long>(P); ++pp) {
-    double max_abs = 0.0;
+    double max_ext = R_NegInf;
     for (uword b = 0; b < B; ++b) {
       double sum0 = 0.0, sum1 = 0.0, sumsq0 = 0.0, sumsq1 = 0.0;
       int n0 = 0, n1 = 0;
@@ -624,10 +664,11 @@ Rcpp::List perm_twosample_t_cpp(const arma::mat& beta,
           sum0 += y; sumsq0 += y * y; ++n0;
         }
       }
+      if (n0 < min_group || n1 < min_group) continue;
       const double tp = t_twosample_from_sums(sum0, sumsq0, n0, sum1, sumsq1, n1, welch);
-      if (finite_(tp)) max_abs = std::max(max_abs, std::fabs(tp));
+      if (finite_(tp)) max_ext = std::max(max_ext, perm_tail_extreme(tp, tail));
     }
-    max_null[pp] = max_abs;
+    max_null[pp] = max_ext;
   }
 
   #ifdef _OPENMP
@@ -639,7 +680,7 @@ Rcpp::List perm_twosample_t_cpp(const arma::mat& beta,
     for (uword i = 0; i < S; ++i) {
       const double y = beta(i, b);
       if (!finite_(y)) continue;
-      if (group_mat(0, i) == 1) {
+      if (g[i] == 1) {
         sum1 += y; sumsq1 += y * y; ++n1;
       } else {
         sum0 += y; sumsq0 += y * y; ++n0;
@@ -677,8 +718,9 @@ Rcpp::List perm_twosample_t_cpp(const arma::mat& beta,
       p_perm[b] = p_fwer[b] = NA_REAL;
       continue;
     }
+    const double obs_ext = perm_tail_extreme(tobs, tail);
     double count = 0.0, count_fwer = 0.0;
-    for (uword pp = 1; pp < P; ++pp) {
+    for (uword pp = first; pp < P; ++pp) {
       double psum0 = 0.0, psum1 = 0.0, psumsq0 = 0.0, psumsq1 = 0.0;
       int pn0 = 0, pn1 = 0;
       for (uword i = 0; i < S; ++i) {
@@ -692,10 +734,10 @@ Rcpp::List perm_twosample_t_cpp(const arma::mat& beta,
       }
       const double tnull = t_twosample_from_sums(psum0, psumsq0, pn0, psum1, psumsq1, pn1, welch);
       count += perm_tail_p(tobs, tnull, tail);
-      if (max_null[pp] >= std::fabs(tobs)) count_fwer += 1.0;
+      if (max_null[pp] >= obs_ext) count_fwer += 1.0;
     }
-    p_perm[b] = (count + 1.0) / static_cast<double>(P);
-    p_fwer[b] = (count_fwer + 1.0) / static_cast<double>(P);
+    p_perm[b] = (count + 1.0) / (n_null + 1.0);
+    p_fwer[b] = (count_fwer + 1.0) / (n_null + 1.0);
   }
 
   return Rcpp::List::create(
