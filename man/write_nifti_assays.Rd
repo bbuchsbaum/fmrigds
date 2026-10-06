@@ -55,8 +55,27 @@ Existing BIDS-style labels are not double-prefixed (a \code{"sub-01"} label stay
 resolving to the same path, e.g. via sanitisation) raises an error.
 }
 \examples{
-\dontrun{
-fit <- group_ols(g, ~ group) |> compute()
-manifest <- write_nifti_assays(fit, "group_maps", prefix = "auc")
+if (requireNamespace("neuroim2", quietly = TRUE) &&
+    requireNamespace("RNifti", quietly = TRUE)) {
+  # Write tiny 4x4x2 subject-level metric maps for four subjects
+  dir <- tempfile("scalar_maps_")
+  dir.create(dir)
+  subj <- c("sub-01", "sub-02", "sub-03", "sub-04")
+  files <- file.path(dir, paste0(subj, "_auc.nii.gz"))
+  for (f in files) RNifti::writeNifti(array(rnorm(32), c(4, 4, 2)), f)
+  participants <- data.frame(subject = subj,
+                             group = c("control", "control", "patient", "patient"))
+
+  g <- suppressWarnings(gds_from_scalar_maps(files, subject = subj,
+                                             contrast = "auc",
+                                             col_data = participants))
+  fit <- group_ols(g, ~ group) |> compute()
+  manifest <- write_nifti_assays(fit, file.path(dir, "group_maps"),
+                                 prefix = "auc",
+                                 assays = c("coef:grouppatient", "t_coef:grouppatient"))
+  print(manifest[, c("assay", "written")])
+  print(basename(manifest$path))
+
+  unlink(dir, recursive = TRUE)
 }
 }

@@ -22,12 +22,27 @@ determine which files are used for beta and se assays, and subject-level
 metadata from the catalog is attached as col_data.
 }
 \examples{
-\dontrun{
-catalog <- image_catalog("study/", "sub-*/stats/*.nii.gz",
-                         path_regex = "sub-(?<subject>[^/]+)") |>
-  map_assays(beta = "cope", se = "varcope")
+if (requireNamespace("neuroim2", quietly = TRUE) &&
+    requireNamespace("RNifti", quietly = TRUE)) {
+  # Write tiny 4x4x2 beta and SE maps for three subjects
+  root <- tempfile("study_")
+  for (s in c("01", "02", "03")) {
+    d <- file.path(root, paste0("sub-", s), "stats")
+    dir.create(d, recursive = TRUE)
+    RNifti::writeNifti(array(rnorm(32), c(4, 4, 2)),
+                       file.path(d, paste0("sub-", s, "_beta.nii.gz")))
+    RNifti::writeNifti(array(0.5, c(4, 4, 2)),
+                       file.path(d, paste0("sub-", s, "_se.nii.gz")))
+  }
 
-plan <- as_gds(catalog, mask = "mask.nii.gz")
-result <- compute(plan)
+  catalog <- image_catalog(root, "sub-*/stats/*.nii.gz",
+                           path_regex = "sub-(?<subject>[^/]+)") |>
+    map_assays(beta = "_beta", se = "_se")
+
+  plan <- as_gds(catalog)
+  result <- compute(plan)
+  print(result)
+
+  unlink(root, recursive = TRUE)
 }
 }

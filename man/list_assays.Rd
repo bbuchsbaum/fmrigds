@@ -32,11 +32,14 @@ or---when \code{reducer} is supplied---reports a reducer's declared output stems
 without computing anything.
 }
 \examples{
-\dontrun{
+beta <- array(rnorm(5 * 4), c(5, 4, 1))
+var <- array(1, c(5, 4, 1))
+g <- new_gds(list(beta = beta, var = var), space_sample_labels(letters[1:5]),
+             subjects = paste0("s", 1:4), contrasts = "c1")
+
 fit <- one_sample(g) |> compute()
 list_assays(fit)                       # names + roles of computed assays
 list_assays(reducer = "meta:re")       # what random-effects would produce
-}
 }
 \seealso{
 \code{\link[=assays]{assays()}}, \code{\link[=assay]{assay()}}, \code{\link[=assay_info]{assay_info()}}, \code{\link[=list_reducers]{list_reducers()}},

@@ -23,17 +23,29 @@ Specify which files correspond to which statistical assays (beta, se, var, t).
 This mapping is used by \code{\link[=as_gds.image_catalog]{as_gds.image_catalog()}} to construct the GDS.
 }
 \examples{
-\dontrun{
-# By filename pattern
+# Build a tiny study tree with empty placeholder files
+root <- tempfile("study_")
+for (s in c("01", "02")) {
+  d <- file.path(root, paste0("sub-", s))
+  dir.create(d, recursive = TRUE)
+  invisible(file.create(file.path(d, c("cope1.nii.gz", "varcope1.nii.gz"))))
+}
+catalog <- image_catalog(root, "sub-*/*.nii.gz",
+                         path_regex = "sub-(?<subject>[^/]+)")
+
+# By filename pattern (regex matched against basenames)
 catalog <- map_assays(catalog,
-  beta = "cope[0-9]+\\\\.nii",
-  se = "varcope[0-9]+\\\\.nii"
+  beta = "^cope[0-9]+\\\\.nii",
+  var = "^varcope[0-9]+\\\\.nii"
 )
 
 # By metadata column value
+catalog <- assign_meta(catalog, "stat_type", "^([a-z]+)[0-9]+")
 catalog <- map_assays(catalog,
   beta = list(stat_type = "cope"),
-  se = list(stat_type = "varcope")
+  var = list(stat_type = "varcope")
 )
-}
+summary(catalog)
+
+unlink(root, recursive = TRUE)
 }

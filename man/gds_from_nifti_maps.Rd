@@ -49,26 +49,37 @@ unweighted reducer such as \code{method = "ols:voxelwise"} instead of
 fixed/random-effects meta-analysis.
 }
 \examples{
-\dontrun{
-# NOTE: `contrast` is a single label here. gds_from_nifti_maps() is
-# single-contrast; to analyse several contrasts, subset `maps` and call
-# once per contrast (a multi-valued `contrast` column triggers a warning).
-maps <- data.frame(
-  file = c("1001_era_partition/maps/naive_diag_mean.nii.gz",
-           "1002_era_partition/maps/naive_diag_mean.nii.gz"),
-  subject = c("1001", "1002"),
-  contrast = "naive_diag_mean"
-)
+if (requireNamespace("neuroim2", quietly = TRUE) &&
+    requireNamespace("RNifti", quietly = TRUE)) {
+  # Write tiny 4x4x2 subject-level maps for four subjects
+  dir <- tempfile("maps_")
+  dir.create(dir)
+  subj <- c("1001", "1002", "1003", "1004")
+  files <- file.path(dir, paste0(subj, "_naive_diag_mean.nii.gz"))
+  for (f in files) RNifti::writeNifti(array(rnorm(32), c(4, 4, 2)), f)
 
-group_info <- data.frame(
-  group = c("control", "patient"),
-  row.names = maps$subject
-)
+  # NOTE: `contrast` is a single label here. gds_from_nifti_maps() is
+  # single-contrast; to analyse several contrasts, subset `maps` and call
+  # once per contrast (a multi-valued `contrast` column triggers a warning).
+  maps <- data.frame(
+    file = files,
+    subject = subj,
+    contrast = "naive_diag_mean"
+  )
 
-g <- gds_from_nifti_maps(maps) |>
-  with_col_data(group_info)
+  group_info <- data.frame(
+    group = c("control", "control", "patient", "patient"),
+    row.names = maps$subject
+  )
 
-fit <- reduce(g, method = "ols:voxelwise", formula = ~ group) |>
-  compute()
+  # Beta-only maps: a unit-variance placeholder is added (with a warning)
+  g <- gds_from_nifti_maps(maps) |>
+    with_col_data(group_info)
+
+  fit <- reduce(g, method = "ols:voxelwise", formula = ~ group) |>
+    compute()
+  print(names(assays(fit)))
+
+  unlink(dir, recursive = TRUE)
 }
 }

@@ -50,8 +50,10 @@ Import a single \code{neuroim2::NeuroVol} (3D brain volume) as a GDS object.
 The volume becomes a single subject with a single contrast.
 }
 \examples{
-\dontrun{
-vol <- neuroim2::read_vol("beta.nii.gz")
-gds_obj <- as_gds(vol, subject = "sub-01", contrast = "faces")
+if (requireNamespace("neuroim2", quietly = TRUE)) {
+  sp <- neuroim2::NeuroSpace(c(4, 4, 2), spacing = c(2, 2, 2))
+  vol <- neuroim2::NeuroVol(array(rnorm(32), c(4, 4, 2)), sp)
+  gds_obj <- as_gds(vol, subject = "sub-01", contrast = "faces")
+  print(gds_obj)
 }
 }

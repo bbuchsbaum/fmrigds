@@ -4,6 +4,9 @@
 #'
 #' @param plan Plan or object coercible via [as_plan()]
 #' @param file Path to JSON file
+#' @return Invisibly returns `file`, the path of the written JSON file. The
+#'   file contains the plan's source, metadata, operation nodes and digest
+#'   and can be restored with [load_plan()].
 #' @name save_plan
 #' @export
 save_plan <- function(plan, file) {

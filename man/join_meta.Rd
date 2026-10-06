@@ -22,8 +22,19 @@ Updated image_catalog.
 Merge a data frame with the catalog metadata by a key column.
 }
 \examples{
-\dontrun{
+# Build a tiny study tree with empty placeholder files
+root <- tempfile("study_")
+for (s in c("01", "02")) {
+  d <- file.path(root, paste0("sub-", s))
+  dir.create(d, recursive = TRUE)
+  invisible(file.create(file.path(d, c("cope1.nii.gz", "varcope1.nii.gz"))))
+}
+catalog <- image_catalog(root, "sub-*/*.nii.gz",
+                         path_regex = "sub-(?<subject>[^/]+)")
+
 demographics <- data.frame(subject = c("01", "02"), age = c(25, 30))
 catalog <- join_meta(catalog, demographics, by = "subject")
-}
+catalog$metadata[, c("basename", "subject", "age")]
+
+unlink(root, recursive = TRUE)
 }
