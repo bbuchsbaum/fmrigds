@@ -206,6 +206,10 @@ examine_group <- function(x,
   selected_subjects <- examination$subject_data$subject[
     examination$subject_data$retained
   ]
+  exact_refit_subjects <- .exact_refit_subjects(
+    examination$subject_data,
+    control$exact_refit_n
+  )
   second_scan <- .scan_compiled_plan(
     compiled,
     assays = required_assays,
@@ -216,7 +220,8 @@ examine_group <- function(x,
         first$state,
         control,
         selected_subjects = selected_subjects,
-        model_context = model_context
+        model_context = model_context,
+        exact_refit_subjects = exact_refit_subjects
       )
     },
     update = function(state, arrays, block, scan_context) {
@@ -280,6 +285,17 @@ examine_group <- function(x,
     examination$provenance$scan_receipt$staging <- staging$record
   }
   examination
+}
+
+# Exact random-effects refits are the expensive part of localization, so
+# only the `exact_refit_n` highest-priority retained subjects receive one.
+.exact_refit_subjects <- function(subject_data, exact_refit_n) {
+  retained <- subject_data[subject_data$retained, , drop = FALSE]
+  if (!nrow(retained) || exact_refit_n < 1L) return(character())
+  priority <- retained$review_priority
+  priority[!is.finite(priority)] <- -Inf
+  ordering <- order(-priority, retained$subject)
+  head(retained$subject[ordering], exact_refit_n)
 }
 
 .combine_examination_receipts <- function(pass1,

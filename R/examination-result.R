@@ -259,13 +259,11 @@
       state$influence_max[i, contrast_index, e] <-
         max(c(current_max, values), na.rm = TRUE)
 
-      bins <- vapply(values, function(value) {
-        which(value <= state$histogram_upper)[1L]
-      }, integer(1))
-      for (bin in bins) {
-        state$influence_hist[i, contrast_index, e, bin] <-
-          state$influence_hist[i, contrast_index, e, bin] + 1
-      }
+      # Bin b holds values in (upper[b - 1], upper[b]]; the last bound is Inf.
+      bins <- findInterval(values, state$histogram_upper, left.open = TRUE) + 1L
+      state$influence_hist[i, contrast_index, e, ] <-
+        state$influence_hist[i, contrast_index, e, ] +
+        tabulate(bins, nbins = length(state$histogram_upper))
       for (r in seq_len(dim(state$influence_split_sum_sq)[4L])) {
         in_split <- influence_ok & split == r
         if (!any(in_split)) next
@@ -544,7 +542,13 @@
           eligible_n = count,
           status = if (count > 0) "available" else "nonestimable",
           stability = stable,
-          stable = is.finite(stable) && stable >= control$review$min_stability,
+          stable = if (is.finite(stable)) {
+            stable >= control$review$min_stability
+          } else if (control$geometry$stability_replicates < 1L) {
+            NA
+          } else {
+            FALSE
+          },
           ranking_stage = "screening",
           stringsAsFactors = FALSE
         )
@@ -558,6 +562,13 @@
 .split_energy <- function(sum_sq, count) {
   if (!length(count)) return(numeric())
   ifelse(count > 0, sqrt(sum_sq / count), NA_real_)
+}
+
+# Stability gates the review criteria only when it was assessed: with
+# `stability_replicates = 0` (or no split data) stability is NA and the
+# absolute energy/tail criteria decide alone.
+.stability_passes <- function(stability, minimum) {
+  is.na(stability) | stability >= minimum
 }
 
 .gate_stability <- function(trigger) {
@@ -639,14 +650,14 @@
       is.finite(surprise_energy) &
         surprise_energy >= control$review$surprise$energy_threshold &
         tail_extent >= control$review$surprise$tail_threshold &
-        surprise_stability >= control$review$min_stability
+        .stability_passes(surprise_stability, control$review$min_stability)
     )
     influence_trigger <- with(
       estimand_rows,
       is.finite(influence_energy) &
         influence_energy >= control$review$influence$energy_threshold &
         max_abs_delta_stat >= control$review$influence$max_abs_threshold &
-        stability >= control$review$min_stability
+        .stability_passes(stability, control$review$min_stability)
     )
     quality_trigger <- FALSE
     quality_reason <- NULL
@@ -682,9 +693,9 @@
       next
     }
     triggers <- c(
-      quality = quality_trigger,
-      surprise = any(surprise_trigger),
-      influence = any(influence_trigger)
+      quality = isTRUE(quality_trigger),
+      surprise = isTRUE(any(surprise_trigger %in% TRUE)),
+      influence = isTRUE(any(influence_trigger %in% TRUE))
     )
     if (!any(triggers)) next
     source_scores <- c(
@@ -699,7 +710,7 @@
     if (identical(source, "quality")) {
       out$review_reason[i] <- quality_reason %||% "Data-validity criterion met."
     } else if (identical(source, "surprise")) {
-      row <- contrast_rows[which(surprise_trigger)[1L], , drop = FALSE]
+      row <- contrast_rows[which(surprise_trigger %in% TRUE)[1L], , drop = FALSE]
       if (is.finite(row$zero_intercept_gain) && row$zero_intercept_gain < 0) {
         out$review_reason[i] <- paste0(
           "High unexpectedness with negative map gain in contrast ",
@@ -711,7 +722,7 @@
         )
       }
     } else {
-      row <- estimand_rows[which(influence_trigger)[1L], , drop = FALSE]
+      row <- estimand_rows[which(influence_trigger %in% TRUE)[1L], , drop = FALSE]
       out$review_reason[i] <- paste0(
         "High group-statistic influence for estimand ", row$estimand,
         " in contrast ", row$contrast, "."

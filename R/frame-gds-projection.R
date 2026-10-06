@@ -166,6 +166,7 @@ as_gds.fmri_frame <- function(
   metadata = list(),
   ...
 ) {
+  .require_frame_deps("as_gds() on an fmri_frame")
   subject <- .one_projection_column(subject, "subject", allow_null = TRUE)
   contrast <- .one_projection_column(contrast, "contrast", allow_null = TRUE)
   if (!is.null(subject) && identical(subject, contrast)) {
@@ -247,10 +248,17 @@ as_gds.fmri_frame <- function(
   ]
   feature_data <- as.data.frame(fmridataset::features(x))
   rownames(feature_data) <- fmridataset::feature_ids(x)
+  # The axis keys recorded here let as_fmri_frame() detect whether a later
+  # GDS (after compute(), reduce(), subsetting, or reordering) still has the
+  # exact cube layout these stored IDs and annotations describe.
   projection <- list(
-    schema_version = 1L,
+    schema_version = 2L,
     subject_column = subject,
     contrast_column = contrast,
+    subjects = subject_axis$ids,
+    contrasts = contrast_axis$ids,
+    row_subjects = subject_axis$ids[grid$subject],
+    row_contrasts = contrast_axis$ids[grid$contrast],
     observation_ids = fmridataset::observation_ids(x)[observation_order],
     observation_data = observation_data,
     feature_ids = fmridataset::feature_ids(x),
@@ -276,23 +284,34 @@ as_gds.fmri_frame <- function(
   with_contrast_data(g, contrast_values)
 }
 
-.gds_to_frame_space <- function(x, feature_ids, feature_data) {
-  projection <- metadata(x)$frame_projection %||% NULL
-  if (!is.null(projection$feature_space)) {
-    spatial <- projection$feature_space
-    if (!identical(fmridataset::feature_ids(spatial), feature_ids)) {
+.gds_voxel_support <- function(spatial, n_features = NULL) {
+  full <- seq_len(prod(spatial$dim))
+  mask <- spatial$mask_idx
+  if (is.null(mask)) return(full)
+  if (identical(spatial$storage, "packed")) return(as.integer(mask))
+  # Dense storage carries one row per grid voxel even when a mask is present.
+  if (!is.null(n_features) && n_features != length(full) &&
+      n_features == length(mask)) {
+    return(as.integer(mask))
+  }
+  full
+}
+
+.gds_to_frame_space <- function(x, feature_ids, feature_data,
+                                stored_space = NULL) {
+  if (!is.null(stored_space)) {
+    if (!identical(fmridataset::feature_ids(stored_space), feature_ids)) {
       stop("Stored frame feature IDs do not align with the GDS sample axis.",
            call. = FALSE)
     }
-    return(spatial)
+    return(stored_space)
   }
   spatial <- space(x)
   if (inherits(spatial, "space_voxel")) {
-    support <- spatial$mask_idx %||% seq_len(prod(spatial$dim))
     return(fmridataset::volume_space(
       dim = spatial$dim,
       affine = spatial$affine,
-      support = support,
+      support = .gds_voxel_support(spatial, length(feature_ids)),
       template = spatial$template_id
     ))
   }
@@ -302,6 +321,106 @@ as_gds.fmri_frame <- function(
     namespace = paste0("fmrigds-", digest::digest(feature_ids, algo = "xxhash64")),
     data = feature_data
   )
+}
+
+# Decide which pieces of a stored frame projection still describe `x`.
+# compute() propagates GDS metadata into derived results, so a projection
+# recorded on a source cube can be stale after reduce(), subsetting, or
+# reordering. Stored pieces are reused only when the axes they were recorded
+# for are verifiably the same.
+.projection_reuse <- function(x, projection, grid) {
+  out <- list(observation_rows = NULL, features = FALSE, layout = FALSE)
+  if (is.null(projection) || is.null(projection$subjects) ||
+      is.null(projection$contrasts)) {
+    return(out)
+  }
+  sample_names <- rownames(row_data(x))
+  out$features <- !is.null(projection$feature_ids) &&
+    identical(as.character(projection$feature_ids), sample_names)
+  stored_rows <- projection$observation_data
+  stored_ids <- projection$observation_ids
+  if (is.null(projection$row_subjects) || is.null(stored_ids) ||
+      !is.data.frame(stored_rows) ||
+      length(stored_ids) != length(projection$row_subjects) ||
+      nrow(stored_rows) != length(stored_ids)) {
+    return(out)
+  }
+  key_stored <- paste(projection$row_subjects, projection$row_contrasts,
+                      sep = "\r")
+  key_now <- paste(grid$subject_value, grid$contrast_value, sep = "\r")
+  rows <- match(key_now, key_stored)
+  if (!anyNA(rows) && !anyDuplicated(rows)) out$observation_rows <- rows
+  out$layout <- out$features &&
+    identical(projection$subjects, subjects(x)) &&
+    identical(projection$contrasts, contrasts(x)) &&
+    identical(rows, seq_along(key_stored))
+  out
+}
+
+# Convert arbitrary legacy GDS metadata into a plain serializable list for a
+# provenance record: drops runtime state and strips S3/S4 classes.
+.plain_metadata <- function(value, depth = 0L) {
+  if (depth > 20L || is.null(value)) return(NULL)
+  if (is.function(value) || is.environment(value) ||
+      typeof(value) %in% c("externalptr", "S4", "closure", "builtin",
+                           "special", "language", "symbol")) {
+    return(NULL)
+  }
+  if (is.data.frame(value)) value <- as.list(value)
+  if (is.list(value)) {
+    value <- unclass(value)
+    out <- lapply(value, .plain_metadata, depth = depth + 1L)
+    keep <- !vapply(out, is.null, logical(1))
+    return(out[keep])
+  }
+  if (is.factor(value) || inherits(value, c("Date", "POSIXt", "numeric_version"))) {
+    return(as.character(value))
+  }
+  if (is.atomic(value)) {
+    attributes(value) <- if (!is.null(names(value))) list(names = names(value))
+    return(value)
+  }
+  NULL
+}
+
+.as_fmri_frame_provenance <- function(x, stored, gds_names, observation_ids,
+                                      feature_ids, spatial, reuse) {
+  records <- list()
+  parents <- character()
+  if (inherits(stored, "provenance_graph")) {
+    records <- unname(fmridataset::provenance_records(stored))
+    parents <- fmridataset::provenance_tips(stored)
+  }
+  legacy <- metadata(x)
+  legacy$frame_projection <- NULL
+  make_record <- function(legacy_metadata) {
+    fmridataset::provenance_record(
+      "fmrigds::as_fmri_frame",
+      parents = parents,
+      inputs = list(
+        subjects = subjects(x),
+        contrasts = contrasts(x),
+        assays = gds_names
+      ),
+      parameters = list(
+        reused_observations = !is.null(reuse$observation_rows),
+        reused_features = isTRUE(reuse$features),
+        reused_frame_metadata = isTRUE(reuse$layout)
+      ),
+      outputs = list(
+        observation_ids = observation_ids,
+        feature_ids = feature_ids,
+        space_digest = fmridataset::space_digest(spatial)
+      ),
+      software = list(package = "fmrigds", version = .pkg_version()),
+      metadata = legacy_metadata
+    )
+  }
+  record <- tryCatch(
+    make_record(list(legacy_gds = .plain_metadata(legacy) %||% list())),
+    error = function(e) make_record(list())
+  )
+  fmridataset::provenance_graph(c(records, list(record)))
 }
 
 #' Convert a legacy rectangular GDS cube to a canonical frame
@@ -322,6 +441,7 @@ as_fmri_frame.gds <- function(
   assay_map = c(var = "variance", se = "std_error"),
   ...
 ) {
+  .require_frame_deps("as_fmri_frame() on a gds")
   projection <- metadata(x)$frame_projection %||% NULL
   subject <- subject %||% projection$subject_column %||% "subject_id"
   contrast <- contrast %||% projection$contrast_column %||% "contrast_id"
@@ -337,21 +457,24 @@ as_fmri_frame.gds <- function(
     KEEP.OUT.ATTRS = FALSE,
     stringsAsFactors = FALSE
   )
-  observation_data <- if (!is.null(projection$observation_data)) {
-    as.data.frame(projection$observation_data)
+  reuse <- .projection_reuse(x, projection, grid)
+  if (!is.null(reuse$observation_rows)) {
+    observation_data <- as.data.frame(projection$observation_data)[
+      reuse$observation_rows, , drop = FALSE
+    ]
+    rownames(observation_data) <- NULL
+    observation_ids <- as.character(
+      projection$observation_ids[reuse$observation_rows]
+    )
   } else {
-    data.frame(stringsAsFactors = FALSE)
-  }
-  if (nrow(observation_data) != nrow(grid)) {
     observation_data <- data.frame(row.names = seq_len(nrow(grid)))
+    observation_ids <- paste(grid$subject_value, grid$contrast_value, sep = "::")
   }
-  observation_data[[subject]] <- grid$subject_value
-  observation_data[[contrast]] <- grid$contrast_value
-  observation_ids <- projection$observation_ids %||%
-    paste(grid$subject_value, grid$contrast_value, sep = "::")
   if (anyDuplicated(observation_ids)) {
     observation_ids <- sprintf("gds-observation-%06d", seq_len(nrow(grid)))
   }
+  observation_data[[subject]] <- grid$subject_value
+  observation_data[[contrast]] <- grid$contrast_value
   observation_data$.obs_id <- observation_ids
   observation_data <- observation_data[c(
     ".obs_id", subject, contrast,
@@ -360,7 +483,7 @@ as_fmri_frame.gds <- function(
 
   gds_names <- names(assays(x))
   frame_names <- gds_names
-  if (!is.null(projection$frame_assay_names) &&
+  if (isTRUE(reuse$layout) && !is.null(projection$frame_assay_names) &&
       length(projection$frame_assay_names) == length(gds_names) &&
       identical(projection$gds_assay_names, gds_names)) {
     frame_names <- projection$frame_assay_names
@@ -379,9 +502,11 @@ as_fmri_frame.gds <- function(
   names(frame_assays) <- frame_names
 
   feature_data <- as.data.frame(row_data(x))
-  feature_ids <- projection$feature_ids %||% if (inherits(space(x), "space_voxel")) {
-    support <- space(x)$mask_idx %||% seq_len(prod(space(x)$dim))
-    paste0("voxel-", support)
+  n_features <- dim(assays(x)[[1L]])[[1L]]
+  feature_ids <- if (isTRUE(reuse$features)) {
+    as.character(projection$feature_ids)
+  } else if (inherits(space(x), "space_voxel")) {
+    paste0("voxel-", .gds_voxel_support(space(x), n_features))
   } else {
     sample_labels(x)
   }
@@ -392,7 +517,10 @@ as_fmri_frame.gds <- function(
   feature_data <- feature_data[c(
     ".feature_id", setdiff(names(feature_data), ".feature_id")
   )]
-  spatial <- .gds_to_frame_space(x, feature_ids, feature_data)
+  spatial <- .gds_to_frame_space(
+    x, feature_ids, feature_data,
+    stored_space = if (isTRUE(reuse$features)) projection$feature_space
+  )
 
   subject_data <- as.data.frame(col_data(x))
   subject_data[[subject]] <- subjects(x)
@@ -414,20 +542,15 @@ as_fmri_frame.gds <- function(
       contrast_values, key = contrast, entity_type = "contrast"
     )
   )
-  provenance <- fmridataset::provenance_graph(fmridataset::provenance_record(
-    "fmrigds::as_fmri_frame",
-    inputs = list(
-      subjects = subjects(x),
-      contrasts = contrasts(x),
-      assays = gds_names
-    ),
-    outputs = list(
-      observation_ids = observation_ids,
-      feature_ids = feature_ids,
-      space_digest = fmridataset::space_digest(spatial)
-    ),
-    software = list(package = "fmrigds", version = .pkg_version())
-  ))
+  provenance <- .as_fmri_frame_provenance(
+    x,
+    stored = projection$frame_provenance,
+    gds_names = gds_names,
+    observation_ids = observation_ids,
+    feature_ids = feature_ids,
+    spatial = spatial,
+    reuse = reuse
+  )
   fmridataset::fmri_frame(
     assays = frame_assays,
     observations = observation_data,
@@ -442,9 +565,11 @@ as_fmri_frame.gds <- function(
       )
     ),
     active_assay = frame_names[[1L]],
-    metadata = projection$frame_metadata %||% list(
-      legacy_gds = metadata(x)
-    ),
-    provenance = projection$frame_provenance %||% provenance
+    metadata = if (isTRUE(reuse$layout)) {
+      projection$frame_metadata %||% list()
+    } else {
+      list()
+    },
+    provenance = provenance
   )
 }

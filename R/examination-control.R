@@ -9,11 +9,16 @@
 #' @param block_size Positive number of samples read per scan block.
 #' @param geometry Named list controlling the deterministic low-rank residual
 #'   representation. Supported entries are `rank`, `oversample`, `cap`,
-#'   `balance_contrasts`, and `stability_replicates`.
+#'   `balance_contrasts`, and `stability_replicates`. With
+#'   `balance_contrasts = TRUE` each contrast's residuals are scaled by its own
+#'   eligible feature count so contrasts contribute comparably to the geometry.
+#'   `stability_replicates = 0` disables split-feature stability assessment;
+#'   review criteria are then not gated on stability.
 #' @param review Named list controlling review status. Supported entries are
 #'   `surprise`, `influence`, `quality`, and `min_stability`.
-#' @param exact_refit_n Number of selected random-effects cases eligible for an
-#'   exact heterogeneity refit.
+#' @param exact_refit_n Maximum number of retained random-effects subjects,
+#'   taken in decreasing `review_priority`, that receive an exact
+#'   heterogeneity refit. Other retained subjects keep screening-mode maps.
 #' @param retain_n Number of highest-priority subjects retained for localization
 #'   when no explicit `retain` set is supplied.
 #' @param staging Named list with optional `tempdir`. Staging stores are always

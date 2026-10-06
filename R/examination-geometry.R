@@ -28,18 +28,27 @@
   omega
 }
 
+# `scale` is the per-contrast weight applied to capped residuals. Pass 1
+# accumulates unscaled per-contrast sketches (scale = 1) because balancing
+# weights depend on eligible counts known only after the first pass; pass 2
+# applies the weights stored on the basis. When no scale is supplied and
+# balancing is requested, the legacy whole-sample normalization is used.
 .geometry_residual_block <- function(diagnostic,
                                      sample_labels,
                                      contrast,
                                      state,
-                                     control) {
+                                     control,
+                                     scale = NULL) {
   residual <- diagnostic$predictive_resid
   eligible <- diagnostic$surprise_eligible & is.finite(residual)
   residual[!eligible] <- 0
   residual <- pmin(residual, control$geometry$cap)
   residual <- pmax(residual, -control$geometry$cap)
-  if (isTRUE(control$geometry$balance_contrasts)) {
-    residual <- residual / sqrt(max(1, state$n_sample))
+  if (!is.null(scale)) {
+    residual <- residual * scale
+  } else if (isTRUE(control$geometry$balance_contrasts)) {
+    eligible_n <- sum(eligible) / max(1L, nrow(residual))
+    residual <- residual / sqrt(max(1, eligible_n))
   }
   list(
     E = residual,
@@ -55,19 +64,52 @@
                                        control) {
   if (state$geometry_projection_dimension < 1L) return(state)
   block <- .geometry_residual_block(
-    diagnostic, sample_labels, contrast, state, control
+    diagnostic, sample_labels, contrast, state, control, scale = 1
   )
   omega <- .geometry_projection(
     block$feature_ids,
     state$geometry_projection_dimension,
     seed
   )
-  state$geometry_Y <- state$geometry_Y + block$E %*% omega
-  state$geometry_pass1_energy <- state$geometry_pass1_energy + sum(block$E^2)
+  k <- match(contrast, state$contrasts)
+  if (is.null(state$geometry_Y_contrast)) {
+    state$geometry_Y_contrast <- array(
+      0, c(dim(state$geometry_Y), length(state$contrasts))
+    )
+    state$geometry_energy_contrast <- numeric(length(state$contrasts))
+    state$geometry_eligible_contrast <- numeric(length(state$contrasts))
+  }
+  state$geometry_Y_contrast[, , k] <- state$geometry_Y_contrast[, , k] +
+    block$E %*% omega
+  state$geometry_energy_contrast[k] <- state$geometry_energy_contrast[k] +
+    sum(block$E^2)
+  state$geometry_eligible_contrast[k] <- state$geometry_eligible_contrast[k] +
+    sum(diagnostic$surprise_eligible & is.finite(diagnostic$predictive_resid))
   state
 }
 
+# Per-contrast residual weights. With `balance_contrasts`, each contrast is
+# normalized by its own eligible feature count (eligible residual entries per
+# subject), so every contrast contributes energy on the same per-feature
+# scale regardless of how many features it has or how many are missing.
+.geometry_contrast_scale <- function(state, control) {
+  n_contrast <- length(state$contrasts)
+  if (!isTRUE(control$geometry$balance_contrasts)) return(rep(1, n_contrast))
+  eligible <- state$geometry_eligible_contrast %||% rep(state$n_sample, n_contrast)
+  per_subject <- eligible / max(1L, length(state$subjects))
+  1 / sqrt(pmax(1, per_subject))
+}
+
 .prepare_geometry_basis <- function(state, control) {
+  scale <- .geometry_contrast_scale(state, control)
+  if (!is.null(state$geometry_Y_contrast)) {
+    Y <- state$geometry_Y
+    for (k in seq_along(scale)) {
+      Y <- Y + scale[k] * state$geometry_Y_contrast[, , k]
+    }
+    state$geometry_Y <- Y
+    state$geometry_pass1_energy <- sum(scale^2 * state$geometry_energy_contrast)
+  }
   Y <- state$geometry_Y
   if (!length(Y) || !any(is.finite(Y)) || max(abs(Y), na.rm = TRUE) <=
       control$tolerance$degeneracy) {
@@ -76,6 +118,7 @@
       sketch_rank = 0L,
       requested_rank = control$geometry$rank,
       pass1_energy = state$geometry_pass1_energy,
+      contrast_scale = scale,
       status = "degenerate_observed"
     ))
   }
@@ -91,6 +134,7 @@
     sketch_rank = as.integer(rank),
     requested_rank = control$geometry$rank,
     pass1_energy = state$geometry_pass1_energy,
+    contrast_scale = scale,
     status = if (rank > 0L) "available" else "degenerate_observed"
   )
 }
@@ -99,7 +143,8 @@
                                        state,
                                        control,
                                        selected_subjects = character(),
-                                       model_context = NULL) {
+                                       model_context = NULL,
+                                       exact_refit_subjects = selected_subjects) {
   rank <- ncol(basis$Q)
   n_split <- control$geometry$stability_replicates
   out <- list(
@@ -114,7 +159,10 @@
     estimands = state$estimands
   )
   if (!is.null(model_context)) {
-    out <- .initialize_selected_pass(out, selected_subjects, model_context)
+    out <- .initialize_selected_pass(
+      out, selected_subjects, model_context,
+      exact_refit_subjects = exact_refit_subjects
+    )
   }
   out
 }
@@ -185,8 +233,10 @@
                                        split,
                                        control) {
   if (!ncol(state$basis$Q)) return(state)
+  scale <- state$basis$contrast_scale
   block <- .geometry_residual_block(
-    diagnostic, sample_labels, contrast, state, control
+    diagnostic, sample_labels, contrast, state, control,
+    scale = if (is.null(scale)) NULL else scale[[match(contrast, state$contrasts)]]
   )
   projected <- crossprod(state$basis$Q, block$E)
   state$C <- state$C + tcrossprod(projected)
@@ -293,8 +343,14 @@
   if (!n_split || !ncol(full)) return(rep(NA_real_, nrow(full)))
   scores <- matrix(NA_real_, nrow(full), n_split)
   for (r in seq_len(n_split)) {
-    C <- split_C[, , r, drop = TRUE]
+    C <- matrix(split_C[, , r], dim(split_C)[1L], dim(split_C)[2L])
     if (!length(C) || max(abs(C), na.rm = TRUE) <= control$tolerance$degeneracy) next
+    # Each of the n_split feature splits carries, in expectation, 1/n_split
+    # of the residual energy. Rescale by n_split so a perfectly stable
+    # structure scores 1 rather than being penalized for the smaller split
+    # magnitude. (Rescaling by the realized energy ratio would instead
+    # inflate noise-only splits when structure is carried by few features.)
+    C <- C * n_split
     decomposition <- eigen((C + t(C)) / 2, symmetric = TRUE)
     values <- pmax(decomposition$values, 0)
     use <- seq_len(min(rank, sum(values > control$tolerance$degeneracy), ncol(Q)))

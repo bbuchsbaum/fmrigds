@@ -31,15 +31,21 @@
   coverage <- integer(n_sample)
   n_weight <- max_weight_fraction <- sign_agreement <- rep(NA_real_, n_sample)
   df_res <- rep(NA_real_, n_sample)
+  # Eligibility mirrors core_meta_fe_kernel(): `min_subjects` contributing
+  # subjects and an `eps` floor on sampling variances.
+  min_obs <- .diagnostic_min_subjects(opts)
+  eps <- opts$eps %||% 1e-12
+  contributed <- matrix(FALSE, n_subject, n_sample)
 
   for (b in seq_len(n_sample)) {
     y <- beta[, b]
     v <- var[, b]
     valid <- is.finite(y) & is.finite(v) & v > 0
     coverage[b] <- sum(valid)
-    if (coverage[b] < 2L) next
+    contributed[, b] <- valid
+    if (coverage[b] < min_obs) next
     w <- rep(NA_real_, n_subject)
-    w[valid] <- 1 / v[valid]
+    w[valid] <- 1 / pmax(v[valid], eps)
     W <- sum(w[valid])
     sum_wy <- sum(w[valid] * y[valid])
     if (!is.finite(W) || W <= 0) next
@@ -57,6 +63,7 @@
       sign_agreement[b] <- sum(w[valid] * (sign(y[valid]) == direction)) / W
     }
 
+    if (coverage[b] - 1L < min_obs) next
     for (i in which(valid)) {
       W_minus <- W - w[i]
       if (!is.finite(W_minus) || W_minus <= tolerance$degeneracy) next
@@ -82,8 +89,8 @@
     coverage_n = as.numeric(coverage),
     df_res = df_res,
     model_rank = as.numeric(coverage > 0),
-    rank_failure = as.numeric(coverage < 2L),
-    finite_eligible = as.numeric(coverage >= 2L),
+    rank_failure = as.numeric(coverage < min_obs),
+    finite_eligible = as.numeric(coverage >= min_obs),
     n_weight = n_weight,
     max_weight_fraction = max_weight_fraction,
     sign_agreement = sign_agreement,
@@ -94,6 +101,7 @@
   for (field in intersect(c("beta_g", "var_g", "se_g", "z_g", "p_g", "Q", "I2", "n_eff"), names(fit))) {
     maps[[field]] <- as.numeric(fit[[field]])
   }
+  out <- .zero_noncontributing_deletion(out, contributed, full_stat)
   out$full_effect <- matrix(full_effect, 1L, n_sample)
   out$full_se <- matrix(full_se, 1L, n_sample)
   out$full_stat <- full_stat
@@ -144,15 +152,18 @@
   n_weight <- max_weight_fraction <- sign_agreement <- rep(NA_real_, n_sample)
   df_res <- rep(NA_real_, n_sample)
 
+  eps <- opts$eps %||% 1e-12
+  contributed <- matrix(FALSE, n_subject, n_sample)
   for (b in seq_len(n_sample)) {
     y <- beta[, b]
     v <- var[, b]
     tau2 <- fit$tau2[b]
     valid <- is.finite(y) & is.finite(v) & v > 0 & is.finite(tau2) & tau2 >= 0
     coverage[b] <- sum(valid)
+    contributed[, b] <- valid
     if (coverage[b] < 2L) next
     w <- rep(NA_real_, n_subject)
-    w[valid] <- 1 / (v[valid] + tau2)
+    w[valid] <- 1 / (pmax(v[valid], eps) + tau2)
     W <- sum(w[valid])
     sum_wy <- sum(w[valid] * y[valid])
     if (!is.finite(W) || W <= 0) next
@@ -207,6 +218,7 @@
   )) {
     maps[[field]] <- as.numeric(fit[[field]])
   }
+  out <- .zero_noncontributing_deletion(out, contributed, full_stat)
   out$full_effect <- matrix(full_effect, 1L, n_sample)
   out$full_se <- matrix(full_se, 1L, n_sample)
   out$full_stat <- full_stat
@@ -282,12 +294,14 @@
   is_random <- identical(method, "meta:re_reg")
   min_obs <- as.integer(opts$min_subjects %||% (n_coef + 1L))
   min_obs <- max(min_obs, n_coef + 1L)
+  contributed <- matrix(FALSE, n_subject, n_sample)
 
   for (b in seq_len(n_sample)) {
     y <- beta[, b]
     valid <- is.finite(y) & finite_design
     if (!is_ols) valid <- valid & is.finite(var[, b]) & var[, b] > 0
     coverage[b] <- sum(valid)
+    contributed[, b] <- valid
     if (coverage[b] < min_obs) next
     Xv <- X[valid, , drop = FALSE]
     rank <- qr(Xv, tol = tolerance$rank)$rank
@@ -325,10 +339,11 @@
       i <- valid_index[j]
       h <- leverage[j]
       one_minus_h <- 1 - h
+      # With positive weights, 1 - h_j > 0 means the deleted weighted Gram
+      # matrix (G minus w_j x_j x_j^T) stays positive definite, so the
+      # deleted design keeps full column rank; no separate QR is needed.
       if (!is.finite(one_minus_h) || one_minus_h <= tolerance$leverage) next
-      keep <- seq_along(valid_index) != j
-      if (sum(keep) < min_obs ||
-          qr(Xv[keep, , drop = FALSE], tol = tolerance$rank)$rank < n_coef) next
+      if (length(valid_index) - 1L < min_obs) next
 
       ax <- drop(A %*% Xv[j, ])
       delta_theta <- ax * wv[j] * residual[j] / one_minus_h
@@ -402,6 +417,7 @@
   if (!is.null(fit$df_res)) maps$reducer_df_res <- as.numeric(fit$df_res)
   if (!is.null(fit$sigma2)) maps$sigma2 <- as.numeric(fit$sigma2)
   if (!is.null(fit$n_obs)) maps$n_obs <- as.numeric(fit$n_obs)
+  out <- .zero_noncontributing_deletion(out, contributed, full_stat)
   out$full_effect <- full_effect
   out$full_se <- full_se
   out$full_stat <- full_stat
@@ -414,6 +430,35 @@
   )
   out$statistic <- if (is_ols) "t" else "z"
   out$mode <- if (is_random) "tau2_fixed_full" else "exact"
+  out
+}
+
+.diagnostic_min_subjects <- function(opts) {
+  max(1L, as.integer(opts$min_subjects %||% 2L))
+}
+
+# A subject with no usable data at a feature does not enter that feature's
+# fit, so deleting it leaves the full statistic unchanged. Recording delta 0
+# (rather than NA) keeps such features in deletion-sensitivity multiplicity
+# families. Influence eligibility stays FALSE so these structural zeros do
+# not dilute influence summaries.
+.zero_noncontributing_deletion <- function(out, contributed, full_stat) {
+  n_subject <- nrow(contributed)
+  full_stat <- matrix(full_stat, ncol = ncol(contributed))
+  for (e in seq_len(nrow(full_stat))) {
+    stat_rep <- matrix(full_stat[e, ], n_subject, ncol(contributed), byrow = TRUE)
+    zero <- !contributed & is.finite(stat_rep)
+    if (!any(zero)) next
+    delta_stat <- matrix(out$delta_stat[, e, ], n_subject)
+    delta_effect <- matrix(out$delta_effect[, e, ], n_subject)
+    deleted_stat <- matrix(out$deleted_stat[, e, ], n_subject)
+    delta_stat[zero] <- 0
+    delta_effect[zero] <- 0
+    deleted_stat[zero] <- stat_rep[zero]
+    out$delta_stat[, e, ] <- delta_stat
+    out$delta_effect[, e, ] <- delta_effect
+    out$deleted_stat[, e, ] <- deleted_stat
+  }
   out
 }
 
