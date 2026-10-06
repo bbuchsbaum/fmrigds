@@ -316,3 +316,19 @@ test_that("lmm:ri uses between-subject df for between-subject terms", {
     2 * stats::pt(-abs(t_group), df = 18)
   )
 })
+
+test_that("map_to Fisher combine stays finite for far-tail z", {
+  target <- space_sample_labels("t1")
+  from_sp <- space_sample_labels(c("a", "b"))
+  mp <- map_linear(from_sp, target, matrix(c(0.5, 0.5), nrow = 1))
+  z <- array(c(40, 39), dim = c(2, 1, 1))
+  out <- apply_map_to(
+    list(op = "map", target_space = target, map = mp,
+         uncertainty = UncertaintyRule("none"), combine = "fisher"),
+    list(z = z)
+  )$arrays
+  log_p <- log(2) + pnorm(-abs(c(40, 39)), log.p = TRUE)
+  expect_true(is.finite(out$chi2[1, 1, 1]))
+  expect_equal(out$chi2[1, 1, 1], -2 * sum(log_p))
+  expect_true(is.finite(out$z[1, 1, 1]))
+})

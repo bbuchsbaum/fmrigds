@@ -57,8 +57,10 @@ future full sampling-covariance input rather than pretending their marginal
 variances are independent.
 
 Fixed-effect standard errors use the fitted covariance as a plug-in estimate,
-and \verb{p_coef:*} uses residual degrees of freedom (\code{n - p}). Satterthwaite and
-Kenward--Roger corrections are not applied.
+and \verb{p_coef:*} uses per-coefficient containment degrees of freedom
+(reported in \verb{df_coef:*}): coefficients of between-subject columns use
+\code{N - rank(X_between)}, all others the residual df \code{N*K - p}. Satterthwaite
+and Kenward--Roger corrections are not applied.
 }
 
 \section{Output assays}{

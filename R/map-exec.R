@@ -127,8 +127,8 @@ apply_map_to <- function(node, arrays) {
   dims <- if ("z" %in% names(arrays)) dim(arrays$z) else dim(arrays$p)
   n_target <- nrow(map)
   chi_out <- array(NA_real_, dim = c(n_target, dims[2], dims[3]))
-  p_out <- array(NA_real_, dim = c(n_target, dims[2], dims[3]))
   df_out <- array(NA_real_, dim = c(n_target, dims[2], dims[3]))
+  log_p_out <- array(NA_real_, dim = c(n_target, dims[2], dims[3]))
 
   for (i in seq_len(n_target)) {
     w <- map[i, ]
@@ -137,22 +137,24 @@ apply_map_to <- function(node, arrays) {
     for (j in seq_len(dims[2])) {
       for (k in seq_len(dims[3])) {
         if ("z" %in% names(arrays)) {
-          p_vals <- 2 * stats::pnorm(-abs(arrays$z[idx, j, k]))
+          # Work on the log scale so far-tail z values do not underflow to
+          # p = 0 (which would make chi2 infinite).
+          log_p <- log(2) + stats::pnorm(-abs(arrays$z[idx, j, k]), log.p = TRUE)
         } else {
-          p_vals <- arrays$p[idx, j, k]
+          log_p <- log(arrays$p[idx, j, k])
         }
-        chi <- -2 * sum(log(p_vals))
-        df_val <- 2 * length(p_vals)
+        chi <- -2 * sum(log_p)
+        df_val <- 2 * length(log_p)
         chi_out[i, j, k] <- chi
         df_out[i, j, k] <- df_val
-        p_out[i, j, k] <- stats::pchisq(chi, df_val, lower.tail = FALSE)
+        log_p_out[i, j, k] <- stats::pchisq(chi, df_val, lower.tail = FALSE, log.p = TRUE)
       }
     }
   }
 
   arrays$chi2 <- chi_out
   arrays$df <- df_out
-  arrays$p <- p_out
-  arrays$z <- stats::qnorm(1 - p_out/2)
+  arrays$p <- exp(log_p_out)
+  arrays$z <- stats::qnorm(log_p_out - log(2), lower.tail = FALSE, log.p = TRUE)
   arrays
 }
