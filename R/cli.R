@@ -1,6 +1,8 @@
 # nocov start
 .is_flag <- function(x) {
-  is.character(x) && length(x) == 1L && nzchar(x) && grepl("^-", x)
+  # "-1", "-0.5", "-.5" are (negative) option values, not flags.
+  is.character(x) && length(x) == 1L && nzchar(x) && grepl("^-", x) &&
+    !grepl("^-[0-9.]", x)
 }
 
 .split_csv <- function(x) {
@@ -77,9 +79,6 @@
   cat(..., "\n", sep = "", file = stderr())
 }
 
-.cli_quit <- function(status = 0L) {
-  quit(save = "no", status = as.integer(status), runLast = FALSE)
-}
 
 .cli_version <- function() {
   .cli_print("fmrigds ", as.character(utils::packageVersion("fmrigds")), "\n")
@@ -142,36 +141,77 @@
   if (!axis %in% c("sample", "subject", "contrast")) {
     stop("Subset axis must be one of sample, subject, contrast", call. = FALSE)
   }
-  values <- .cli_cast_value(kv$value)
-  if (is.numeric(values) && all(!is.na(values)) && all(abs(values - round(values)) < .Machine$double.eps^0.5)) {
-    values <- as.integer(values)
+  # Values are labels (kept as character, so "001" or "12" select the
+  # subject/contrast/sample *named* that) unless explicitly marked as 1-based
+  # positions with an "idx:" prefix, e.g. subject=idx:1,3.
+  raw <- kv$value
+  if (grepl("^idx:", raw)) {
+    parts <- .split_csv(sub("^idx:", "", raw))
+    if (!length(parts) || !all(grepl("^[0-9]+$", parts))) {
+      stop("Index subset must be positive integers, e.g. ", axis, "=idx:1,2", call. = FALSE)
+    }
+    values <- as.integer(parts)
+    if (any(values < 1L)) stop("Index subset positions are 1-based", call. = FALSE)
+  } else {
+    values <- .split_csv(raw)
+    if (!length(values)) stop("Empty subset values for axis ", axis, call. = FALSE)
   }
   list(axis = axis, values = values)
 }
 
-.cli_read_table <- function(path, kind) {
+.cli_read_table <- function(path, kind, id_col = NULL) {
   if (!file.exists(path)) stop(kind, " file not found: ", path, call. = FALSE)
   ext <- tolower(tools::file_ext(path))
+  # Identifier columns are read as character so "001" is not turned into 1;
+  # other columns keep leading zeros as character too.
+  fread_args <- list(data.table = FALSE, keepLeadingZeros = TRUE)
+  if (!is.null(id_col)) fread_args$colClasses <- list(character = id_col)
   df <- switch(ext,
-    csv = data.table::fread(path, data.table = FALSE),
-    tsv = data.table::fread(path, sep = "\t", data.table = FALSE),
+    csv = do.call(data.table::fread, c(list(path), fread_args)),
+    tsv = do.call(data.table::fread, c(list(path, sep = "\t"), fread_args)),
     parquet = {
       if (!requireNamespace("arrow", quietly = TRUE)) {
         stop("arrow package required to read parquet metadata files", call. = FALSE)
       }
       as.data.frame(arrow::read_parquet(path))
     },
-    data.table::fread(path, data.table = FALSE)
+    do.call(data.table::fread, c(list(path), fread_args))
   )
   if (!is.data.frame(df) || !nrow(df)) stop(kind, " file has no rows: ", path, call. = FALSE)
   df
 }
 
-.cli_read_keyed_data <- function(path, id_col = NULL, kind = "metadata") {
-  df <- .cli_read_table(path, kind = kind)
-  id_col <- if (is.null(id_col) || !nzchar(id_col)) names(df)[1L] else as.character(id_col)[1L]
-  if (!id_col %in% names(df)) {
-    id_col <- names(df)[1L]
+.cli_table_header <- function(path) {
+  ext <- tolower(tools::file_ext(path))
+  if (identical(ext, "parquet")) return(NULL)
+  sep <- if (identical(ext, "tsv")) "\t" else "auto"
+  names(data.table::fread(path, sep = sep, nrows = 0L, data.table = FALSE))
+}
+
+# `id_col` is the requested id column; `required = TRUE` (an explicit
+# --*-data-id flag) makes a missing column an error instead of falling back to
+# the first column.
+.cli_read_keyed_data <- function(path, id_col = NULL, kind = "metadata", required = FALSE) {
+  if (!file.exists(path)) stop(kind, " file not found: ", path, call. = FALSE)
+  header <- .cli_table_header(path)
+  id_col <- if (is.null(id_col) || !nzchar(id_col)) NULL else as.character(id_col)[1L]
+  if (!is.null(header)) {
+    if (is.null(id_col) || !id_col %in% header) {
+      if (isTRUE(required) && !is.null(id_col)) {
+        stop(kind, " id column '", id_col, "' not found in ", path,
+             " (columns: ", paste(header, collapse = ", "), ")", call. = FALSE)
+      }
+      id_col <- header[1L]
+    }
+    df <- .cli_read_table(path, kind = kind, id_col = id_col)
+  } else {
+    df <- .cli_read_table(path, kind = kind)
+    if (is.null(id_col) || !id_col %in% names(df)) {
+      if (isTRUE(required) && !is.null(id_col)) {
+        stop(kind, " id column '", id_col, "' not found in ", path, call. = FALSE)
+      }
+      id_col <- names(df)[1L]
+    }
   }
   ids <- as.character(df[[id_col]])
   if (anyNA(ids) || any(!nzchar(ids))) stop(kind, " id column contains missing/empty identifiers", call. = FALSE)
@@ -315,15 +355,24 @@
 .cli_attach_metadata <- function(plan, opts) {
   if (!is.null(opts[["col-data"]])) {
     id_col <- .cli_get_opt(opts, "col-data-id", "subject")
-    plan <- with_col_data(plan, .cli_read_keyed_data(.cli_get_opt(opts, "col-data"), id_col, kind = "col-data"))
+    plan <- with_col_data(plan, .cli_read_keyed_data(
+      .cli_get_opt(opts, "col-data"), id_col, kind = "col-data",
+      required = !is.null(opts[["col-data-id"]])
+    ))
   }
   if (!is.null(opts[["row-data"]])) {
     id_col <- .cli_get_opt(opts, "row-data-id", "sample")
-    plan <- with_row_data(plan, .cli_read_keyed_data(.cli_get_opt(opts, "row-data"), id_col, kind = "row-data"))
+    plan <- with_row_data(plan, .cli_read_keyed_data(
+      .cli_get_opt(opts, "row-data"), id_col, kind = "row-data",
+      required = !is.null(opts[["row-data-id"]])
+    ))
   }
   if (!is.null(opts[["contrast-data"]])) {
     id_col <- .cli_get_opt(opts, "contrast-data-id", "contrast")
-    plan <- with_contrast_data(plan, .cli_read_keyed_data(.cli_get_opt(opts, "contrast-data"), id_col, kind = "contrast-data"))
+    plan <- with_contrast_data(plan, .cli_read_keyed_data(
+      .cli_get_opt(opts, "contrast-data"), id_col, kind = "contrast-data",
+      required = !is.null(opts[["contrast-data-id"]])
+    ))
   }
   plan
 }
@@ -543,7 +592,8 @@
 .cli_help_shared_pipeline <- function() {
   .cli_print(
     "Pipeline options:\n",
-    "  --subset <axis=values>         Repeatable; axis is sample|subject|contrast\n",
+    "  --subset <axis=values>         Repeatable; axis is sample|subject|contrast.\n",
+    "                                 Values are labels; use axis=idx:1,2 for positions\n",
     "  --subset-sample <values>       Shortcut for --subset sample=...\n",
     "  --subset-subject <values>      Shortcut for --subset subject=...\n",
     "  --subset-contrast <values>     Shortcut for --subset contrast=...\n",
@@ -941,12 +991,18 @@
 #'
 #' @keywords internal
 fmrigds_cli_exec <- function(args = commandArgs(trailingOnly = TRUE)) {
+  # Returns an integer exit status (0 = success, 1 = error) instead of calling
+  # quit(): package code must not terminate the R session. The wrapper script
+  # does `quit(status = fmrigds:::fmrigds_cli_exec())`.
   tryCatch(
-    .cli_main(args),
+    {
+      .cli_main(args)
+      0L
+    },
     error = function(e) {
       .cli_warn("fmrigds: error: ", conditionMessage(e))
       .cli_warn("Run `fmrigds --help` for usage.")
-      .cli_quit(1L)
+      1L
     }
   )
 }

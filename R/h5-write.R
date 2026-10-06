@@ -8,6 +8,7 @@ write_gds_h5 <- function(gds,
   if (!overwrite && file.exists(file)) {
     stop("File exists and overwrite = FALSE: ", file, call. = FALSE)
   }
+  .h5_assert_writable_space(gds$space)
   dir.create(dirname(file), recursive = TRUE, showWarnings = FALSE)
   h5 <- hdf5r::H5File$new(file, mode = "w")
   on.exit(h5$close())
@@ -49,9 +50,13 @@ write_gds_h5 <- function(gds,
     on.exit(voxel_group$close(), add = TRUE)
     voxel_group$create_dataset("dim", gds$space$dim)
     voxel_group$create_dataset("affine", gds$space$affine)
-    if (!is.null(gds$space$mask_idx)) {
+    has_mask_idx <- !is.null(gds$space$mask_idx)
+    if (has_mask_idx) {
       voxel_group$create_dataset("mask_idx", gds$space$mask_idx)
     }
+    storage <- gds$space$storage %||% if (has_mask_idx) "packed" else "dense"
+    if (!has_mask_idx) storage <- "dense"
+    voxel_group$create_dataset("storage", as.character(storage)[1L])
   }
   if (inherits(gds$space, "space_parcels")) {
     parcel_group <- space_group$create_group("parcels")
@@ -81,8 +86,8 @@ write_gds_h5 <- function(gds,
 
   prov_group <- g$create_group("provenance")
   on.exit(prov_group$close(), add = TRUE)
-  log_entries <- gds$metadata$provenance$log %||% character()
-  prov_group$create_dataset("log", log_entries)
+  log_entries <- as.character(gds$metadata$provenance$log %||% character())
+  .h5_create_character_dataset(prov_group, "log", log_entries)
 
   families <- gds$metadata$map_families %||% list()
   if (length(families)) {
@@ -95,6 +100,26 @@ write_gds_h5 <- function(gds,
       fam_group$close()
     }
   }
+}
+
+# The native HDF5 schema can only describe voxel, parcel and sample-label
+# spaces. Writing any other space type (surface, basis, ...) would produce a
+# file whose /gds/space group carries a type attribute but no data, which the
+# reader then refuses. Fail early, before the file is created.
+.h5_assert_writable_space <- function(space) {
+  ok <- inherits(space, "space_voxel") ||
+    inherits(space, "space_parcels") ||
+    inherits(space, "space_sample_labels")
+  if (!ok) {
+    type <- space$type %||% paste(class(space), collapse = "/")
+    stop(
+      "write_gds_h5() cannot serialise a '", type, "' space: the native HDF5 ",
+      "layout only supports voxel, parcels and sample_labels spaces. ",
+      "Map the data to a supported space before writing.",
+      call. = FALSE
+    )
+  }
+  invisible(TRUE)
 }
 
 .serialize_metadata <- function(meta) {

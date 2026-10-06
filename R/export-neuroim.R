@@ -82,13 +82,51 @@ as_gds.NeuroVol <- function(x,
     storage = storage
   )
 
-  new_gds(
+  .new_gds_with_synthetic_var(
     assays = setNames(list(beta_arr, var_arr), c(assay_name, "var")),
     space = sp,
     subjects = as.character(subject),
     contrasts = as.character(contrast),
     ...
   )
+}
+
+# new_gds() wrapper for importers that fabricate a unit `var` placeholder.
+# Tags it exactly like gds_from_neurovols(): an array attribute (consumption-
+# site backstop) plus metadata$synthetic_var (reduce()-verb guard), so
+# variance-weighted reducers refuse it. Caller-supplied `metadata` is kept.
+.new_gds_with_synthetic_var <- function(assays, ...) {
+  if (!is.null(assays$var)) attr(assays$var, "synthetic_unit_variance") <- TRUE
+  dots <- list(...)
+  meta <- dots$metadata %||% list()
+  meta$synthetic_var <- TRUE
+  dots$metadata <- NULL
+  do.call(new_gds, c(list(assays = assays, metadata = meta), dots))
+}
+
+# Ensure an image shares the reference grid (spatial dims and affine within
+# tolerance) before its voxels are packed alongside the first image's.
+.check_neuroim_grid <- function(vol, ref_dim, ref_affine, label, tol = 1e-4) {
+  d <- dim(vol)
+  d <- as.integer(d)[seq_len(min(3L, length(d)))]
+  if (!identical(d, as.integer(ref_dim))) {
+    stop(
+      "Grid mismatch for ", label, ": spatial dimensions ", paste(d, collapse = "x"),
+      " differ from the first image's ", paste(ref_dim, collapse = "x"),
+      ". Resample all images to a common grid first.",
+      call. = FALSE
+    )
+  }
+  aff <- tryCatch(neuroim2::trans(neuroim2::space(vol)), error = function(e) NULL)
+  if (!is.null(aff) && !is.null(ref_affine) &&
+      max(abs(as.numeric(aff) - as.numeric(ref_affine))) > tol) {
+    stop(
+      "Grid mismatch for ", label, ": voxel-to-world affine differs from the first image's. ",
+      "Resample/register all images to a common grid first.",
+      call. = FALSE
+    )
+  }
+  invisible(TRUE)
 }
 
 #' @rdname as_gds.NeuroVol
@@ -221,7 +259,7 @@ as_gds.NeuroVec <- function(x,
     storage = storage
   )
 
-  new_gds(
+  .new_gds_with_synthetic_var(
     assays = setNames(list(beta_arr, var_arr), c(assay_name, "var")),
     space = sp,
     subjects = as.character(subjects),
@@ -344,6 +382,16 @@ gds_from_neurovols <- function(beta,
   # Build arrays
   beta_arr <- array(NA_real_, dim = c(n_samples, n_subj, 1L))
   var_arr <- array(NA_real_, dim = c(n_samples, n_subj, 1L))
+
+  if (anyDuplicated(subjects)) {
+    stop("'beta' names (subject IDs) must be unique", call. = FALSE)
+  }
+  ref_affine <- neuroim2::trans(nspace)
+  for (subj in subjects) {
+    .check_neuroim_grid(beta[[subj]], vdim, ref_affine, paste0("beta '", subj, "'"))
+    if (has_var) .check_neuroim_grid(var[[subj]], vdim, ref_affine, paste0("var '", subj, "'"))
+    if (has_se) .check_neuroim_grid(se[[subj]], vdim, ref_affine, paste0("se '", subj, "'"))
+  }
 
   for (j in seq_len(n_subj)) {
     subj <- subjects[j]
@@ -564,12 +612,40 @@ gds_from_neurovol_nested <- function(beta,
   beta_arr <- array(NA_real_, dim = c(n_samples, n_subj, n_con))
   var_arr <- array(NA_real_, dim = c(n_samples, n_subj, n_con))
 
+  if (anyDuplicated(subjects)) {
+    stop("'beta' names (subject IDs) must be unique", call. = FALSE)
+  }
+  ref_affine <- neuroim2::trans(nspace)
+  check_elem <- function(obj, what, subj) {
+    if (is_neurovec_input) {
+      if (is.null(obj)) stop("Missing ", what, " for subject '", subj, "'", call. = FALSE)
+      .check_neuroim_grid(obj, vdim, ref_affine, paste0(what, " '", subj, "'"))
+      n4 <- dim(obj)[4]
+      if (length(dim(obj)) < 4L || n4 < n_con) {
+        stop(what, " NeuroVec for subject '", subj, "' has fewer than ", n_con,
+             " volumes", call. = FALSE)
+      }
+    } else {
+      for (con in contrasts) {
+        vol <- obj[[con]]
+        if (is.null(vol)) {
+          stop("Missing ", what, " volume for subject '", subj, "', contrast '", con, "'",
+               call. = FALSE)
+        }
+        .check_neuroim_grid(vol, vdim, ref_affine, paste0(what, " '", subj, "'/'", con, "'"))
+      }
+    }
+  }
+
   # Extract data
   for (j in seq_len(n_subj)) {
     subj <- subjects[j]
     beta_subj <- beta[[subj]]
     var_subj <- if (has_var) var[[subj]] else NULL
     se_subj <- if (has_se) se[[subj]] else NULL
+    check_elem(beta_subj, "beta", subj)
+    if (has_var) check_elem(var_subj, "var", subj)
+    if (has_se) check_elem(se_subj, "se", subj)
 
     for (k in seq_len(n_con)) {
       con <- contrasts[k]
@@ -1060,9 +1136,10 @@ split.gds <- function(x, f, drop = TRUE, ...) {
     stop("Only voxel spaces can be converted to neuroim2 NeuroSpace", call. = FALSE)
   }
 
-  # Extract spacing from affine (diagonal elements of upper-left 3x3)
-  # This is a simplification; full affine may have rotations
-  spacing <- abs(c(sp$affine[1, 1], sp$affine[2, 2], sp$affine[3, 3]))
+  # Voxel spacing is the length of each affine column (robust to rotations /
+  # oblique acquisitions, where the diagonal alone underestimates it).
+  A <- as.matrix(sp$affine)[1:3, 1:3, drop = FALSE]
+  spacing <- sqrt(colSums(A^2))
 
   # Origin is the translation column
   origin <- sp$affine[1:3, 4]

@@ -71,16 +71,35 @@ register_h5_adapter <- function() {
   on.exit(space_group$close(), add = TRUE)
   type <- as.character(.h5_read_attr(space_group, "type"))
   space <- switch(type,
-    voxel = space_voxel(
-      dim = .h5_read_dataset(h5, "/gds/space/voxel/dim"),
-      affine = matrix(
-        .h5_read_dataset(h5, "/gds/space/voxel/affine"),
-        nrow = 4,
-        byrow = TRUE
-      ),
-      mask_idx = if (space_group$exists("voxel/mask_idx")) .h5_read_dataset(h5, "/gds/space/voxel/mask_idx") else NULL,
-      storage = "packed"
-    ),
+    voxel = {
+      # hdf5r round-trips R matrices unchanged (column-major in and out), so
+      # the affine must NOT be transposed on read.
+      vox_mask_idx <- if (space_group$exists("voxel/mask_idx")) {
+        as.integer(.h5_read_dataset(h5, "/gds/space/voxel/mask_idx"))
+      } else {
+        NULL
+      }
+      vox_storage <- if (space_group$exists("voxel/storage")) {
+        as.character(.h5_read_dataset(h5, "/gds/space/voxel/storage"))[1L]
+      } else if (is.null(vox_mask_idx)) {
+        "dense"
+      } else {
+        "packed"
+      }
+      # A packed space without mask indices is not meaningful; treat as dense.
+      if (!identical(vox_storage, "dense") && is.null(vox_mask_idx)) vox_storage <- "dense"
+      if (!vox_storage %in% c("dense", "packed")) vox_storage <- "packed"
+      space_voxel(
+        dim = as.integer(.h5_read_dataset(h5, "/gds/space/voxel/dim")),
+        affine = matrix(
+          as.numeric(.h5_read_dataset(h5, "/gds/space/voxel/affine")),
+          nrow = 4,
+          ncol = 4
+        ),
+        mask_idx = vox_mask_idx,
+        storage = vox_storage
+      )
+    },
     parcels = space_parcels(.h5_read_dataset(h5, "/gds/space/parcels/labels")),
     sample_labels = {
       labels <- if (space_group$exists("sample_labels/labels")) {

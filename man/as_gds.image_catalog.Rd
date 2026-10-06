@@ -18,14 +18,17 @@ A gds_plan object.
 }
 \description{
 Create a GDS plan from an image catalog. The catalog's assay mappings
-determine which files are used for beta and se assays, and subject-level
-metadata from the catalog is attached as col_data.
+determine which files are used for the \code{beta} assay and, optionally, one
+uncertainty assay (\code{se} or \code{var}); mapping any other assay is an error.
+When the catalog has a \code{subject} column, its values become the GDS subject
+labels and uncertainty files are paired with beta files by subject;
+subject-level metadata from the catalog is attached as col_data.
 }
 \examples{
 \dontrun{
 catalog <- image_catalog("study/", "sub-*/stats/*.nii.gz",
                          path_regex = "sub-(?<subject>[^/]+)") |>
-  map_assays(beta = "cope", se = "varcope")
+  map_assays(beta = "^cope", var = "^varcope")
 
 plan <- as_gds(catalog, mask = "mask.nii.gz")
 result <- compute(plan)

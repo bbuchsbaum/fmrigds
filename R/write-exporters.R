@@ -39,12 +39,23 @@
 
   if (include_col_data && !is.null(gds$col_data) && nrow(gds$col_data)) {
     cd <- gds$col_data
-    cd_subjects <- rownames(cd) %||% gds$subjects
+    # rownames() of a data.frame are never NULL (automatic "1", "2", ...), so
+    # only trust them when they actually name the subjects; otherwise col_data
+    # rows are aligned with gds$subjects.
+    rn <- rownames(cd)
+    has_auto_rn <- is.integer(.row_names_info(cd, type = 0L))
+    cd_subjects <- if (!has_auto_rn && !is.null(rn) && all(subjects %in% rn)) {
+      rn
+    } else if (nrow(cd) == length(subjects)) {
+      subjects
+    } else {
+      rn
+    }
+    idx <- match(grid$subject, cd_subjects)
     for (nm in colnames(cd)) {
-      column <- rep(NA, nrow(grid))
-      idx <- match(grid$subject, cd_subjects)
-      column[!is.na(idx)] <- unlist(cd[idx[!is.na(idx)], nm], use.names = FALSE)
-      grid[[nm]] <- column
+      # Index the column vector directly so factors, dates, logicals etc.
+      # keep their class (unlist() turned factors into integer codes).
+      grid[[nm]] <- cd[[nm]][idx]
     }
   }
 
@@ -145,9 +156,9 @@
 }
 
 .write_gds_nifti <- function(gds, path, options = list()) {
-  if (!requireNamespace("RNifti", quietly = TRUE)) {
-    stop("The 'RNifti' package is required for NIfTI export.", call. = FALSE)
-  }
+  # Backend requirements (neuroim2 for 3D outputs, RNifti otherwise) are
+  # checked by .write_voxel_nifti(), so a neuroim2-only install can still
+  # export single volumes.
   space <- gds$space
   if (!inherits(space, "space_voxel")) {
     stop("NIfTI export requires a voxel space.", call. = FALSE)
@@ -161,16 +172,19 @@
     stop("Sample axis does not match voxel space dimensions.", call. = FALSE)
   }
 
+  # NIfTI holds one image per file, so the (vox x S x C) output array is built
+  # once; each volume is scattered straight into its slot by linear offset to
+  # avoid per-volume temporaries.
+  packed <- identical(space$storage, "packed") && !is.null(space$mask_idx)
   out <- array(0, dim = c(vox_dim, dims[2], dims[3]))
-  for (j in seq_len(dims[2])) {
-    for (k in seq_len(dims[3])) {
-      vec <- arr[, j, k]
-      if (identical(space$storage, "packed") && !is.null(space$mask_idx)) {
-        full <- numeric(n_vox)
-        full[space$mask_idx] <- vec
-        vec <- full
+  for (k in seq_len(dims[3])) {
+    for (j in seq_len(dims[2])) {
+      offset <- ((k - 1L) * dims[2] + (j - 1L)) * n_vox
+      if (packed) {
+        out[offset + space$mask_idx] <- arr[, j, k]
+      } else {
+        out[offset + seq_len(n_vox)] <- arr[, j, k]
       }
-      out[,,, j, k] <- array(vec, dim = vox_dim)
     }
   }
 
