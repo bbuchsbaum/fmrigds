@@ -22,6 +22,7 @@
 #' guidance.
 #' @importFrom stats setNames
 #' @importFrom utils head
+#' @importFrom Rcpp sourceCpp
 #' @useDynLib fmrigds, .registration = TRUE
 "_PACKAGE"
 

@@ -1,7 +1,7 @@
 Package: fmrigds
 Type: Package
 Title: Lazy, Format-Agnostic Group Analysis for fMRI
-Version: 0.1.0.9000
+Version: 0.1.0
 Depends:
     R (>= 4.1.0)
 Authors@R: c(
@@ -20,17 +20,21 @@ Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
 Imports:
     Matrix,
+    Rcpp,
     digest,
-    fmridataset,
     jsonlite,
     data.table,
     hdf5r,
-    multidesign
+    stats,
+    tools,
+    utils
 LinkingTo: Rcpp, RcppArmadillo
 URL: https://github.com/bbuchsbaum/fmrigds
 BugReports: https://github.com/bbuchsbaum/fmrigds/issues
 Suggests:
     testthat (>= 3.0.0),
+    fmridataset,
+    multidesign,
     arrow,
     RNifti,
     lme4,
@@ -54,6 +58,7 @@ Remotes:
     github::bbuchsbaum/neuroim2,
     github::bbuchsbaum/neurotabs,
     github::bbuchsbaum/neurothresh
+Additional_repositories: https://bbuchsbaum.r-universe.dev
 VignetteBuilder: knitr
 Config/testthat/edition: 3
 Config/Needs/website: albersdown
