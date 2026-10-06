@@ -61,13 +61,13 @@ as_scalar_map_gds <- gds_from_scalar_maps
 #' workflows. They return a lazy GDS plan; call [compute()] to materialise the
 #' fitted maps.
 #'
-#' @param x A realised [`gds`] or [`gds_plan`].
+#' @param x A realised [`gds`] or [`gds_plan`][as_plan()].
 #' @param formula One-sided model formula for [group_ols()].
 #' @param col_data Optional subject-level covariates to attach before fitting.
 #' @param options Reducer options passed to [reduce()].
 #' @param ... Additional arguments passed to [reduce()].
 #'
-#' @return A [`gds_plan`] with an OLS reduce node.
+#' @return A [`gds_plan`][as_plan()] with an OLS reduce node.
 #' @export
 #' @examples
 #' \dontrun{

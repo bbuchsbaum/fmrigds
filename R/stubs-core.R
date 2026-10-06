@@ -9,7 +9,7 @@
 #' @param ... Arguments passed to subset(), then compute()
 #'
 #' @return A realized GDS object
-#' @export
+#' @noRd
 subset_eager <- function(...) compute(subset(...))
 
 #' Eagerly derive statistics and compute immediately
@@ -17,5 +17,5 @@ subset_eager <- function(...) compute(subset(...))
 #' @param ... Arguments passed to derive(), then compute()
 #'
 #' @return A realized GDS object
-#' @export
+#' @noRd
 derive_eager <- function(...) compute(derive(...))

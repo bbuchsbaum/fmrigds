@@ -1,6 +1,6 @@
 #' Register a map family on a plan or realised GDS
 #'
-#' @param x A [`gds_plan`] or realised [`gds`]
+#' @param x A [`gds_plan`][as_plan()] or realised [`gds`]
 #' @param family A [`MapFamily`] object
 #' @param overwrite Whether to overwrite an existing family with the same name
 #'

@@ -30,7 +30,7 @@ align <- function(x, family) {
 #' @param ... Arguments passed to align(), then compute()
 #'
 #' @return A realized GDS object
-#' @export
+#' @noRd
 align_eager <- function(x, ...) {
   compute(align(x, ...))
 }

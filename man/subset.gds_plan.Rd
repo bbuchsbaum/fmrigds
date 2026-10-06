@@ -26,5 +26,5 @@ A \code{gds_plan}
 \description{
 Adds a \code{subset_axis} node to the plan. Realised \code{\link{gds}} objects and
 \code{\link{gds_source}} bindings are first converted with \code{\link[=as_plan]{as_plan()}}, so the result
-is always a lazy \code{\link{gds_plan}}; call \code{\link[=compute]{compute()}} to materialise it.
+is always a lazy \code{\link[=as_plan]{gds_plan}}; call \code{\link[=compute]{compute()}} to materialise it.
 }

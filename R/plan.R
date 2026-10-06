@@ -6,7 +6,7 @@
 #'
 #' @return A plan object (`gds_plan`)
 #' @name gds_plan
-#' @export
+#' @noRd
 gds_plan <- function(source, nodes = list(), meta = list()) {
   if (!inherits(source, "gds_source")) {
     stop("`source` must be a gds_source", call. = FALSE)
@@ -48,7 +48,7 @@ gds_source <- function(adapter, source_spec, probe_result = NULL) {
 #' @param contrast Contrast indices or names
 #'
 #' @return Operation node list
-#' @export
+#' @noRd
 op_subset_axis <- function(sample = NULL, subject = NULL, contrast = NULL) {
   list(op = "subset_axis", sample = sample, subject = subject, contrast = contrast)
 }
@@ -59,7 +59,7 @@ op_subset_axis <- function(sample = NULL, subject = NULL, contrast = NULL) {
 #' @param options Optional list of derivation options
 #'
 #' @return Operation node list
-#' @export
+#' @noRd
 op_derive <- function(what, options = list()) {
   list(op = "derive", what = as.character(what), options = options)
 }
@@ -70,7 +70,7 @@ op_derive <- function(what, options = list()) {
 #' @param family_name Name of registered map family
 #'
 #' @return Operation node list
-#' @export
+#' @noRd
 op_align_to_group <- function(family = NULL, family_name = NULL) {
   if (!is.null(family) && is.null(family_name)) {
     family_name <- family$name %||% NULL
@@ -83,7 +83,7 @@ op_align_to_group <- function(family = NULL, family_name = NULL) {
 #' @param policy MaskPolicy object
 #'
 #' @return Operation node list
-#' @export
+#' @noRd
 op_mask_policy <- function(policy) {
   list(op = "mask_policy", policy = policy)
 }
@@ -96,7 +96,7 @@ op_mask_policy <- function(policy) {
 #' @param combine Optional combine method
 #'
 #' @return Operation node list
-#' @export
+#' @noRd
 op_map <- function(target_space, map, uncertainty, combine = NULL) {
   list(op = "map", target_space = target_space, map = map, uncertainty = uncertainty, combine = combine)
 }
@@ -110,7 +110,7 @@ op_map <- function(target_space, map, uncertainty, combine = NULL) {
 #' @param formula Optional model formula for meta-regression
 #'
 #' @return Operation node list
-#' @export
+#' @noRd
 op_reduce <- function(method, weights, by, options = list(), formula = NULL) {
   list(op = "reduce", method = method, weights = weights, by = by, options = options, formula = formula)
 }
@@ -122,7 +122,7 @@ op_reduce <- function(method, weights, by, options = list(), formula = NULL) {
 #' @param options Optional format-specific options
 #'
 #' @return Operation node list
-#' @export
+#' @noRd
 op_write <- function(path, format, options = list()) {
   list(op = "write", path = path, format = format, options = options)
 }
@@ -187,7 +187,7 @@ as_plan.gds <- function(x) {
 #' @param node Operation node (list)
 #'
 #' @return Updated plan
-#' @export
+#' @noRd
 add_op <- function(plan, node) {
   if (!inherits(plan, "gds_plan")) {
     stop("`plan` must be a gds_plan", call. = FALSE)
@@ -240,7 +240,7 @@ add_op <- function(plan, node) {
 #'
 #' Adds a `subset_axis` node to the plan. Realised [`gds`] objects and
 #' [`gds_source`] bindings are first converted with [as_plan()], so the result
-#' is always a lazy [`gds_plan`]; call [compute()] to materialise it.
+#' is always a lazy [`gds_plan`][as_plan()]; call [compute()] to materialise it.
 #'
 #' @param x A `gds_plan`, `gds_source`, or realised `gds`
 #' @param sample,subject,contrast Optional indices (positional, logical, or

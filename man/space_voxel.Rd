@@ -2,19 +2,9 @@
 % Please edit documentation in R/space.R
 \name{space_voxel}
 \alias{space_voxel}
-\alias{space_voxels}
 \title{Create a voxel space descriptor}
 \usage{
 space_voxel(
-  dim,
-  affine,
-  mask_bitmap = NULL,
-  mask_idx = NULL,
-  storage = c("dense", "packed"),
-  template_id = NULL
-)
-
-space_voxels(
   dim,
   affine,
   mask_bitmap = NULL,
@@ -41,6 +31,4 @@ An object of class \code{c("space_voxel", "gds_space")}
 }
 \description{
 Create a voxel space descriptor
-
-Alias for space_voxel
 }

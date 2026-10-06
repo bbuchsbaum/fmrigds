@@ -203,7 +203,7 @@ compute <- function(x,
 #' @param plan A gds_plan object
 #'
 #' @return Character digest hash
-#' @export
+#' @noRd
 digest_plan <- function(plan) {
   if (inherits(plan, "fmri_group_plan")) {
     .require_frame_deps("digest_plan() on an fmri_group_plan")
@@ -248,7 +248,7 @@ digest_plan <- function(plan) {
 #' @param node Operation node list
 #'
 #' @return Canonicalized node list
-#' @export
+#' @noRd
 canonicalize_node <- function(node) {
   params <- node[!names(node) %in% c("op", "node_id")]
   params <- params[order(names(params))]

@@ -48,7 +48,7 @@
 #' summary(exam)
 #' if (requireNamespace("ggplot2", quietly = TRUE)) plot(exam)
 #'
-#' @param x A subject-level [`gds_plan`], [`gds_source`], or [`gds`], optionally
+#' @param x A subject-level [`gds_plan`][as_plan()], [`gds_source`], or [`gds`], optionally
 #'   containing one group reducer and a post-hoc conclusion tail.
 #' @param method Reducer method when `x` has no reducer.
 #' @param formula Model formula when `x` has no reducer.

@@ -15,7 +15,7 @@ reduce(
 )
 }
 \arguments{
-\item{x}{A \code{\link{gds_plan}}, \code{\link{gds_source}}, or realised \code{\link{gds}}}
+\item{x}{A \code{\link[=as_plan]{gds_plan}}, \code{\link{gds_source}}, or realised \code{\link{gds}}}
 
 \item{method}{Reduction method. Built-ins include \code{"fixed"}, \code{"random"},
 \code{"stouffer"}, and \code{"fisher"}. Registry-backed reducers include
@@ -90,7 +90,7 @@ Reduce across subjects (meta-analysis)
 of the fmrigds workflow you already have:
 \itemize{
 \item Start from files or another external source with \code{\link[=gds]{gds()}}. That returns a
-\code{\link{gds_plan}} you can pipe directly into \code{reduce()}.
+\code{\link[=as_plan]{gds_plan}} you can pipe directly into \code{reduce()}.
 \item Start from an in-memory result with a realised \code{\link{gds}} returned by
 \code{\link[=compute]{compute()}} or created directly with \code{\link[=new_gds]{new_gds()}}. \code{reduce()} will convert
 it with \code{\link[=as_plan]{as_plan()}} for you.

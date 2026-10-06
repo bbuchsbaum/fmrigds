@@ -12,7 +12,7 @@ with_col_data(x, col_data)
 \item{col_data}{Data frame keyed by subject identifiers (rownames)}
 }
 \value{
-A \code{\link{gds_plan}} (for plans/sources) or a \code{\link{gds}} (for realised objects)
+A \code{\link[=as_plan]{gds_plan}} (for plans/sources) or a \code{\link{gds}} (for realised objects)
 }
 \description{
 Attach subject-level covariates to a plan or GDS

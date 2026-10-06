@@ -36,11 +36,6 @@ space_voxel <- function(dim,
   )
 }
 
-#' Alias for space_voxel
-#'
-#' @rdname space_voxel
-#' @export
-space_voxels <- space_voxel
 
 #' Create a parcels/ROI space descriptor
 #'

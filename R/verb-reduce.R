@@ -1,6 +1,6 @@
 #' Reduce across subjects (meta-analysis)
 #'
-#' @param x A [`gds_plan`], [`gds_source`], or realised [`gds`]
+#' @param x A [`gds_plan`][as_plan()], [`gds_source`], or realised [`gds`]
 #' @param method Reduction method. Built-ins include `"fixed"`, `"random"`,
 #'   `"stouffer"`, and `"fisher"`. Registry-backed reducers include
 #'   meta-analytic regression reducers such as `"meta:fe_reg"` and the
@@ -28,7 +28,7 @@
 #' of the fmrigds workflow you already have:
 #'
 #' - Start from files or another external source with [gds()]. That returns a
-#'   [`gds_plan`] you can pipe directly into `reduce()`.
+#'   [`gds_plan`][as_plan()] you can pipe directly into `reduce()`.
 #' - Start from an in-memory result with a realised [`gds`] returned by
 #'   [compute()] or created directly with [new_gds()]. `reduce()` will convert
 #'   it with [as_plan()] for you.
@@ -261,7 +261,7 @@ reduce <- function(x,
 #' @param ... Arguments passed to reduce(), then compute()
 #'
 #' @return A realized GDS object
-#' @export
+#' @noRd
 reduce_eager <- function(x, ...) {
   compute(reduce(x, ...))
 }

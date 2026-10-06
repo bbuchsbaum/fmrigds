@@ -2,8 +2,6 @@
 # reducer dispatch, weights, block/preview axes, plan serialization, subset
 # on voxel spaces and realised objects, plan axis accessors, Lancaster df).
 
-# Compiled kernels need the Rcpp namespace loaded when this file runs alone.
-requireNamespace("Rcpp", quietly = TRUE)
 
 .review_stat_gds <- function(n = 6L, n_subj = 3L, df_value = 20, na_first = TRUE,
                              space = NULL, row_data = NULL) {
@@ -320,4 +318,17 @@ test_that("dead optimizer subset helpers are removed", {
   ns <- asNamespace("fmrigds")
   expect_false(exists(".combine_subsets", envir = ns, inherits = FALSE))
   expect_false(exists(".merge_subset", envir = ns, inherits = FALSE))
+})
+
+test_that("contrasts() falls back to stats::contrasts for factors", {
+  f <- factor(c("a", "b", "c"))
+  expect_equal(contrasts(f), stats::contrasts(f))
+  expect_equal(contrasts(f, contrasts = FALSE), stats::contrasts(f, contrasts = FALSE))
+})
+
+test_that("internal plan plumbing is not exported", {
+  exports <- getNamespaceExports("fmrigds")
+  internal <- c("plan", "space_voxels", "add_op", "op_reduce", "digest_plan",
+                "gds_plan", "canonicalize_node", "reduce_eager", "subset_eager")
+  expect_false(any(internal %in% exports))
 })

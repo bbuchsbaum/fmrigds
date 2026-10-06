@@ -103,7 +103,7 @@ gds_metadata <- function(schema_version = "0.1.0",
 #' @param hash Optional pre-computed hash
 #'
 #' @return A provenance node list
-#' @export
+#' @noRd
 provenance_node <- function(op_name,
                             params,
                             inputs = list(),
@@ -135,7 +135,7 @@ provenance_node <- function(op_name,
 #' @param inputs Parent node identifiers
 #'
 #' @return Updated metadata list
-#' @export
+#' @noRd
 add_provenance_node <- function(metadata,
                                 op_name,
                                 params,
@@ -195,11 +195,11 @@ assay.gds <- function(x, name = "beta", ...) x$assays[[name]]
 #' Discoverability helper for finding assay names to pass to [assay()],
 #' [write_nifti_assays()], or [write_out()] without having to run a job and
 #' inspect `names(assays(fit))`. Works on a realised [`gds`], a lazy
-#' [`gds_plan`]/[`gds_source`] (reporting the *input* assays the source probed),
+#' [`gds_plan`][as_plan()]/[`gds_source`] (reporting the *input* assays the source probed),
 #' or---when `reducer` is supplied---reports a reducer's declared output stems
 #' without computing anything.
 #'
-#' @param x A realised [`gds`], a [`gds_plan`], or a [`gds_source`].
+#' @param x A realised [`gds`], a [`gds_plan`][as_plan()], or a [`gds_source`].
 #' @param reducer Optional reducer name (e.g. `"meta:re"`, `"ols:voxelwise"`, or
 #'   an alias like `"random"`). When supplied, `x` is ignored and the reducer's
 #'   declared `provides` stems are returned. Regression/LMM reducers expand
@@ -308,17 +308,25 @@ subjects.gds_plan <- function(x) {
 
 #' Extract contrast identifiers from a GDS object
 #'
-#' @param x A GDS object
+#' For objects that are not GDS objects or plans (for example factors), the
+#' default method delegates to [stats::contrasts()], so attaching fmrigds does
+#' not break base model-contrast code.
+#'
+#' @param x A GDS object or plan
+#' @param ... Passed to [stats::contrasts()] by the default method.
 #'
 #' @return Character vector of contrast names
 #' @export
-contrasts <- function(x) UseMethod("contrasts")
+contrasts <- function(x, ...) UseMethod("contrasts")
 
 #' @export
-contrasts.gds <- function(x) x$contrasts
+contrasts.default <- function(x, ...) stats::contrasts(x, ...)
 
 #' @export
-contrasts.gds_plan <- function(x) {
+contrasts.gds <- function(x, ...) x$contrasts
+
+#' @export
+contrasts.gds_plan <- function(x, ...) {
   out <- x$source$probe$contrasts %||% (x$meta$contrasts %||% character())
   .plan_axis_after_nodes(x, out, axis = "contrast")
 }
