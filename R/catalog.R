@@ -175,7 +175,7 @@ image_catalog <- function(root,
     stop("Root directory does not exist: ", root, call. = FALSE)
   }
 
-  root <- normalizePath(root, mustWork = TRUE)
+  root <- normalizePath(root, winslash = "/", mustWork = TRUE)
 
   # Discover files using glob pattern
   files <- .catalog_discover_files(root, pattern, recursive)
@@ -204,14 +204,29 @@ image_catalog <- function(root,
 #' @return Character vector of file paths
 #' @keywords internal
 .catalog_discover_files <- function(root, pattern, recursive) {
+  root <- normalizePath(root, winslash = "/", mustWork = FALSE)
+
+  if (grepl("**", pattern, fixed = TRUE)) {
+    # Sys.glob() has no recursive `**` support (it behaves like a single `*`),
+    # so expand it ourselves: list every file below root and match the
+    # root-relative path against the glob translated to a regex.
+    rel <- list.files(root, recursive = TRUE, full.names = FALSE, all.files = FALSE)
+    rel <- gsub("\\\\", "/", rel)
+    keep <- grepl(.glob_to_regex(pattern), rel, perl = TRUE)
+    files <- file.path(root, rel[keep])
+    files <- normalizePath(files, winslash = "/", mustWork = FALSE)
+    files <- files[file.exists(files) & !dir.exists(files)]
+    return(sort(files))
+  }
+
   # Build full glob pattern
   full_pattern <- file.path(root, pattern)
 
   # Use Sys.glob for pattern expansion
   files <- Sys.glob(full_pattern)
 
-  # If no results and pattern doesn't have **, try recursive list.files
-  if (!length(files) && !grepl("\\*\\*", pattern) && recursive) {
+  # If no results, try recursive list.files on the basename pattern
+  if (!length(files) && recursive) {
     # Convert glob to regex for list.files
     regex_pattern <- .glob_to_regex(basename(pattern))
     search_dir <- file.path(root, dirname(pattern))
@@ -226,7 +241,7 @@ image_catalog <- function(root,
   }
 
   # Ensure absolute paths and sort
-  files <- normalizePath(files, mustWork = FALSE)
+  files <- normalizePath(files, winslash = "/", mustWork = FALSE)
   files <- files[file.exists(files)]
   sort(files)
 }
@@ -234,7 +249,9 @@ image_catalog <- function(root,
 #' Convert simple glob pattern to regex
 #' @keywords internal
 .glob_to_regex <- function(pattern) {
-  # First, mark ** with a placeholder to avoid double-processing
+  # `**/` matches zero or more whole directory levels; mark it first.
+  pattern <- gsub("**/", "\004DSTARDIR\004", pattern, fixed = TRUE)
+  # Then mark remaining ** with a placeholder to avoid double-processing
   pattern <- gsub("\\*\\*", "\001DOUBLESTAR\001", pattern)
   # Also mark single * with placeholder
   pattern <- gsub("\\*", "\002SINGLESTAR\002", pattern)
@@ -255,6 +272,7 @@ image_catalog <- function(root,
   pattern <- gsub("\\]", "\\\\]", pattern)
 
   # Convert glob wildcards from placeholders
+  pattern <- gsub("\004DSTARDIR\004", "(?:.*/)?", pattern, fixed = TRUE)   # **/ -> any dirs (or none)
   pattern <- gsub("\001DOUBLESTAR\001", ".*", pattern, fixed = TRUE)       # ** -> .*
   pattern <- gsub("\002SINGLESTAR\002", "[^/]*", pattern, fixed = TRUE)    # * -> [^/]*
   pattern <- gsub("\003QUESTION\003", ".", pattern, fixed = TRUE)          # ? -> .
@@ -368,8 +386,10 @@ assign_meta <- function(catalog,
   # Extract using sub with backreference
   # Pattern should contain capture group(s), replacement uses backrefs like \1
   values <- rep(NA_character_, length(src_col))
+  # Wrap in a non-capturing group so alternations in `pattern` (e.g. "a|b")
+  # stay scoped and do not split the surrounding ".*?" / ".*".
   values[matches] <- sub(
-    paste0(".*?", pattern, ".*"),
+    paste0("^.*?(?:", pattern, ").*$"),
     replacement,
     src_col[matches],
     perl = TRUE
@@ -414,6 +434,19 @@ join_meta <- function(catalog,
     stop("Join key(s) not found in data: ", paste(missing_dat, collapse = ", "), call. = FALSE)
   }
 
+  # A many-to-one join would silently duplicate catalog rows (and then the
+  # match() below would keep an arbitrary one); require unique keys.
+  key_str <- do.call(paste, c(unname(as.list(data[by])), sep = "\r"))
+  if (anyDuplicated(key_str)) {
+    dups <- unique(key_str[duplicated(key_str)])
+    stop(
+      "join_meta(): `data` has duplicate values for key column(s) ",
+      paste(by, collapse = ", "), ": ",
+      paste(utils::head(gsub("\r", "/", dups, fixed = TRUE), 5L), collapse = ", "),
+      call. = FALSE
+    )
+  }
+
   # Store original file order
   orig_files <- catalog$files
 
@@ -455,14 +488,14 @@ join_meta <- function(catalog,
 #' \dontrun{
 #' # By filename pattern
 #' catalog <- map_assays(catalog,
-#'   beta = "cope[0-9]+\\.nii",
-#'   se = "varcope[0-9]+\\.nii"
+#'   beta = "^cope[0-9]+\\.nii",
+#'   var = "^varcope[0-9]+\\.nii"
 #' )
 #'
 #' # By metadata column value
 #' catalog <- map_assays(catalog,
 #'   beta = list(stat_type = "cope"),
-#'   se = list(stat_type = "varcope")
+#'   var = list(stat_type = "varcope")
 #' )
 #' }
 map_assays <- function(catalog, ...) {
@@ -866,8 +899,11 @@ unique.image_catalog <- function(x, incomparables = FALSE, column = "subject", .
 #' Convert image_catalog to GDS plan
 #'
 #' Create a GDS plan from an image catalog. The catalog's assay mappings
-#' determine which files are used for beta and se assays, and subject-level
-#' metadata from the catalog is attached as col_data.
+#' determine which files are used for the `beta` assay and, optionally, one
+#' uncertainty assay (`se` or `var`); mapping any other assay is an error.
+#' When the catalog has a `subject` column, its values become the GDS subject
+#' labels and uncertainty files are paired with beta files by subject;
+#' subject-level metadata from the catalog is attached as col_data.
 #'
 #' @param x An image_catalog object with assay mappings set via [map_assays()].
 #' @param mask Optional mask file path or NeuroVol object.
@@ -880,7 +916,7 @@ unique.image_catalog <- function(x, incomparables = FALSE, column = "subject", .
 #' \dontrun{
 #' catalog <- image_catalog("study/", "sub-*/stats/*.nii.gz",
 #'                          path_regex = "sub-(?<subject>[^/]+)") |>
-#'   map_assays(beta = "cope", se = "varcope")
+#'   map_assays(beta = "^cope", var = "^varcope")
 #'
 #' plan <- as_gds(catalog, mask = "mask.nii.gz")
 #' result <- compute(plan)
@@ -893,41 +929,101 @@ as_gds.image_catalog <- function(x, mask = NULL, ...) {
     stop("Catalog must have assay mappings. Use map_assays() first.", call. = FALSE)
   }
 
+  # Only beta plus one uncertainty assay (se or var) can be ingested from
+  # NIfTI files; refuse anything else instead of silently dropping it.
+  supported <- c("beta", "se", "var")
+  unsupported <- setdiff(names(x$assay_map), supported)
+  if (length(unsupported)) {
+    stop(
+      "as_gds(<image_catalog>) can only ingest the assays ",
+      paste(supported, collapse = ", "), "; mapped but unsupported: ",
+      paste(unsupported, collapse = ", "),
+      ". Remove these mappings (map_assays()) or derive them after loading.",
+      call. = FALSE
+    )
+  }
+  if (all(c("se", "var") %in% names(x$assay_map))) {
+    stop("Map either 'se' or 'var' for a catalog, not both.", call. = FALSE)
+  }
+
   # Resolve files for each assay
-  assay_files <- list()
+  assay_idx <- list()
   for (nm in names(x$assay_map)) {
     idx <- .resolve_assay_map(x, nm)
     if (!length(idx)) {
       stop("No files match assay '", nm, "' mapping", call. = FALSE)
     }
-    assay_files[[nm]] <- x$files[idx]
+    assay_idx[[nm]] <- idx
   }
 
   # Require at least beta
-  if (!"beta" %in% names(assay_files)) {
+  if (!"beta" %in% names(assay_idx)) {
     stop("Catalog must map at least 'beta' assay", call. = FALSE)
   }
 
-  # Build nifti_source specification
-  src_args <- list(beta = assay_files$beta)
-  if ("se" %in% names(assay_files)) {
-    src_args$se <- assay_files$se
+  overlap <- intersect(assay_idx$beta, unlist(assay_idx[setdiff(names(assay_idx), "beta")]))
+  if (length(overlap)) {
+    stop(
+      "Assay mappings overlap: file '", basename(x$files[overlap[1L]]),
+      "' matches both 'beta' and another assay. Anchor the patterns ",
+      "(e.g. beta = \"^cope\", se = \"^varcope\").",
+      call. = FALSE
+    )
   }
 
-  src <- do.call(nifti_source, src_args)
+  unc_name <- intersect(c("se", "var"), names(assay_idx))
+  beta_subj_raw <- if ("subject" %in% names(x$metadata)) {
+    as.character(x$metadata$subject[assay_idx$beta])
+  } else {
+    NULL
+  }
+  # Use catalog subjects whenever the catalog provides any for the beta files;
+  # otherwise fall back to the NIfTI adapter's filename heuristics.
+  use_catalog_subjects <- !is.null(beta_subj_raw) && !all(is.na(beta_subj_raw))
+
+  if (use_catalog_subjects) {
+    subj_for <- function(nm) {
+      s <- as.character(x$metadata$subject[assay_idx[[nm]]])
+      if (anyNA(s) || any(!nzchar(s))) {
+        stop("Catalog subject is missing for some '", nm, "' files.", call. = FALSE)
+      }
+      if (anyDuplicated(s)) {
+        stop(
+          "Catalog maps several '", nm, "' files to the same subject (",
+          paste(unique(s[duplicated(s)]), collapse = ", "),
+          "). Subset the catalog or refine the assay mapping so there is one file per subject.",
+          call. = FALSE
+        )
+      }
+      s
+    }
+    subjects <- subj_for("beta")
+    src <- list(beta = x$files[assay_idx$beta])
+    if (length(unc_name)) {
+      unc_subj <- subj_for(unc_name)
+      if (!setequal(unc_subj, subjects)) {
+        stop(
+          "Catalog '", unc_name, "' files do not cover the same subjects as the 'beta' files.",
+          call. = FALSE
+        )
+      }
+      # Pair by catalog subject, in beta order.
+      src[[unc_name]] <- x$files[assay_idx[[unc_name]]][match(subjects, unc_subj)]
+    }
+    src$subjects <- subjects
+  } else {
+    src <- list(beta = x$files[assay_idx$beta])
+    if (length(unc_name)) src[[unc_name]] <- x$files[assay_idx[[unc_name]]]
+  }
 
   # Build plan
   plan <- gds(src, format = "nifti", mask = mask, ...)
 
   # Attach col_data from catalog metadata if subject column exists
-  if ("subject" %in% names(x$metadata)) {
-    # Aggregate to one row per subject (use beta files' subjects)
-    beta_idx <- .resolve_assay_map(x, "beta")
-    beta_meta <- x$metadata[beta_idx, , drop = FALSE]
-
-    # Keep unique subjects
-    subject_meta <- beta_meta[!duplicated(beta_meta$subject), , drop = FALSE]
-    rownames(subject_meta) <- subject_meta$subject
+  if (use_catalog_subjects) {
+    beta_meta <- x$metadata[assay_idx$beta, , drop = FALSE]
+    subject_meta <- beta_meta
+    rownames(subject_meta) <- as.character(subject_meta$subject)
 
     # Remove file-specific columns for col_data
     drop_cols <- c("file", "basename", "relpath")

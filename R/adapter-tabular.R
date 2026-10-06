@@ -32,9 +32,13 @@ register_tabular_adapter <- function() {
   if (!file.exists(source)) stop("File does not exist: ", source, call. = FALSE)
 
   ext <- tolower(tools::file_ext(source))
+  # Identifier columns such as subject "001" must not be coerced to the
+  # integer 1 (which silently breaks joins with col_data); keep columns with
+  # leading zeros as character unless the caller overrides it.
+  fread_args <- utils::modifyList(list(data.table = FALSE, keepLeadingZeros = TRUE), list(...))
   data <- switch(ext,
-    csv = data.table::fread(source, data.table = FALSE, ...),
-    tsv = data.table::fread(source, sep = "\t", data.table = FALSE, ...),
+    csv = do.call(data.table::fread, c(list(source), fread_args)),
+    tsv = do.call(data.table::fread, c(list(source, sep = "\t"), fread_args)),
     parquet = {
       if (!requireNamespace("arrow", quietly = TRUE)) {
         stop("arrow package required to read parquet files", call. = FALSE)
@@ -182,7 +186,7 @@ register_tabular_adapter <- function() {
       match(df[[subject_col]], subjects),
       match(df[[contrast_col]], contrasts)
     )
-    arr[idx] <- df[[col]]
+    arr[idx] <- suppressWarnings(as.numeric(df[[col]]))
     arr
   })
   names(result) <- assays

@@ -134,9 +134,13 @@ gds <- function(source,
     source <- .nifti_attach_source_metadata(source, dots)
   }
 
-  handle <- adapter$open(source)
-  probe_result <- do.call(adapter$probe, c(list(handle), dots, list(temporal_policy = temporal_policy, contrast_matrix = contrast_matrix, contrast_names = contrast_names)))
-  adapter$close(handle)
+  # Open/probe/close in a local scope so the handle is released even when the
+  # probe fails (otherwise e.g. an HDF5 file stays locked for the session).
+  probe_result <- local({
+    handle <- adapter$open(source)
+    on.exit(adapter$close(handle), add = TRUE)
+    do.call(adapter$probe, c(list(handle), dots, list(temporal_policy = temporal_policy, contrast_matrix = contrast_matrix, contrast_names = contrast_names)))
+  })
 
   adapter_columns <- probe_result$columns
   probe_result$columns <- NULL

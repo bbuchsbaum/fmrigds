@@ -69,7 +69,7 @@ test_that("nifti adapter flattens 5D non-spatial axes into contrasts", {
   RNifti::writeNifti(arr2, f2)
 
   plan <- gds(c(f1, f2), format = "nifti")
-  expect_equal(unname(plan$source$probe$dims), c(8L, 2L, 6L))
+  expect_equal(as.integer(unclass(plan$source$probe$dims)), c(8L, 2L, 6L))
 
   beta <- compute(plan, assays = "beta")$beta
   expect_equal(dim(beta), c(8L, 2L, 6L))

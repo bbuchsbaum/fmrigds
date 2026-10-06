@@ -26,14 +26,14 @@ This mapping is used by \code{\link[=as_gds.image_catalog]{as_gds.image_catalog(
 \dontrun{
 # By filename pattern
 catalog <- map_assays(catalog,
-  beta = "cope[0-9]+\\\\.nii",
-  se = "varcope[0-9]+\\\\.nii"
+  beta = "^cope[0-9]+\\\\.nii",
+  var = "^varcope[0-9]+\\\\.nii"
 )
 
 # By metadata column value
 catalog <- map_assays(catalog,
   beta = list(stat_type = "cope"),
-  se = list(stat_type = "varcope")
+  var = list(stat_type = "varcope")
 )
 }
 }

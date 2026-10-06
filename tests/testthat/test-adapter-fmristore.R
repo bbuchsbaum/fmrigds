@@ -275,7 +275,8 @@ test_that("fmristore adapter handles /gds group (Path B)", {
   h5$create_group("/gds")
   h5$close_all()
 
-  # Should detect as score 1.0 (delegates to h5 adapter)
+  # Still readable by delegation, but scores below the native h5 adapter
+  # (1.0) so auto-detection picks "h5" for native /gds files.
   score <- .fmri_detect(tmpfile)
-  expect_equal(score, 1.0)
+  expect_true(score > 0 && score < 1)
 })

@@ -41,7 +41,7 @@ uncertainty, and variance-weighted reducers will refuse such a GDS.
 When both \code{beta} and \code{se} are supplied, files are paired by subject key unless
 explicit \code{subject}/\code{subjects} labels are supplied. The fallback key is the file
 basename (extension removed) with a \strong{trailing} statistic token stripped,
-matching \verb{([_.-](beta|cope|effect|se|stderr|sterr|sigma|std(err)?))+$}
+matching \verb{([_.-](beta|cope|varcope|var|variance|effect|se|stderr|sterr|sigma|std(err)?))+$}
 (case insensitive). For example \verb{sub-01_beta.nii.gz} and \verb{sub-01_se.nii.gz}
 both reduce to the key \code{sub-01}. Filenames where the statistic token is not
 last (e.g. \verb{sub-01_stat-beta_sm-2.nii.gz}) will fail to pair unless explicit

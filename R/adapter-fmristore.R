@@ -1,7 +1,10 @@
 # fmristore adapter (Path A + Path B preference) ------------------------------ # nocov start
 
 # Detection priority scores
-.FMRI_SCORE_GDS_NATIVE <- 1.0   # Perfect match: /gds group
+# Native /gds files are owned by the "h5" adapter (which scores 1.0); the
+# fmristore adapter can still read them by delegation but must never win
+# auto-detection for them.
+.FMRI_SCORE_GDS_NATIVE <- 0.5
 .FMRI_SCORE_FMRS_LEGACY <- 0.95 # Legacy fmristore layouts (labeled, latent)
 
 #' Register fmristore Adapter
@@ -76,6 +79,47 @@ register_fmristore_adapter <- function() {
   invisible(NULL)
 }
 
+# A native /gds file is one complete GDS. Silently using only the first of
+# several paths would drop data, so refuse multi-file native sources.
+.fmri_assert_single_native <- function(paths) {
+  if (length(paths) > 1L) {
+    stop(
+      "Native fmrigds /gds HDF5 files each hold a complete GDS; got ", length(paths),
+      " files. Open them individually (gds(<file>)) rather than as one multi-file source.",
+      call. = FALSE
+    )
+  }
+  invisible(TRUE)
+}
+
+# Read a whole (small) dataset and close it again.
+.fmri_read_small <- function(h5, path) {
+  ds <- h5$open(path)
+  on.exit(ds$close(), add = TRUE)
+  ds$read()
+}
+
+# Number of latent components k implied by a /basis/basis_matrix with dims
+# `dm`. The basis is stored [k, V] or [V, k]; k is the smaller extent (this
+# mirrors the orientation rule used by the probe).
+.fmri_latent_k <- function(dm) {
+  dm <- as.integer(dm)
+  if (length(dm) != 2L) stop("/basis/basis_matrix must be 2D", call. = FALSE)
+  if (dm[1] < dm[2]) dm[1] else dm[2]
+}
+
+# Orient one subject embedding as a [k, C] matrix given the basis k.
+.fmri_orient_embedding <- function(emb, k) {
+  if (is.null(dim(emb))) {
+    if (length(emb) != k) stop("Embedding length incompatible with k", call. = FALSE)
+    return(matrix(emb, nrow = k, ncol = 1L))
+  }
+  if (length(dim(emb)) != 2L) stop("Embedding must be a vector or 2D matrix", call. = FALSE)
+  if (nrow(emb) == k) return(as.matrix(emb))
+  if (ncol(emb) == k) return(t(as.matrix(emb)))
+  stop("Embedding shape incompatible with k", call. = FALSE)
+}
+
 .read_string_vec <- function(h5, path) {
   ds <- h5$open(path)
   on.exit(ds$close(), add = TRUE)
@@ -105,8 +149,8 @@ register_fmristore_adapter <- function() {
   h5 <- handle$h5
   # Delegate to h5 adapter if /gds present
   if (.h5_safe_exists(h5, "/gds")) {
+    .fmri_assert_single_native(handle$paths)
     # Use existing h5 adapter for probe
-    h5_close <- FALSE
     adapter <- get_adapter("h5")
     # Build a pseudo handle compatible with h5 adapter
     out <- adapter$probe(list(file = h5, path = handle$paths[[1]]))
@@ -243,21 +287,14 @@ register_fmristore_adapter <- function() {
     bmat <- bds$read()
     dm <- dim(bmat)
     # Expect [k, V]; if [V, k], transpose
-    if (length(dm) != 2L) stop("/basis/basis_matrix must be 2D", call. = FALSE)
-    if (dm[1] < dm[2]) {
-      k <- as.integer(dm[1])
-      projector <- bmat
-    } else {
-      # transpose to [k, V]
-      projector <- t(bmat)
-      k <- nrow(projector)
-    }
-    basis_name <- tryCatch(as.character(h5$open("/basis/basis_method")$read()), error = function(e) NULL)
+    k <- .fmri_latent_k(dm)
+    projector <- if (dm[1] < dm[2]) bmat else t(bmat) # [k, V]
+    basis_name <- tryCatch(as.character(.fmri_read_small(h5, "/basis/basis_method")), error = function(e) NULL)
     # Optional voxel reference
     voxel_space <- NULL
     if (.h5_safe_exists(h5, "/mask") || .h5_safe_exists(h5, "/header/dim")) {
       mask_bitmap <- if (.h5_safe_exists(h5, "/mask")) (.read_uint8_array(h5, "/mask") > 0) else NULL
-      dim_hdr <- tryCatch(as.integer(h5$open("/header/dim")$read()), error = function(e) NULL)
+      dim_hdr <- tryCatch(as.integer(.fmri_read_small(h5, "/header/dim")), error = function(e) NULL)
       vox_dim <- if (!is.null(dim_hdr) && length(dim_hdr) >= 4) as.integer(dim_hdr[2:4]) else if (!is.null(mask_bitmap)) dim(mask_bitmap) else NULL
       if (!is.null(vox_dim)) {
         affine <- diag(4)
@@ -308,7 +345,7 @@ register_fmristore_adapter <- function() {
   mask_idx <- which(as.vector(mask_bitmap))
 
   # Header affine/dims (best-effort)
-  dim_hdr <- tryCatch(as.integer(h5$open("/header/dim")$read()), error = function(e) NULL)
+  dim_hdr <- tryCatch(as.integer(.fmri_read_small(h5, "/header/dim")), error = function(e) NULL)
   # dim may be c(nDim, X, Y, Z, T, ...). Use the first 3 spatial dims when available
   vox_dim <- if (!is.null(dim_hdr) && length(dim_hdr) >= 4) as.integer(dim_hdr[2:4]) else as.integer(dim(mask))
   affine <- diag(4)
@@ -388,6 +425,7 @@ register_fmristore_adapter <- function() {
   h5 <- handle$h5
   # Delegate to h5 adapter if /gds present
   if (h5$exists("/gds")) {
+    .fmri_assert_single_native(handle$paths)
     adapter <- get_adapter("h5")
     return(adapter$read(list(file = h5, path = handle$paths[[1]]), assays = assays, block = block, ...))
   }
@@ -535,12 +573,11 @@ register_fmristore_adapter <- function() {
     on.exit(scans_grp$close(), add = TRUE)
     scl <- scans_grp$ls()
     subj <- if (is.data.frame(scl)) scl$name else scl
-    # Read first embedding to get shapes
-    e1 <- h5$open(paste0("/scans/", subj[[1]], "/embedding"))
-    on.exit(e1$close(), add = TRUE)
-    em <- e1$read()
-    k <- if (is.null(dim(em))) length(em) else if (nrow(em) >= ncol(em)) nrow(em) else ncol(em)
-    C <- if (is.null(dim(em))) 1L else if (nrow(em) >= ncol(em)) ncol(em) else nrow(em)
+    # k comes from the basis (as in the probe), not from guessing which
+    # embedding axis is larger: a [k, C] embedding with C > k is valid.
+    k <- .fmri_latent_k(.h5_dataset_dims(h5, "/basis/basis_matrix"))
+    em <- .fmri_orient_embedding(.fmri_read_small(h5, paste0("/scans/", subj[[1]], "/embedding")), k)
+    C <- ncol(em)
     samples_idx <- if (!is.null(block) && !is.null(block$sample)) {
       bs <- block$sample
       if (is.logical(bs)) which(bs) else as.integer(bs)
@@ -550,19 +587,8 @@ register_fmristore_adapter <- function() {
     if ("beta" %in% assays) {
       arr <- array(NA_real_, dim = c(n_i, length(subj), C))
       for (s in seq_along(subj)) {
-        emb_ds <- h5$open(paste0("/scans/", subj[[s]], "/embedding"))
-        on.exit(emb_ds$close(), add = TRUE)
-        emb <- emb_ds$read()
-        # Coerce to [k, C]
-        if (is.null(dim(emb))) {
-          mat <- matrix(emb, nrow = k, ncol = 1)
-        } else if (nrow(emb) == k) {
-          mat <- emb
-        } else if (ncol(emb) == k) {
-          mat <- t(emb)
-        } else {
-          stop("Embedding shape incompatible with k", call. = FALSE)
-        }
+        mat <- .fmri_orient_embedding(.fmri_read_small(h5, paste0("/scans/", subj[[s]], "/embedding")), k)
+        if (ncol(mat) != C) stop("Embedding contrast count differs across subjects", call. = FALSE)
         arr[, s, ] <- mat[samples_idx, , drop = FALSE]
       }
       out$beta <- arr

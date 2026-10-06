@@ -112,8 +112,22 @@ register_nifti_adapter <- function() {
     }
     files_beta <- if (!is.null(source$beta)) .nifti_normalise_source(source$beta) else NULL
     files_se <- if (!is.null(source$se)) .nifti_normalise_source(source$se) else NULL
+    files_var <- if (!is.null(source$var)) .nifti_normalise_source(source$var) else NULL
+    if (!is.null(files_se) && !is.null(files_var)) {
+      stop("Provide either `se` or `var` NIfTI files, not both.", call. = FALSE)
+    }
+    if (!is.null(files_var) && is.null(files_beta)) {
+      stop("A NIfTI `var` source requires matching `beta` files.", call. = FALSE)
+    }
     if (is.null(files_beta) && is.null(files_se)) stop("No NIfTI files found in list", call. = FALSE)
-    out <- .nifti_align_file_sets(files_beta, files_se, subjects = axis$subjects)
+    if (!is.null(files_var)) {
+      # Pair variance maps exactly like se maps, then move them to their slot.
+      out <- .nifti_align_file_sets(files_beta, files_var, subjects = axis$subjects)
+      out$files_var <- out$files_se
+      out$files_se <- NULL
+    } else {
+      out <- .nifti_align_file_sets(files_beta, files_se, subjects = axis$subjects)
+    }
     out$contrasts <- axis$contrasts
     return(out)
   }
@@ -195,6 +209,16 @@ register_nifti_adapter <- function() {
   spatial_dim <- dim_all[1:3]
   n_contrasts <- .nifti_contrast_count(dim_all)
 
+  # Every input image (all subjects, all assays) must share the first image's
+  # grid: same dimensions and (within tolerance) the same affine. Headers are
+  # cheap to read, so check them all up front instead of failing (or silently
+  # mis-registering voxels) at read time.
+  .nifti_check_grids(
+    c(handle$files_beta, handle$files_se, handle$files_var),
+    ref_dims = dim_all,
+    ref_affine = neuroim2::trans(meta)
+  )
+
   # Read image object (NeuroVol/NeuroVec/NeuroHyperVec depending on source ndim)
   first_img <- .nifti_read_image(files1[1], dim_all = dim_all)
 
@@ -215,6 +239,13 @@ register_nifti_adapter <- function() {
 
     # Convert to logical bitmap (1 = included, 0 = excluded)
     mask_bitmap <- as.array(mask_vol) > 0
+    if (!identical(as.integer(dim(mask_bitmap))[1:3], spatial_dim) || length(dim(mask_bitmap)) != 3L) {
+      stop(
+        "NIfTI mask dimensions (", paste(dim(mask_bitmap), collapse = "x"),
+        ") do not match the image grid (", paste(spatial_dim, collapse = "x"), ").",
+        call. = FALSE
+      )
+    }
   } else {
     # No mask provided: include all voxels
     mask_bitmap <- array(TRUE, dim = spatial_dim)
@@ -223,6 +254,16 @@ register_nifti_adapter <- function() {
   mask_idx <- which(as.vector(mask_bitmap))
 
   subjects <- handle$subjects %||% .nifti_subject_key(files1)
+  if (anyDuplicated(subjects)) {
+    dup <- unique(subjects[duplicated(subjects)])
+    stop(
+      "NIfTI files map to duplicate subject identifiers (",
+      paste(utils::head(dup, 5L), collapse = ", "),
+      ") derived from their filenames. Pass explicit unique `subjects=` labels ",
+      "(e.g. nifti_source(beta = files, subjects = ...)).",
+      call. = FALSE
+    )
+  }
   contrasts <- .nifti_contrast_labels(handle$contrasts, n_contrasts)
 
   # Extract affine transformation from neuroim2 NeuroSpace
@@ -240,6 +281,7 @@ register_nifti_adapter <- function() {
   if (!is.null(handle$files_beta)) assays_avail <- c(assays_avail, "beta")
   if (!is.null(handle$files_se)) assays_avail <- c(assays_avail, "se")
   if (!is.null(handle$files_beta) && is.null(handle$files_se)) assays_avail <- c(assays_avail, "var")
+  synthetic_var <- !is.null(handle$files_beta) && is.null(handle$files_se) && is.null(handle$files_var)
   out <- list(
     assays = assays_avail,
     dims = gds_dims(sample = length(mask_idx), subject = length(files1), contrast = n_contrasts),
@@ -249,11 +291,15 @@ register_nifti_adapter <- function() {
     maps = list(),
     metadata = list(
       schema_version = "0.1.0",
-      source_files = c(handle$files_beta %||% character(), handle$files_se %||% character()),
+      source_files = c(
+        handle$files_beta %||% character(),
+        handle$files_se %||% character(),
+        handle$files_var %||% character()
+      ),
       # Beta-only sources have no real uncertainty; the `var` assay is a
       # synthetic unit-variance placeholder. Flagged so variance-weighted
       # reducers can refuse it (see reduce()).
-      synthetic_var = is.null(handle$files_se) && !is.null(handle$files_beta),
+      synthetic_var = synthetic_var,
       sample_labels_synthetic = TRUE
     ),
     columns = list(effect_cols = NULL, subject_col = NULL, sample_col = NULL, contrast_col = NULL),
@@ -287,7 +333,7 @@ register_nifti_adapter <- function() {
     return(m)
   }
   stripped <- sub(
-    "([_.-](beta|cope|effect|se|stderr|sterr|sigma|std(err)?))+$",
+    "([_.-](beta|cope|varcope|var|variance|effect|se|stderr|sterr|sigma|std(err)?))+$",
     "",
     id,
     ignore.case = TRUE,
@@ -305,7 +351,7 @@ register_nifti_adapter <- function() {
 .nifti_pair_context <- function(ids) {
   b <- basename(ids)
   b <- sub("\\.nii(\\.gz)?$", "", b, ignore.case = TRUE, perl = TRUE)
-  stat <- "(beta|cope|effect|se|stderr|sterr|sigma|std(err)?)"
+  stat <- "(beta|cope|varcope|var|variance|effect|se|stderr|sterr|sigma|std(err)?)"
   b <- gsub(paste0("(?i)[_-](desc|stat)-", stat, "(?=([_.-]|$))"), "", b, perl = TRUE)
   b <- sub(paste0("(?i)([_.-]", stat, ")+$"), "", b, perl = TRUE)
   gsub("[_.-]+$", "", b, perl = TRUE)
@@ -422,7 +468,7 @@ register_nifti_adapter <- function() {
     arr <- array(NA_real_, dim = c(length(sample_idx), n_subjects, n_contrasts))
     for (j in seq_along(file_vec)) {
       img <- .nifti_read_image(file_vec[j])
-      vec <- .nifti_extract(img, mask_idx, n_contrasts)
+      vec <- .nifti_extract(img, mask_idx, n_contrasts, spatial_dim = spatial_dim, file = file_vec[j])
       arr[, j, ] <- vec[sample_idx, , drop = FALSE]
     }
     arr
@@ -430,7 +476,9 @@ register_nifti_adapter <- function() {
   for (nm in assays) {
     if (identical(nm, "beta") && !is.null(handle$files_beta)) out$beta <- read_stack(handle$files_beta, "beta")
     if (identical(nm, "se") && !is.null(handle$files_se)) out$se <- read_stack(handle$files_se, "se")
-    if (identical(nm, "var") && !is.null(handle$files_beta) && is.null(handle$files_se)) {
+    if (identical(nm, "var") && !is.null(handle$files_var)) {
+      out$var <- read_stack(handle$files_var, "var")
+    } else if (identical(nm, "var") && !is.null(handle$files_beta) && is.null(handle$files_se)) {
       .warn_synthetic_variance(once = TRUE)
       out$var <- array(1, dim = c(length(sample_idx), n_subjects, n_contrasts))
       attr(out$var, "synthetic_unit_variance") <- TRUE
@@ -439,7 +487,18 @@ register_nifti_adapter <- function() {
   out
 }
 
-.nifti_extract <- function(img, mask_idx, n_contrasts) {
+.nifti_extract <- function(img, mask_idx, n_contrasts, spatial_dim = NULL, file = NULL) {
+  if (!is.null(spatial_dim)) {
+    img_dim <- as.integer(dim(img))
+    if (length(img_dim) < 3L || !identical(img_dim[1:3], as.integer(spatial_dim))) {
+      stop(
+        "NIfTI image grid mismatch", if (!is.null(file)) paste0(" for '", basename(file), "'") else "",
+        ": spatial dims ", paste(img_dim[seq_len(min(3L, length(img_dim)))], collapse = "x"),
+        " differ from the expected ", paste(spatial_dim, collapse = "x"), ".",
+        call. = FALSE
+      )
+    }
+  }
   # Prefer direct dense conversion; some NeuroHyperVec variants do not implement
   # base as.array() and require explicit voxel-slice reconstruction.
   arr <- tryCatch(as.array(img), error = function(e) NULL)
@@ -464,6 +523,38 @@ register_nifti_adapter <- function() {
   }
 
   vals[mask_idx, , drop = FALSE]
+}
+
+# Verify that every file shares the reference grid (dims incl. non-spatial
+# axes, and the voxel-to-world affine within `tol`). Errors name the first
+# offending file.
+.nifti_check_grids <- function(files, ref_dims, ref_affine, tol = 1e-4) {
+  files <- unique(as.character(files))
+  ref_dims <- as.integer(ref_dims)
+  for (f in files) {
+    hdr <- neuroim2::read_header(f)
+    d <- as.integer(hdr@dims)
+    if (!identical(d, ref_dims)) {
+      stop(
+        "NIfTI grid mismatch: '", basename(f), "' has dimensions ",
+        paste(d, collapse = "x"), " but the first image has ",
+        paste(ref_dims, collapse = "x"),
+        ". All images must be on the same grid (resample them first).",
+        call. = FALSE
+      )
+    }
+    aff <- tryCatch(neuroim2::trans(hdr), error = function(e) NULL)
+    if (!is.null(aff) && !is.null(ref_affine) &&
+        max(abs(as.numeric(aff) - as.numeric(ref_affine))) > tol) {
+      stop(
+        "NIfTI grid mismatch: '", basename(f), "' has a different voxel-to-world ",
+        "affine than the first image. All images must be on the same grid ",
+        "(resample/register them first).",
+        call. = FALSE
+      )
+    }
+  }
+  invisible(TRUE)
 }
 
 .nifti_contrast_count <- function(dims) {
@@ -540,7 +631,7 @@ register_nifti_adapter <- function() {
 #' When both `beta` and `se` are supplied, files are paired by subject key unless
 #' explicit `subject`/`subjects` labels are supplied. The fallback key is the file
 #' basename (extension removed) with a **trailing** statistic token stripped,
-#' matching `([_.-](beta|cope|effect|se|stderr|sterr|sigma|std(err)?))+$`
+#' matching `([_.-](beta|cope|varcope|var|variance|effect|se|stderr|sterr|sigma|std(err)?))+$`
 #' (case insensitive). For example `sub-01_beta.nii.gz` and `sub-01_se.nii.gz`
 #' both reduce to the key `sub-01`. Filenames where the statistic token is not
 #' last (e.g. `sub-01_stat-beta_sm-2.nii.gz`) will fail to pair unless explicit
