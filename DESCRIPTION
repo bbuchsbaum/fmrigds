@@ -8,12 +8,14 @@ Authors@R: c(
     person("Brad", "Buchsbaum", email = "brad.buchsbaum@gmail.com", role = c("aut", "cre"))
     )
 Description: Provides lazy, spatially typed group-analysis plans for
-    observation-by-feature fMRI frames together with compatibility workflows
-    for first-level statistical outputs represented as sample by subject by
-    contrast Group Data Sets (GDS). Supports bounded feature-block reducers,
-    tabular, NIfTI, HDF5, and fmristore inputs, space-aware transformations,
-    provenance tracking, and reproducible export.
+    observation-by-feature functional magnetic resonance imaging (fMRI)
+    frames together with compatibility workflows for first-level statistical
+    outputs represented as sample by subject by contrast Group Data Sets
+    (GDS). Supports bounded feature-block reducers, tabular, 'NIfTI', 'HDF5',
+    and 'fmristore' inputs, space-aware transformations, provenance tracking,
+    and reproducible export.
 License: MIT + file LICENSE
+Copyright: See inst/COPYRIGHTS for bundled vignette fonts.
 Encoding: UTF-8
 LazyData: false
 Roxygen: list(markdown = TRUE)
