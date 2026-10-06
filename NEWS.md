@@ -1,4 +1,73 @@
-# fmrigds 0.1.0.9000
+# fmrigds 0.1.0
+
+## CRAN readiness
+
+- `Rcpp` is now imported. Previously compiled reducers failed in a fresh
+  session ("enterRNGScope not provided by package 'Rcpp'") and then aborted R.
+- `fmridataset` and `multidesign` moved from Imports to Suggests (they are not
+  on CRAN); frame workflows check for them and fail informatively.
+- OpenMP kernels default to at most two threads (`options(fmrigds.threads)`,
+  `FMRIGDS_THREADS`, capped by `OMP_THREAD_LIMIT`).
+- The exported API was trimmed: plan-construction internals (`op_*`,
+  `add_op`, `gds_plan`, `digest_plan`, provenance helpers), the `*_eager`
+  wrappers, and the `plan()` and `space_voxels()` aliases are no longer
+  exported. `contrasts()` gains a default method delegating to
+  `stats::contrasts()`.
+- All examples are runnable (no `\dontrun{}`).
+
+## Statistical fixes
+
+- Permutation FWER now honours one-sided `alternative`; two-sample
+  permutation tests always use the observed labelling, and both tests share
+  the `(1 + #null >= obs) / (1 + n_null)` convention.
+- `ols:voxelwise` returns `NA` where fewer than `p + 1` subjects remain instead
+  of reporting inference on zero residual degrees of freedom.
+- z-scores derived from t, p, Lancaster and Fisher combinations are computed
+  on the log scale and stay finite in the far tail.
+- LMM reducers report per-coefficient containment degrees of freedom
+  (`df_coef:*`): between-subject coefficients use `N - rank(X_between)`.
+- `lmm:ri`/`lmm:ri_slope1` report real convergence; known-variance LMMs mark
+  non-positive-variance samples `NA` instead of aborting the run.
+- Covariance-provider variance propagation scales by each subject's variance.
+- `meta:fe_reg` honours `min_subjects`.
+
+## Plan engine fixes
+
+- `map_to()` and `align()` drop assays they do not propagate and re-derive
+  `se`/`t`/`z`/`p`, so downstream FDR no longer uses stale p-values.
+- Unknown reducer names and unsupported `weights` schemes now error instead of
+  silently running a different analysis.
+- `preview()` and `compute(block =)` subset the space and row data to the
+  block; `subset()` works on realised GDS objects, sources and dense voxel
+  spaces; plan `subjects()`/`contrasts()` reflect subset and reduce steps.
+- `save_plan()`/`load_plan()` round-trip vectors and map operators, verify the
+  stored digest, and refuse unserialisable custom functions.
+
+## I/O fixes
+
+- HDF5 stores no longer transpose the affine on read and round-trip dense
+  voxel spaces and empty provenance logs.
+- Native `.h5` stores auto-detect as the `h5` adapter; adapter handles are
+  closed when probing fails.
+- Image catalogs use catalog subjects, pair uncertainty files by subject,
+  support `var`, and expand `**` recursively.
+- Factor covariates survive tidy/CSV export; NIfTI and NeuroVol inputs are
+  checked for consistent grids and unique subjects; NeuroVol inputs flag
+  synthetic unit variance.
+- CLI subset values are treated as labels (use `axis=idx:` for positions) and
+  leading-zero IDs are preserved.
+
+## Group examination fixes
+
+- `as_fmri_frame()` regenerates stale projection metadata after reduce,
+  subset or reordering, and frame results comply with the current
+  `fmridataset` metadata contract.
+- Deletion sensitivity keeps the multiple-testing family fixed;
+  `stability_replicates = 0` no longer crashes; `exact_refit_n` is honoured;
+  split stability and `balance_contrasts` are corrected; FE diagnostics use
+  the reducer's eligibility rules; report covariates show factor labels.
+
+## Earlier development changes
 
 ## Documentation
 
