@@ -1,7 +1,7 @@
 ## Submission notes
 
 * First submission.
-* `fmridataset`, `multidesign`, `neurotabs`, `neurothresh` and `albersdown`
+* `fmridataset`, `multidesign`, `neurotabs` and `neurothresh`
   are optional (Suggests) and are available from
   <https://bbuchsbaum.r-universe.dev> (declared in `Additional_repositories`).
   All uses are guarded with `requireNamespace()` and the corresponding tests
