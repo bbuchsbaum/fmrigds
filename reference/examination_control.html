@@ -3,7 +3,7 @@
 review, staging, and numerical settings used by examine_group(). Keeping
 these settings in a typed object makes defaults visible and reproducible."><meta property="og:description" content="examination_control() validates the bounded execution, residual-geometry,
 review, staging, and numerical settings used by examine_group(). Keeping
-these settings in a typed object makes defaults visible and reproducible."></head><body>
+these settings in a typed object makes defaults visible and reproducible."><link href="../albers.css" rel="stylesheet"><script>window.albersdownDefaults = window.albersdownDefaults || { family: "red", preset: "homage", style: "minimal" };</script><script src="../albers.js"></script></head><body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
 
 
@@ -11,7 +11,7 @@ these settings in a typed object makes defaults visible and reproducible."></hea
 
     <a class="navbar-brand me-2" href="../index.html">fmrigds</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.0.9000</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -73,7 +73,11 @@ these settings in a typed object makes defaults visible and reproducible.</p>
 <dt id="arg-geometry">geometry<a class="anchor" aria-label="anchor" href="#arg-geometry"></a></dt>
 <dd><p>Named list controlling the deterministic low-rank residual
 representation. Supported entries are <code>rank</code>, <code>oversample</code>, <code>cap</code>,
-<code>balance_contrasts</code>, and <code>stability_replicates</code>.</p></dd>
+<code>balance_contrasts</code>, and <code>stability_replicates</code>. With
+<code>balance_contrasts = TRUE</code> each contrast's residuals are scaled by its own
+eligible feature count so contrasts contribute comparably to the geometry.
+<code>stability_replicates = 0</code> disables split-feature stability assessment;
+review criteria are then not gated on stability.</p></dd>
 
 
 <dt id="arg-review">review<a class="anchor" aria-label="anchor" href="#arg-review"></a></dt>
@@ -82,8 +86,9 @@ representation. Supported entries are <code>rank</code>, <code>oversample</code>
 
 
 <dt id="arg-exact-refit-n">exact_refit_n<a class="anchor" aria-label="anchor" href="#arg-exact-refit-n"></a></dt>
-<dd><p>Number of selected random-effects cases eligible for an
-exact heterogeneity refit.</p></dd>
+<dd><p>Maximum number of retained random-effects subjects,
+taken in decreasing <code>review_priority</code>, that receive an exact
+heterogeneity refit. Other retained subjects keep screening-mode maps.</p></dd>
 
 
 <dt id="arg-retain-n">retain_n<a class="anchor" aria-label="anchor" href="#arg-retain-n"></a></dt>

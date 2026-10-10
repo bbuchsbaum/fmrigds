@@ -7,7 +7,7 @@ uncertainty, and variance-weighted reducers will refuse such a GDS.'><meta prope
 If beta is provided without se, materialising the GDS creates a unit
 variance placeholder with a warning. This supports raw beta/stat-map
 workflows; the synthetic variance should not be interpreted as subject-level
-uncertainty, and variance-weighted reducers will refuse such a GDS.'></head><body>
+uncertainty, and variance-weighted reducers will refuse such a GDS.'><link href="../albers.css" rel="stylesheet"><script>window.albersdownDefaults = window.albersdownDefaults || { family: "red", preset: "homage", style: "minimal" };</script><script src="../albers.js"></script></head><body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
 
 
@@ -15,7 +15,7 @@ uncertainty, and variance-weighted reducers will refuse such a GDS.'></head><bod
 
     <a class="navbar-brand me-2" href="../index.html">fmrigds</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.0.9000</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -96,7 +96,7 @@ number of contrasts in each NIfTI image (one for ordinary 3D maps).</p></dd>
     <p>When both <code>beta</code> and <code>se</code> are supplied, files are paired by subject key unless
 explicit <code>subject</code>/<code>subjects</code> labels are supplied. The fallback key is the file
 basename (extension removed) with a <strong>trailing</strong> statistic token stripped,
-matching <code>([_.-](beta|cope|effect|se|stderr|sterr|sigma|std(err)?))+$</code>
+matching <code>([_.-](beta|cope|varcope|var|variance|effect|se|stderr|sterr|sigma|std(err)?))+$</code>
 (case insensitive). For example <code>sub-01_beta.nii.gz</code> and <code>sub-01_se.nii.gz</code>
 both reduce to the key <code>sub-01</code>. Filenames where the statistic token is not
 last (e.g. <code>sub-01_stat-beta_sm-2.nii.gz</code>) will fail to pair unless explicit

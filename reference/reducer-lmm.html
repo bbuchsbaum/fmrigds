@@ -3,7 +3,7 @@
 reducers that are optimized for the case where every sample shares the same
 observation layout and the same fixed/random design."><meta property="og:description" content="fmrigds includes four specialized repeated-measures Gaussian mixed-model
 reducers that are optimized for the case where every sample shares the same
-observation layout and the same fixed/random design."></head><body>
+observation layout and the same fixed/random design."><link href="../albers.css" rel="stylesheet"><script>window.albersdownDefaults = window.albersdownDefaults || { family: "red", preset: "homage", style: "minimal" };</script><script src="../albers.js"></script></head><body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
 
 
@@ -11,7 +11,7 @@ observation layout and the same fixed/random design."></head><body>
 
     <a class="navbar-brand me-2" href="../index.html">fmrigds</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.0.9000</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -34,7 +34,7 @@ observation layout and the same fixed/random design."></head><body>
   <main id="main" class="col-md-9"><div class="page-header">
 
       <h1>Restricted repeated-measures Gaussian LMM reducers</h1>
-      <small class="dont-index">Source: <a href="https://github.com/bbuchsbaum/fmrigds/blob/main/R/reducer-lmm.R" class="external-link"><code>R/reducer-lmm.R</code></a></small>
+      <small class="dont-index">Source: <a href="https://github.com/bbuchsbaum/fmrigds/blob/main/R/reducer-lmm.R" class="external-link"><code>R/reducer-lmm.R</code></a>, <a href="https://github.com/bbuchsbaum/fmrigds/blob/main/R/reducers-lmm.R" class="external-link"><code>R/reducers-lmm.R</code></a></small>
       <div class="d-none name"><code>reducer-lmm.Rd</code></div>
     </div>
 
@@ -90,8 +90,10 @@ covariance is currently accepted; correlated first-level estimates require a
 future full sampling-covariance input rather than pretending their marginal
 variances are independent.</p>
 <p>Fixed-effect standard errors use the fitted covariance as a plug-in estimate,
-and <code>p_coef:*</code> uses residual degrees of freedom (<code>n - p</code>). Satterthwaite and
-Kenward–Roger corrections are not applied.</p>
+and <code>p_coef:*</code> uses per-coefficient containment degrees of freedom
+(reported in <code>df_coef:*</code>): coefficients of between-subject columns use
+<code>N - rank(X_between)</code>, all others the residual df <code>N*K - p</code>. Satterthwaite
+and Kenward–Roger corrections are not applied.</p>
     </div>
     <div class="section level2">
     <h2 id="output-assays">Output assays<a class="anchor" aria-label="anchor" href="#output-assays"></a></h2>
@@ -154,6 +156,25 @@ Pass these names verbatim (including the colon and any parentheses) to
 <span>    options <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>slope <span class="op">=</span> <span class="st">"time"</span>, covariance <span class="op">=</span> <span class="st">"diag"</span>, fit <span class="op">=</span> <span class="st">"REML"</span><span class="op">)</span></span>
 <span>  <span class="op">)</span> <span class="op">|&gt;</span></span>
 <span>  <span class="fu"><a href="../reference/compute.html">compute</a></span><span class="op">(</span><span class="op">)</span></span></code></pre><p></p></div>
+    </div>
+    <div class="section level2">
+    <h2 id="degrees-of-freedom-between-within-">Degrees of freedom (between/within)<a class="anchor" aria-label="anchor" href="#degrees-of-freedom-between-within-"></a></h2>
+
+
+<p>Fixed-effect tests use per-coefficient degrees of freedom, exposed as
+<code>df_coef:&lt;term&gt;</code> assays (the scalar <code>df_res</code> assay is unchanged and still
+reports <code>N*K - p</code>). A design column that is constant within every subject
+(a between-subject term, including the intercept) uses
+<code>df = N - rank(X_between)</code>, where <code>X_between</code> holds all between-subject
+columns at one row per subject. All other (within-subject) columns use the
+residual <code>N*K - p</code>. <code>p_coef:&lt;term&gt;</code> is computed from <code>df_coef:&lt;term&gt;</code>. This
+supersedes the single residual-df rule described above for between-subject
+terms; it is a containment-style approximation, not Satterthwaite or
+Kenward–Roger.</p>
+<p><code>converged</code> reflects the covariance-parameter optimizer: it is 0 when the
+optimizer reports failure or a variance parameter is pinned at its upper
+search bound (a diverging variance), and 1 otherwise (zero-variance
+boundary estimates count as converged).</p>
     </div>
 
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>

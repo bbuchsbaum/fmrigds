@@ -3,7 +3,7 @@
 workflows. They return a lazy GDS plan; call compute() to materialise the
 fitted maps.'><meta property="og:description" content='These helpers wrap reduce(method = "ols:voxelwise") for subject-level map
 workflows. They return a lazy GDS plan; call compute() to materialise the
-fitted maps.'></head><body>
+fitted maps.'><link href="../albers.css" rel="stylesheet"><script>window.albersdownDefaults = window.albersdownDefaults || { family: "red", preset: "homage", style: "minimal" };</script><script src="../albers.js"></script></head><body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
 
 
@@ -11,7 +11,7 @@ fitted maps.'></head><body>
 
     <a class="navbar-brand me-2" href="../index.html">fmrigds</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.0.9000</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -66,7 +66,7 @@ fitted maps.</p>
 
 
 <dl><dt id="arg-x">x<a class="anchor" aria-label="anchor" href="#arg-x"></a></dt>
-<dd><p>A realised <code><a href="gds.html">gds</a></code> or <code><a href="gds_plan.html">gds_plan</a></code>.</p></dd>
+<dd><p>A realised <code><a href="gds.html">gds</a></code> or <code><a href="as_plan.html">gds_plan</a></code>.</p></dd>
 
 
 <dt id="arg-formula">formula<a class="anchor" aria-label="anchor" href="#arg-formula"></a></dt>
@@ -105,16 +105,28 @@ omitted, all non-baseline levels are retained in the model.</p></dd>
 </dl></div>
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
-    <p>A <code><a href="gds_plan.html">gds_plan</a></code> with an OLS reduce node.</p>
+    <p>A <code><a href="as_plan.html">gds_plan</a></code> with an OLS reduce node.</p>
     </div>
 
     <div class="section level2">
     <h2 id="ref-examples">Examples<a class="anchor" aria-label="anchor" href="#ref-examples"></a></h2>
-    <div class="sourceCode"><pre class="sourceCode r"><code><span class="r-in"><span><span class="kw">if</span> <span class="op">(</span><span class="cn">FALSE</span><span class="op">)</span> <span class="op">{</span> <span class="co"># \dontrun{</span></span></span>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span class="r-in"><span><span class="co"># Synthetic voxel-like data: 5 samples x 4 subjects x 1 contrast</span></span></span>
+<span class="r-in"><span><span class="va">beta</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/array.html" class="external-link">array</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="fl">5</span> <span class="op">*</span> <span class="fl">4</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">5</span>, <span class="fl">4</span>, <span class="fl">1</span><span class="op">)</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="va">var</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/array.html" class="external-link">array</a></span><span class="op">(</span><span class="fl">1</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">5</span>, <span class="fl">4</span>, <span class="fl">1</span><span class="op">)</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="va">g</span> <span class="op">&lt;-</span> <span class="fu"><a href="gds.html">new_gds</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>beta <span class="op">=</span> <span class="va">beta</span>, var <span class="op">=</span> <span class="va">var</span><span class="op">)</span>, <span class="fu"><a href="space_sample_labels.html">space_sample_labels</a></span><span class="op">(</span><span class="va">letters</span><span class="op">[</span><span class="fl">1</span><span class="op">:</span><span class="fl">5</span><span class="op">]</span><span class="op">)</span>,</span></span>
+<span class="r-in"><span>             subjects <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste0</a></span><span class="op">(</span><span class="st">"s"</span>, <span class="fl">1</span><span class="op">:</span><span class="fl">4</span><span class="op">)</span>, contrasts <span class="op">=</span> <span class="st">"c1"</span>,</span></span>
+<span class="r-in"><span>             col_data <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>group <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"control"</span>, <span class="st">"control"</span>,</span></span>
+<span class="r-in"><span>                                             <span class="st">"patient"</span>, <span class="st">"patient"</span><span class="op">)</span>,</span></span>
+<span class="r-in"><span>                                   row.names <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste0</a></span><span class="op">(</span><span class="st">"s"</span>, <span class="fl">1</span><span class="op">:</span><span class="fl">4</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span></span>
+<span class="r-in"><span></span></span>
 <span class="r-in"><span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu">group_ols</span><span class="op">(</span><span class="va">g</span>, <span class="op">~</span> <span class="va">group</span><span class="op">)</span> <span class="op">|&gt;</span> <span class="fu"><a href="compute.html">compute</a></span><span class="op">(</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="fu"><a href="https://rdrr.io/r/base/names.html" class="external-link">names</a></span><span class="op">(</span><span class="fu"><a href="assays.html">assays</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span><span class="op">)</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>  [1] "sigma2"               "df_res"               "n_obs"               </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>  [4] "cov_tri"              "coef:(Intercept)"     "coef:grouppatient"   </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>  [7] "se_coef:(Intercept)"  "se_coef:grouppatient" "t_coef:(Intercept)"  </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> [10] "t_coef:grouppatient"  "p_coef:(Intercept)"   "p_coef:grouppatient" </span>
 <span class="r-in"><span><span class="va">one</span> <span class="op">&lt;-</span> <span class="fu">one_sample</span><span class="op">(</span><span class="va">g</span><span class="op">)</span> <span class="op">|&gt;</span> <span class="fu"><a href="compute.html">compute</a></span><span class="op">(</span><span class="op">)</span></span></span>
-<span class="r-in"><span><span class="va">two</span> <span class="op">&lt;-</span> <span class="fu">two_sample</span><span class="op">(</span><span class="va">g</span>, group <span class="op">=</span> <span class="st">"diagnosis"</span>, baseline <span class="op">=</span> <span class="st">"control"</span><span class="op">)</span> <span class="op">|&gt;</span> <span class="fu"><a href="compute.html">compute</a></span><span class="op">(</span><span class="op">)</span></span></span>
-<span class="r-in"><span><span class="op">}</span> <span class="co"># }</span></span></span>
+<span class="r-in"><span><span class="va">two</span> <span class="op">&lt;-</span> <span class="fu">two_sample</span><span class="op">(</span><span class="va">g</span>, group <span class="op">=</span> <span class="st">"group"</span>, baseline <span class="op">=</span> <span class="st">"control"</span><span class="op">)</span> <span class="op">|&gt;</span> <span class="fu"><a href="compute.html">compute</a></span><span class="op">(</span><span class="op">)</span></span></span>
 </code></pre></div>
     </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>

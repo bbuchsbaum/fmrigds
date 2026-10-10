@@ -12,6 +12,8 @@
 <link href="../deps/font-awesome-6.5.2/css/v4-shims.min.css" rel="stylesheet">
 <script src="../deps/headroom-0.11.0/headroom.min.js"></script><script src="../deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="../deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="../deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="../deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="../deps/search-1.0.0/fuse.min.js"></script><script src="../deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="../pkgdown.js"></script><link href="../extra.css" rel="stylesheet">
 <script src="../extra.js"></script><meta property="og:title" content="Driving fmrigds from the command line">
+<link href="../albers.css" rel="stylesheet">
+<script>window.albersdownDefaults = window.albersdownDefaults || { family: "red", preset: "homage", style: "minimal" };</script><script src="../albers.js"></script>
 </head>
 <body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
@@ -21,7 +23,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">fmrigds</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.0.9000</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -120,7 +122,7 @@ file.</p>
 <span>  <span class="st">"--reduce"</span>, <span class="st">"fixed"</span>,</span>
 <span>  <span class="st">"--out"</span>, <span class="va">quick_out</span></span>
 <span><span class="op">)</span></span>
-<span><span class="co">#&gt; $ fmrigds 'run' '--input' '/tmp/RtmpyIOmwA/file1cdc53a49dd4.csv' '--subset' 'contrast=task' '--reduce' 'fixed' '--out' '/tmp/RtmpyIOmwA/file1cdc736fe2e2.csv'</span></span>
+<span><span class="co">#&gt; $ fmrigds 'run' '--input' '/tmp/Rtmp17Odxi/file1cec36df0018.csv' '--subset' 'contrast=task' '--reduce' 'fixed' '--out' '/tmp/Rtmp17Odxi/file1cec1ed7fd8f.csv'</span></span>
 <span><span class="co">#&gt; GDS</span></span>
 <span><span class="co">#&gt;   dims: 2 x 1 x 1 [sample x subject x contrast]</span></span>
 <span><span class="co">#&gt;   space: sample_labels n=2</span></span>
@@ -255,7 +257,7 @@ reducer-specific options to more complex models.</p>
 <span>  <span class="st">"--show-assay"</span>, <span class="st">"coef:age"</span>,</span>
 <span>  <span class="st">"--n"</span>, <span class="st">"2"</span></span>
 <span><span class="op">)</span></span>
-<span><span class="co">#&gt; $ fmrigds 'preview' '--input' '/tmp/RtmpyIOmwA/file1cdc53a49dd4.csv' '--subset' 'contrast=task' '--col-data' '/tmp/RtmpyIOmwA/file1cdc58285578.csv' '--reduce' 'meta:fe_reg' '--formula' '~ age' '--show-assay' 'coef:age' '--n' '2'</span></span>
+<span><span class="co">#&gt; $ fmrigds 'preview' '--input' '/tmp/Rtmp17Odxi/file1cec36df0018.csv' '--subset' 'contrast=task' '--col-data' '/tmp/Rtmp17Odxi/file1cec57b20e9d.csv' '--reduce' 'meta:fe_reg' '--formula' '~ age' '--show-assay' 'coef:age' '--n' '2'</span></span>
 <span><span class="co">#&gt; GDS</span></span>
 <span><span class="co">#&gt;   dims: 2 x 1 x 1 [sample x subject x contrast]</span></span>
 <span><span class="co">#&gt;   space: sample_labels n=2</span></span>
@@ -310,13 +312,13 @@ the current installation.</p>
 <span><span class="co">#&gt; 4            lmm:ri      beta</span></span>
 <span><span class="co">#&gt; 5   lmm:ri_knownvar beta, var</span></span>
 <span><span class="co">#&gt; 6     lmm:ri_slope1      beta</span></span>
-<span><span class="co">#&gt;                                                                                                                                                                                                       provides</span></span>
-<span><span class="co">#&gt; 1                                                                                                                                                                                                p_g, chi2, df</span></span>
-<span><span class="co">#&gt; 2                                                                                                                                                                                                p_g, chi2, df</span></span>
-<span><span class="co">#&gt; 3                                                                                                                                                                                                     z_g, p_g</span></span>
-<span><span class="co">#&gt; 4                                                                                                             coef, se_coef, t_coef, p_coef, sigma2, vc_intercept, vc_resid, df_res, logLik, converged, lambda</span></span>
-<span><span class="co">#&gt; 5                                                                                                  coef, se_coef, t_coef, p_coef, sigma2, vc_intercept, vc_resid, sampling_var_mean, df_res, logLik, converged</span></span>
-<span><span class="co">#&gt; 6 coef, se_coef, t_coef, p_coef, sigma2, vc_intercept, vc_slope, vc_cov_intercept_slope, vc_resid, df_res, logLik, converged, lambda_intercept, lambda_slope, lambda_cov_intercept_slope, corr_intercept_slope</span></span></code></pre></div>
+<span><span class="co">#&gt;                                                                                                                                                                                                                provides</span></span>
+<span><span class="co">#&gt; 1                                                                                                                                                                                                         p_g, chi2, df</span></span>
+<span><span class="co">#&gt; 2                                                                                                                                                                                                         p_g, chi2, df</span></span>
+<span><span class="co">#&gt; 3                                                                                                                                                                                                              z_g, p_g</span></span>
+<span><span class="co">#&gt; 4                                                                                                             coef, se_coef, t_coef, p_coef, df_coef, sigma2, vc_intercept, vc_resid, df_res, logLik, converged, lambda</span></span>
+<span><span class="co">#&gt; 5                                                                                                  coef, se_coef, t_coef, p_coef, df_coef, sigma2, vc_intercept, vc_resid, sampling_var_mean, df_res, logLik, converged</span></span>
+<span><span class="co">#&gt; 6 coef, se_coef, t_coef, p_coef, df_coef, sigma2, vc_intercept, vc_slope, vc_cov_intercept_slope, vc_resid, df_res, logLik, converged, lambda_intercept, lambda_slope, lambda_cov_intercept_slope, corr_intercept_slope</span></span></code></pre></div>
 <p>If you are scripting around the CLI, this registry view is a good way
 to make your wrapper validate method names before a larger run.</p>
 </div>

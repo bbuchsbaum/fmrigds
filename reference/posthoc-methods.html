@@ -9,7 +9,7 @@ to the realised GDS. The FDR methods adjust the object's p-value assay(s):
 a genuine bare p (from meta/combine reducers or a tabular p column) yields
 a single q; a per-term p_coef:&amp;lt;term&amp;gt; family (from regression/LMM reducers
 such as ols:voxelwise) yields one q_coef:&amp;lt;term&amp;gt; per term. Pass
-options = list(source = &quot;p_coef:&amp;lt;term&amp;gt;&quot;) to adjust one specific term."></head><body>
+options = list(source = &quot;p_coef:&amp;lt;term&amp;gt;&quot;) to adjust one specific term."><link href="../albers.css" rel="stylesheet"><script>window.albersdownDefaults = window.albersdownDefaults || { family: "red", preset: "homage", style: "minimal" };</script><script src="../albers.js"></script></head><body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
 
 
@@ -17,7 +17,7 @@ options = list(source = &quot;p_coef:&amp;lt;term&amp;gt;&quot;) to adjust one s
 
     <a class="navbar-brand me-2" href="../index.html">fmrigds</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.0.9000</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -69,8 +69,8 @@ column-wise per subject x contrast.</p></li>
 FDR. Requires a discrete spatial grouping (one parcel/cluster id per
 sample) via <code>options$group</code> or a recognised <code>row_data</code> column
 (<code>feature_group</code>, <code>spatial_group</code>, <code>group</code>, <code>parcel</code>, <code>parcel_id</code>).</p></li>
-<li><p><code>"nt:tfce_fwer"</code> (needs the optional <code>neurothresh</code> package): adds <code>q</code>
-(TFCE FWER-corrected p), <code>sig_mask</code> (1/0 at <code>alpha</code>), and <code>tfce</code> (the
+<li><p><code>"nt:tfce_fwer"</code> (needs the optional <code>neurothresh</code> package): adds <code>p_fwer</code>
+(TFCE FWER-corrected p-values), <code>sig_mask</code> (1/0 at <code>alpha</code>), and <code>tfce</code> (the
 TFCE-enhanced statistic map).</p></li>
 <li><p><code>"nt:cluster_fdr_perm"</code> (needs <code>neurothresh</code>): adds <code>q</code> (cluster-FDR q
 broadcast to voxels) and <code>sig_mask</code>.</p></li>

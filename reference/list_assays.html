@@ -9,7 +9,7 @@ write_nifti_assays(), or write_out() without having to run a job and
 inspect names(assays(fit)). Works on a realised gds, a lazy
 gds_plan/gds_source (reporting the input assays the source probed),
 or—when reducer is supplied—reports a reducer's declared output stems
-without computing anything."></head><body>
+without computing anything."><link href="../albers.css" rel="stylesheet"><script>window.albersdownDefaults = window.albersdownDefaults || { family: "red", preset: "homage", style: "minimal" };</script><script src="../albers.js"></script></head><body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
 
 
@@ -17,7 +17,7 @@ without computing anything."></head><body>
 
     <a class="navbar-brand me-2" href="../index.html">fmrigds</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.0.9000</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -48,7 +48,7 @@ without computing anything."></head><body>
     <p>Discoverability helper for finding assay names to pass to <code><a href="assay.html">assay()</a></code>,
 <code><a href="write_nifti_assays.html">write_nifti_assays()</a></code>, or <code><a href="write_out.html">write_out()</a></code> without having to run a job and
 inspect <code>names(assays(fit))</code>. Works on a realised <code><a href="gds.html">gds</a></code>, a lazy
-<code><a href="gds_plan.html">gds_plan</a></code>/<code><a href="gds_source.html">gds_source</a></code> (reporting the <em>input</em> assays the source probed),
+<code><a href="as_plan.html">gds_plan</a></code>/<code><a href="gds_source.html">gds_source</a></code> (reporting the <em>input</em> assays the source probed),
 or—when <code>reducer</code> is supplied—reports a reducer's declared output stems
 without computing anything.</p>
     </div>
@@ -63,7 +63,7 @@ without computing anything.</p>
 
 
 <dl><dt id="arg-x">x<a class="anchor" aria-label="anchor" href="#arg-x"></a></dt>
-<dd><p>A realised <code><a href="gds.html">gds</a></code>, a <code><a href="gds_plan.html">gds_plan</a></code>, or a <code><a href="gds_source.html">gds_source</a></code>.</p></dd>
+<dd><p>A realised <code><a href="gds.html">gds</a></code>, a <code><a href="as_plan.html">gds_plan</a></code>, or a <code><a href="gds_source.html">gds_source</a></code>.</p></dd>
 
 
 <dt id="arg-reducer">reducer<a class="anchor" aria-label="anchor" href="#arg-reducer"></a></dt>
@@ -93,11 +93,33 @@ compute time, so realised names depend on the model formula.</p></dd>
 
     <div class="section level2">
     <h2 id="ref-examples">Examples<a class="anchor" aria-label="anchor" href="#ref-examples"></a></h2>
-    <div class="sourceCode"><pre class="sourceCode r"><code><span class="r-in"><span><span class="kw">if</span> <span class="op">(</span><span class="cn">FALSE</span><span class="op">)</span> <span class="op">{</span> <span class="co"># \dontrun{</span></span></span>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span class="r-in"><span><span class="va">beta</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/array.html" class="external-link">array</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="fl">5</span> <span class="op">*</span> <span class="fl">4</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">5</span>, <span class="fl">4</span>, <span class="fl">1</span><span class="op">)</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="va">var</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/array.html" class="external-link">array</a></span><span class="op">(</span><span class="fl">1</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">5</span>, <span class="fl">4</span>, <span class="fl">1</span><span class="op">)</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="va">g</span> <span class="op">&lt;-</span> <span class="fu"><a href="gds.html">new_gds</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>beta <span class="op">=</span> <span class="va">beta</span>, var <span class="op">=</span> <span class="va">var</span><span class="op">)</span>, <span class="fu"><a href="space_sample_labels.html">space_sample_labels</a></span><span class="op">(</span><span class="va">letters</span><span class="op">[</span><span class="fl">1</span><span class="op">:</span><span class="fl">5</span><span class="op">]</span><span class="op">)</span>,</span></span>
+<span class="r-in"><span>             subjects <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste0</a></span><span class="op">(</span><span class="st">"s"</span>, <span class="fl">1</span><span class="op">:</span><span class="fl">4</span><span class="op">)</span>, contrasts <span class="op">=</span> <span class="st">"c1"</span><span class="op">)</span></span></span>
+<span class="r-in"><span></span></span>
 <span class="r-in"><span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu"><a href="group_ols.html">one_sample</a></span><span class="op">(</span><span class="va">g</span><span class="op">)</span> <span class="op">|&gt;</span> <span class="fu"><a href="compute.html">compute</a></span><span class="op">(</span><span class="op">)</span></span></span>
 <span class="r-in"><span><span class="fu">list_assays</span><span class="op">(</span><span class="va">fit</span><span class="op">)</span>                       <span class="co"># names + roles of computed assays</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>                 assay role units</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1              sigma2 &lt;NA&gt;  &lt;NA&gt;</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 2              df_res &lt;NA&gt;  &lt;NA&gt;</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 3               n_obs &lt;NA&gt;  &lt;NA&gt;</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 4             cov_tri &lt;NA&gt;  &lt;NA&gt;</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 5    coef:(Intercept) &lt;NA&gt;  &lt;NA&gt;</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 6 se_coef:(Intercept) &lt;NA&gt;  &lt;NA&gt;</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 7  t_coef:(Intercept) &lt;NA&gt;  &lt;NA&gt;</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 8  p_coef:(Intercept) &lt;NA&gt;  &lt;NA&gt;</span>
 <span class="r-in"><span><span class="fu">list_assays</span><span class="op">(</span>reducer <span class="op">=</span> <span class="st">"meta:re"</span><span class="op">)</span>       <span class="co"># what random-effects would produce</span></span></span>
-<span class="r-in"><span><span class="op">}</span> <span class="co"># }</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>    assay  role units</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1 beta_g  &lt;NA&gt;  &lt;NA&gt;</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 2  var_g  &lt;NA&gt;  &lt;NA&gt;</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 3   se_g  &lt;NA&gt;  &lt;NA&gt;</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 4    z_g  &lt;NA&gt;  &lt;NA&gt;</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 5    p_g  &lt;NA&gt;  &lt;NA&gt;</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 6   tau2  &lt;NA&gt;  &lt;NA&gt;</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 7      Q  &lt;NA&gt;  &lt;NA&gt;</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 8     I2  &lt;NA&gt;  &lt;NA&gt;</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 9  n_eff n_eff  &lt;NA&gt;</span>
 </code></pre></div>
     </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
