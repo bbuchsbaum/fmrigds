@@ -29,7 +29,7 @@ map_to <- function(x,
 #' @param ... Arguments passed to map_to(), then compute()
 #'
 #' @return A realized GDS object
-#' @export
+#' @noRd
 map_to_eager <- function(x, ...) {
   compute(map_to(x, ...))
 }

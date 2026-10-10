@@ -1,17 +1,35 @@
-.frame_fit_selection <- function(frame) {
-  if (inherits(frame, "fmri_view")) {
-    list(
-      base = frame$base,
-      observations = frame$observation_index,
-      features = frame$feature_index
-    )
-  } else {
-    list(
-      base = frame,
-      observations = seq_len(nrow(frame)),
-      features = seq_len(ncol(frame))
+.frame_dep_available <- function(package) {
+  requireNamespace(package, quietly = TRUE)
+}
+
+# fmridataset and multidesign are Suggests: every frame entry point checks
+# for them before touching their namespaces.
+.require_frame_deps <- function(what = "Frame-native group analysis") {
+  pkgs <- c("fmridataset", "multidesign")
+  missing <- pkgs[!vapply(pkgs, .frame_dep_available, logical(1))]
+  if (length(missing)) {
+    stop(
+      what, " requires the suggested package",
+      if (length(missing) > 1L) "s " else " ",
+      paste0("'", missing, "'", collapse = " and "),
+      ", which ", if (length(missing) > 1L) "are" else "is",
+      " not installed. Install from GitHub, e.g. remotes::install_github(c(",
+      paste0("\"bbuchsbaum/", missing, "\"", collapse = ", "),
+      ")).",
+      call. = FALSE
     )
   }
+  invisible(TRUE)
+}
+
+# Frames and synchronized views both expose view-aware assay descriptors, so
+# reads always address local (frame-relative) positions.
+.frame_fit_selection <- function(frame) {
+  list(
+    base = frame,
+    observations = seq_len(nrow(frame)),
+    features = seq_len(ncol(frame))
+  )
 }
 
 .frame_random_intercept_only <- function(compiled) {
@@ -351,6 +369,7 @@ group_plan <- function(
   block_size = NULL,
   options = list()
 ) {
+  .require_frame_deps("group_plan()")
   if (!inherits(frame, c("fmri_frame", "fmri_view"))) {
     stop("`frame` must be an fmri_frame or fmri_view.", call. = FALSE)
   }
@@ -472,6 +491,7 @@ result_frame <- function(assays, observations, features, method,
                          diagnostics = list(), term_data = NULL,
                          source_observation_ids = NULL, metadata = list(),
                          provenance = NULL) {
+  .require_frame_deps("result_frame()")
   if (!is.data.frame(observations) || !".obs_id" %in% names(observations) ||
       anyNA(observations$.obs_id) || anyDuplicated(observations$.obs_id)) {
     stop("Result observations require unique, non-missing `.obs_id` values.",
@@ -481,25 +501,97 @@ result_frame <- function(assays, observations, features, method,
       !nzchar(method)) {
     stop("`method` must be one non-empty reducer name.", call. = FALSE)
   }
+  if (!is.list(diagnostics)) {
+    stop("`diagnostics` must be a named list of per-feature values.",
+         call. = FALSE)
+  }
+  # Aligned values (per-feature diagnostics, term rows, source observation
+  # IDs) are typed tables: fmridataset rejects them as container metadata.
+  tables <- list()
+  diagnostic_table <- .result_diagnostic_table(
+    diagnostics, .result_feature_ids(features)
+  )
+  if (!is.null(diagnostic_table)) tables$diagnostics <- diagnostic_table
+  if (is.data.frame(term_data) && ncol(term_data)) {
+    tables$term_data <- fmridataset::auxiliary_table(
+      as.data.frame(term_data), role = "terms"
+    )
+  }
+  if (!is.null(source_observation_ids)) {
+    tables$source_observations <- fmridataset::auxiliary_table(
+      data.frame(
+        .obs_id = as.character(source_observation_ids),
+        stringsAsFactors = FALSE
+      ),
+      key = ".obs_id",
+      role = "source_observations"
+    )
+  }
   metadata <- utils::modifyList(list(
     result_schema_version = 1L,
     result_kind = "statistical",
-    method = method,
-    term_data = term_data,
-    diagnostics = diagnostics,
-    source_observation_ids = source_observation_ids
+    method = method
   ), metadata)
   fmridataset::fmri_frame(
     assays = assays,
     observations = observations,
     features = features,
+    tables = tables,
     active_assay = if ("estimate" %in% names(assays)) "estimate" else names(assays)[[1L]],
     metadata = metadata,
     provenance = provenance
   )
 }
 
+.result_feature_ids <- function(features) {
+  if (inherits(features, "axis_frame")) return(fmridataset::axis_ids(features))
+  if (inherits(features, "feature_space")) {
+    return(fmridataset::feature_ids(features))
+  }
+  NULL
+}
+
+.result_diagnostic_table <- function(diagnostics, feature_ids) {
+  if (!length(diagnostics)) return(NULL)
+  diagnostic_names <- names(diagnostics)
+  if (is.null(diagnostic_names) || anyNA(diagnostic_names) ||
+      any(!nzchar(diagnostic_names)) || anyDuplicated(diagnostic_names)) {
+    stop("`diagnostics` must be a uniquely named list.", call. = FALSE)
+  }
+  n <- length(feature_ids)
+  if (!n) {
+    n <- max(lengths(diagnostics))
+    feature_ids <- sprintf("feature-%06d", seq_len(n))
+  }
+  columns <- lapply(diagnostic_names, function(name) {
+    value <- diagnostics[[name]]
+    if (is.list(value) || !is.null(dim(value)) ||
+        !(length(value) %in% c(1L, n))) {
+      stop("Diagnostic '", name, "' must be a scalar or one value per feature.",
+           call. = FALSE)
+    }
+    rep_len(unname(value), n)
+  })
+  names(columns) <- diagnostic_names
+  data <- data.frame(
+    .feature_id = as.character(feature_ids),
+    stringsAsFactors = FALSE
+  )
+  data[diagnostic_names] <- columns
+  fmridataset::auxiliary_table(data, key = ".feature_id", role = "diagnostics")
+}
+
+# Per-feature diagnostics stored on a result frame, as a data frame.
+.result_frame_diagnostics <- function(x) {
+  if (inherits(x, "fmri_group_fit")) x <- x$result
+  tables <- x$tables %||% x$base$tables
+  value <- tables$diagnostics
+  if (is.null(value)) return(NULL)
+  as.data.frame(fmridataset::table_data(value))
+}
+
 .compute_group_plan <- function(plan) {
+  .require_frame_deps("compute() on an fmri_group_plan")
   if (!inherits(plan, "fmri_group_plan") || !identical(plan$schema_version, 1L)) {
     stop("`plan` must be a valid fmri_group_plan.", call. = FALSE)
   }
@@ -663,6 +755,7 @@ fit_group <- function(
   method = "lmm:ri_knownvar",
   options = list()
 ) {
+  .require_frame_deps("fit_group()")
   if (!is.list(options)) stop("`options` must be a list.", call. = FALSE)
   fit <- match.arg(fit)
   normalized_method <- if (is.character(method) && length(method) == 1L &&

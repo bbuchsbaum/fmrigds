@@ -369,7 +369,7 @@
       )
       paste0(
         "<td class=\"heat\" style=\"background:", .html_colour(row$display),
-        "\"><title>", .html_escape(title), "</title></td>"
+        "\" title=\"", .html_escape(title), "\"></td>"
       )
     }, character(1))
     paste0("<tr><th>", .html_escape(metric), "</th>", paste0(cells, collapse = ""), "</tr>")
@@ -454,7 +454,15 @@
   )
   qc_columns <- setdiff(names(subject_row), core)
   qc <- if (length(qc_columns)) {
-    data.frame(metric = qc_columns, value = unlist(subject_row[qc_columns], use.names = FALSE), stringsAsFactors = FALSE)
+    # Format each covariate by its own type: unlist() would collapse factors
+    # to their integer codes when columns of mixed types are combined.
+    values <- vapply(qc_columns, function(column) {
+      value <- subject_row[[column]]
+      if (length(value) != 1L || is.na(value)) return("unavailable")
+      if (is.numeric(value)) return(.examination_format_number(value))
+      as.character(value)
+    }, character(1), USE.NAMES = FALSE)
+    data.frame(metric = qc_columns, value = values, stringsAsFactors = FALSE)
   } else {
     data.frame()
   }
@@ -562,11 +570,11 @@ write_report <- function(x,
   if (!is.character(file) || length(file) != 1L || is.na(file) || !nzchar(file)) {
     stop("file must be one non-empty path.", call. = FALSE)
   }
-  if (file.exists(file) && !isTRUE(overwrite)) {
-    stop("Report already exists; set overwrite = TRUE to replace it.", call. = FALSE)
-  }
   if (!is.logical(overwrite) || length(overwrite) != 1L || is.na(overwrite)) {
     stop("overwrite must be TRUE or FALSE.", call. = FALSE)
+  }
+  if (file.exists(file) && !overwrite) {
+    stop("Report already exists; set overwrite = TRUE to replace it.", call. = FALSE)
   }
   retained <- if (is.null(x$subject_maps)) character() else x$subject_maps$subjects
   if (is.null(subjects)) {

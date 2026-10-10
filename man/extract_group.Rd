@@ -26,11 +26,21 @@ Convenience function that combines \code{\link[=split.gds]{split.gds()}} and \co
 to extract neuroimaging volumes for subjects in a specific group.
 }
 \examples{
-\dontrun{
-# Get beta maps for all patients
-patient_vols <- extract_group(gds, "diagnosis", "patient", assay = "beta")
+if (requireNamespace("neuroim2", quietly = TRUE)) {
+  sp4 <- neuroim2::NeuroSpace(c(4, 4, 2, 4), spacing = c(2, 2, 2))
+  vec4d <- neuroim2::NeuroVec(array(rnorm(128), c(4, 4, 2, 4)), sp4)
+  gds <- as_gds(vec4d, along = "subject", subjects = paste0("sub0", 1:4))
+  gds <- with_col_data(gds, data.frame(
+    diagnosis = c("patient", "control", "patient", "control"),
+    row.names = subjects(gds)
+  ))
 
-# Get t-maps for controls
-control_ts <- extract_group(gds, "diagnosis", "control", assay = "t")
+  # Get beta maps for all patients
+  patient_vols <- extract_group(gds, "diagnosis", "patient", assay = "beta")
+  print(names(patient_vols))
+
+  # Get beta maps for controls
+  control_vols <- extract_group(gds, "diagnosis", "control", assay = "beta")
+  print(names(control_vols))
 }
 }

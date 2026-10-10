@@ -24,13 +24,18 @@ examination_control(
 
 \item{geometry}{Named list controlling the deterministic low-rank residual
 representation. Supported entries are \code{rank}, \code{oversample}, \code{cap},
-\code{balance_contrasts}, and \code{stability_replicates}.}
+\code{balance_contrasts}, and \code{stability_replicates}. With
+\code{balance_contrasts = TRUE} each contrast's residuals are scaled by its own
+eligible feature count so contrasts contribute comparably to the geometry.
+\code{stability_replicates = 0} disables split-feature stability assessment;
+review criteria are then not gated on stability.}
 
 \item{review}{Named list controlling review status. Supported entries are
 \code{surprise}, \code{influence}, \code{quality}, and \code{min_stability}.}
 
-\item{exact_refit_n}{Number of selected random-effects cases eligible for an
-exact heterogeneity refit.}
+\item{exact_refit_n}{Maximum number of retained random-effects subjects,
+taken in decreasing \code{review_priority}, that receive an exact
+heterogeneity refit. Other retained subjects keep screening-mode maps.}
 
 \item{retain_n}{Number of highest-priority subjects retained for localization
 when no explicit \code{retain} set is supplied.}

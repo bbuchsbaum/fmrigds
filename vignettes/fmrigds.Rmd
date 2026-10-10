@@ -247,7 +247,7 @@ image(seq_len(ncol(mat)), seq_len(nrow(mat)), t(mat),
       main = "Beta values (faces contrast)")
 axis(1, at = seq_len(ncol(mat)), labels = subjects(g0), las = 1, cex.axis = 0.9)
 axis(2, at = seq_len(nrow(mat)),
-     labels = rownames(mat) %||% paste0("ROI_", seq_len(nrow(mat))),
+     labels = if (is.null(rownames(mat))) paste0("ROI_", seq_len(nrow(mat))) else rownames(mat),
      las = 1, cex.axis = 0.9)
 # Add numeric values to cells
 for (i in seq_len(ncol(mat))) {

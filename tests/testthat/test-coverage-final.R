@@ -105,7 +105,10 @@ test_that("reduce with options passes through", {
     "R1,s01,c1,1.0,0.1",
     "R1,s02,c1,2.0,0.2"
   ), tmp)
-  p <- gds(tmp) |> reduce("fixed", weights = "equal")
+  # weights = "equal" is not honoured by the inverse-variance meta:fe reducer,
+  # so reduce() now refuses it instead of silently running 1/var weighting.
+  expect_error(gds(tmp) |> reduce("fixed", weights = "equal"), "not supported")
+  p <- gds(tmp) |> reduce("ols:voxelwise", weights = "equal", formula = ~ 1)
   result <- compute(p)
   expect_s3_class(result, "gds")
 })

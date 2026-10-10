@@ -102,13 +102,3 @@ test_that(".write_export errors for unsupported format", {
   g <- .make_export_gds()
   expect_error(.write_export(g, "xyz", "out.xyz", list()), "Unsupported")
 })
-
-# ===========================================================================
-# plan() alias
-# ===========================================================================
-
-test_that("plan() is an alias for as_plan()", {
-  g <- .make_export_gds()
-  p <- plan(g)
-  expect_s3_class(p, "gds_plan")
-})

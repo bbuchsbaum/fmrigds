@@ -95,7 +95,7 @@
 #'   `contrast_data_cols` can name one or more columns to collapse into
 #'   contrast-level metadata during ingestion.
 #'
-#' @return A [`gds_plan`]
+#' @return A [`gds_plan`][as_plan()]
 #' @export
 gds <- function(source,
                 format = c("auto", ls(.adapter_registry)),
@@ -134,9 +134,13 @@ gds <- function(source,
     source <- .nifti_attach_source_metadata(source, dots)
   }
 
-  handle <- adapter$open(source)
-  probe_result <- do.call(adapter$probe, c(list(handle), dots, list(temporal_policy = temporal_policy, contrast_matrix = contrast_matrix, contrast_names = contrast_names)))
-  adapter$close(handle)
+  # Open/probe/close in a local scope so the handle is released even when the
+  # probe fails (otherwise e.g. an HDF5 file stays locked for the session).
+  probe_result <- local({
+    handle <- adapter$open(source)
+    on.exit(adapter$close(handle), add = TRUE)
+    do.call(adapter$probe, c(list(handle), dots, list(temporal_policy = temporal_policy, contrast_matrix = contrast_matrix, contrast_names = contrast_names)))
+  })
 
   adapter_columns <- probe_result$columns
   probe_result$columns <- NULL
@@ -188,7 +192,7 @@ if (!is.null(contrast_names)) plan$meta$contrast_names <- contrast_names
 #' @param x Plan, source, or realised GDS
 #' @param col_data Data frame keyed by subject identifiers (rownames)
 #'
-#' @return A [`gds_plan`] (for plans/sources) or a [`gds`] (for realised objects)
+#' @return A [`gds_plan`][as_plan()] (for plans/sources) or a [`gds`] (for realised objects)
 #' @export
 with_col_data <- function(x, col_data) {
   if (inherits(x, "gds")) {
@@ -208,7 +212,7 @@ with_col_data <- function(x, col_data) {
 #' @param x Plan, source, or realised GDS
 #' @param row_data Data frame keyed by sample identifiers (rownames) when available
 #'
-#' @return A [`gds_plan`] (for plans/sources) or a [`gds`] (for realised objects)
+#' @return A [`gds_plan`][as_plan()] (for plans/sources) or a [`gds`] (for realised objects)
 #' @export
 with_row_data <- function(x, row_data) {
   if (inherits(x, "gds")) {
@@ -232,7 +236,7 @@ with_row_data <- function(x, row_data) {
 #' @param x Plan, source, or realised GDS
 #' @param contrast_data Data frame keyed by contrast identifiers (rownames)
 #'
-#' @return A [`gds_plan`] (for plans/sources) or a [`gds`] (for realised objects)
+#' @return A [`gds_plan`][as_plan()] (for plans/sources) or a [`gds`] (for realised objects)
 #' @export
 with_contrast_data <- function(x, contrast_data) {
   if (inherits(x, "gds")) {

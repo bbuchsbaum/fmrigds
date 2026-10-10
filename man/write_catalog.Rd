@@ -18,7 +18,19 @@ Invisibly returns the file path.
 Save an image catalog to a JSON file for later retrieval with \code{\link[=read_catalog]{read_catalog()}}.
 }
 \examples{
-\dontrun{
-write_catalog(catalog, "my_study_manifest.json")
+# Build a tiny study tree with empty placeholder files
+root <- tempfile("study_")
+for (s in c("01", "02")) {
+  d <- file.path(root, paste0("sub-", s))
+  dir.create(d, recursive = TRUE)
+  invisible(file.create(file.path(d, c("cope1.nii.gz", "varcope1.nii.gz"))))
 }
+catalog <- image_catalog(root, "sub-*/*.nii.gz",
+                         path_regex = "sub-(?<subject>[^/]+)")
+
+manifest <- tempfile(fileext = ".json")
+write_catalog(catalog, manifest)
+file.exists(manifest)
+
+unlink(c(manifest, root), recursive = TRUE)
 }

@@ -1,3 +1,6 @@
+skip_if_not_installed("fmridataset")
+skip_if_not_installed("multidesign")
+
 .frame_fit_fixture <- function(instrument = FALSE) {
   set.seed(812L)
   subject_id <- factor(c("s1", "s1", "s2", "s2", "s2", "s3", "s3", "s4", "s4"))

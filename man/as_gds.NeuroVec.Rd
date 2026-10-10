@@ -54,14 +54,18 @@ Import a \code{neuroim2::NeuroVec} (4D brain volume) as a GDS object.
 The 4th dimension can represent subjects OR contrasts.
 }
 \examples{
-\dontrun{
-# 4D volume where each volume is a subject
-vec4d <- neuroim2::read_vec("all_subjects.nii.gz")
-gds_obj <- as_gds(vec4d, along = "subject",
-                  subjects = c("sub-01", "sub-02", "sub-03"))
+if (requireNamespace("neuroim2", quietly = TRUE)) {
+  sp4 <- neuroim2::NeuroSpace(c(4, 4, 2, 3), spacing = c(2, 2, 2))
+  vec4d <- neuroim2::NeuroVec(array(rnorm(96), c(4, 4, 2, 3)), sp4)
 
-# 4D volume where each volume is a contrast
-gds_obj <- as_gds(vec4d, along = "contrast",
-                  contrasts = c("faces", "places", "objects"))
+  # 4D volume where each volume is a subject
+  gds_obj <- as_gds(vec4d, along = "subject",
+                    subjects = c("sub-01", "sub-02", "sub-03"))
+  print(subjects(gds_obj))
+
+  # 4D volume where each volume is a contrast
+  gds_obj <- as_gds(vec4d, along = "contrast",
+                    contrasts = c("faces", "places", "objects"))
+  print(contrasts(gds_obj))
 }
 }

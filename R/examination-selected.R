@@ -1,13 +1,23 @@
 # Selected-subject localization and random-effects refits ------------------
 
-.initialize_selected_pass <- function(state, selected_subjects, model_context) {
+.initialize_selected_pass <- function(state,
+                                      selected_subjects,
+                                      model_context,
+                                      exact_refit_subjects = selected_subjects) {
   selected_subjects <- as.character(selected_subjects %||% character())
   selected_index <- match(selected_subjects, state$subjects)
   if (anyNA(selected_index)) {
     stop("Selected localization subjects do not match the model context.", call. = FALSE)
   }
+  exact_refit_subjects <- intersect(
+    selected_subjects,
+    as.character(exact_refit_subjects %||% character())
+  )
   state$selected_subjects <- selected_subjects
   state$selected_index <- as.integer(selected_index)
+  # Positions (within the selected set) that receive an exact refit.
+  state$exact_refit_subjects <- exact_refit_subjects
+  state$exact_position <- match(exact_refit_subjects, selected_subjects)
   state$selected_maps <- list()
   state$selected_map_modes <- character()
   n_selected <- length(selected_subjects)
@@ -80,57 +90,70 @@
     )
   }
 
-  if (model_context$method %in% c("meta:re", "meta:re_reg")) {
+  if (model_context$method %in% c("meta:re", "meta:re_reg") &&
+      length(state$exact_position %||% seq_along(state$selected_index))) {
+    exact_position <- state$exact_position %||% seq_along(state$selected_index)
+    n_selected <- length(state$selected_index)
     exact <- .exact_random_deletion_block(
       beta,
       var,
       model_context$X,
       model_context$estimand_matrix,
       fit,
-      state$selected_index,
+      state$selected_index[exact_position],
       model_context$reducer,
       model_context$options,
       control$tolerance
     )
+    # Exact maps keep one column per selected subject; subjects outside the
+    # exact-refit cap stay NA.
+    widen <- function(value) {
+      out <- matrix(NA_real_, n_selected, ncol(beta))
+      out[exact_position, ] <- value
+      t(out)
+    }
     state <- .selected_map_assign(
-      state, "expected_exact", t(exact$expected),
+      state, "expected_exact", widen(exact$expected),
       ordinal, contrast_index, "tau2_refit_exact"
     )
     state <- .selected_map_assign(
-      state, "predictive_residual_exact", t(exact$predictive_resid),
+      state, "predictive_residual_exact", widen(exact$predictive_resid),
       ordinal, contrast_index, "tau2_refit_exact"
     )
     state <- .selected_map_assign(
-      state, "tau2_deleted_exact", t(exact$tau2_deleted),
+      state, "tau2_deleted_exact", widen(exact$tau2_deleted),
       ordinal, contrast_index, "tau2_refit_exact"
     )
     for (e in seq_along(state$estimands)) {
       name <- state$estimands[e]
-      exact_delta_effect <- matrix(
+      exact_delta_effect <- widen(matrix(
         exact$delta_effect[, e, ],
-        nrow = length(state$selected_index),
+        nrow = length(exact_position),
         ncol = ncol(beta)
-      )
-      exact_delta_stat <- matrix(
+      ))
+      exact_delta_stat <- widen(matrix(
         exact$delta_stat[, e, ],
-        nrow = length(state$selected_index),
+        nrow = length(exact_position),
         ncol = ncol(beta)
-      )
+      ))
       state <- .selected_map_assign(
         state,
         paste0("delta_effect_exact:", name),
-        t(exact_delta_effect),
+        exact_delta_effect,
         ordinal, contrast_index, "tau2_refit_exact"
       )
       state <- .selected_map_assign(
         state,
         paste0("delta_stat_exact:", name),
-        t(exact_delta_stat),
+        exact_delta_stat,
         ordinal, contrast_index, "tau2_refit_exact"
       )
-      for (j in seq_along(state$selected_index)) {
-        values <- exact$delta_stat[j, e, ]
-        values <- values[is.finite(values)]
+      for (position in seq_along(exact_position)) {
+        j <- exact_position[position]
+        # Influence energy averages only features the subject contributed
+        # to; structural zeros elsewhere would dilute it.
+        values <- exact$delta_stat[position, e, ]
+        values <- values[is.finite(values) & exact$subject_valid[position, ]]
         if (!length(values)) next
         state$exact_influence_sum_sq[j, contrast_index, e] <-
           state$exact_influence_sum_sq[j, contrast_index, e] +
@@ -189,14 +212,33 @@
     predictive_resid = matrix(NA_real_, n_selected, n_sample),
     tau2_deleted = matrix(NA_real_, n_selected, n_sample),
     delta_effect = array(NA_real_, c(n_selected, n_estimand, n_sample)),
-    delta_stat = array(NA_real_, c(n_selected, n_estimand, n_sample))
+    delta_stat = array(NA_real_, c(n_selected, n_estimand, n_sample)),
+    subject_valid = matrix(FALSE, n_selected, n_sample)
   )
   options <- validate_reducer_options(
     reducer$options_schema %||% list(),
     options %||% list()
   )
+  full_stat_re_reg <- NULL
+  if (!identical(reducer$name, "meta:re") && n_selected) {
+    # The full-data standard errors do not depend on the deleted subject.
+    full_effect_re_reg <- estimands %*% full_fit$coef
+    full_se <- sqrt(vapply(seq_len(n_sample), function(b) {
+      tau2 <- full_fit$tau2[b]
+      valid <- is.finite(beta[, b]) & is.finite(var[, b]) & var[, b] > 0
+      if (!is.finite(tau2) || sum(valid) < ncol(X)) return(rep(NA_real_, n_estimand))
+      w <- 1 / (var[valid, b] + tau2)
+      A <- .diagnostic_inverse(crossprod(X[valid, , drop = FALSE] * sqrt(w)))
+      if (is.null(A)) return(rep(NA_real_, n_estimand))
+      rowSums((estimands %*% A) * estimands)
+    }, numeric(n_estimand)))
+    if (n_estimand == 1L) full_se <- matrix(full_se, 1L, n_sample)
+    full_stat_re_reg <- full_effect_re_reg / full_se
+  }
   for (j in seq_along(selected_index)) {
     i <- selected_index[j]
+    subject_valid <- is.finite(beta[i, ]) & is.finite(var[i, ]) & var[i, ] > 0
+    out$subject_valid[j, ] <- subject_valid
     keep <- seq_len(nrow(beta)) != i
     X_minus <- if (is.null(X)) NULL else X[keep, , drop = FALSE]
     deleted <- reducer$fun(
@@ -222,18 +264,8 @@
       out$delta_stat[j, 1L, ] <- full_stat - deleted_stat
       out$tau2_deleted[j, ] <- deleted$tau2
     } else {
-      full_effect <- estimands %*% full_fit$coef
-      full_se <- sqrt(vapply(seq_len(n_sample), function(b) {
-        tau2 <- full_fit$tau2[b]
-        valid <- is.finite(beta[, b]) & is.finite(var[, b]) & var[, b] > 0
-        if (!is.finite(tau2) || sum(valid) < ncol(X)) return(rep(NA_real_, n_estimand))
-        w <- 1 / (var[valid, b] + tau2)
-        A <- .diagnostic_inverse(crossprod(X[valid, , drop = FALSE] * sqrt(w)))
-        if (is.null(A)) return(rep(NA_real_, n_estimand))
-        rowSums((estimands %*% A) * estimands)
-      }, numeric(n_estimand)))
-      if (n_estimand == 1L) full_se <- matrix(full_se, 1L, n_sample)
-      full_stat <- full_effect / full_se
+      full_effect <- full_effect_re_reg
+      full_stat <- full_stat_re_reg
       deleted_effect <- estimands %*% deleted$coef
       deleted_se <- matrix(NA_real_, n_estimand, n_sample)
       for (b in seq_len(n_sample)) {
@@ -262,6 +294,20 @@
       out$delta_stat[j, , ] <- full_stat - deleted_stat
       out$tau2_deleted[j, ] <- deleted$tau2
     }
+    out <- .mark_noncontributing(out, j, subject_valid, full_stat)
+  }
+  out
+}
+
+# A subject without usable data at a feature does not enter that feature's
+# fit: deleting it leaves the full statistic unchanged (delta 0) wherever the
+# full statistic exists.
+.mark_noncontributing <- function(out, j, subject_valid, full_stat) {
+  full_stat <- matrix(full_stat, ncol = length(subject_valid))
+  for (e in seq_len(dim(out$delta_stat)[2L])) {
+    zero <- !subject_valid & is.finite(full_stat[e, ])
+    out$delta_stat[j, e, zero] <- 0
+    out$delta_effect[j, e, zero] <- 0
   }
   out
 }
@@ -281,6 +327,8 @@
         examination = list(
           assay_modes = state$selected_map_modes,
           selected_subjects = state$selected_subjects,
+          exact_refit_subjects = state$exact_refit_subjects %||%
+            state$selected_subjects,
           selection_frozen_before_exact_refit = TRUE,
           model_context_digest = model_context$digest
         )
@@ -292,7 +340,7 @@
   if (model_context$method %in% c("meta:re", "meta:re_reg")) {
     for (k in seq_along(state$contrasts)) {
       for (e in seq_along(state$estimands)) {
-        for (j in seq_along(state$selected_subjects)) {
+        for (j in state$exact_position %||% seq_along(state$selected_subjects)) {
           count <- state$exact_influence_count[j, k, e]
           exact[[index]] <- data.frame(
             subject = state$selected_subjects[j],

@@ -12,7 +12,7 @@ with_contrast_data(x, contrast_data)
 \item{contrast_data}{Data frame keyed by contrast identifiers (rownames)}
 }
 \value{
-A \code{\link{gds_plan}} (for plans/sources) or a \code{\link{gds}} (for realised objects)
+A \code{\link[=as_plan]{gds_plan}} (for plans/sources) or a \code{\link{gds}} (for realised objects)
 }
 \description{
 Attach contrast-level metadata to a plan or GDS

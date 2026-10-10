@@ -4,14 +4,18 @@
 \alias{contrasts}
 \title{Extract contrast identifiers from a GDS object}
 \usage{
-contrasts(x)
+contrasts(x, ...)
 }
 \arguments{
-\item{x}{A GDS object}
+\item{x}{A GDS object or plan}
+
+\item{...}{Passed to \code{\link[stats:contrasts]{stats::contrasts()}} by the default method.}
 }
 \value{
 Character vector of contrast names
 }
 \description{
-Extract contrast identifiers from a GDS object
+For objects that are not GDS objects or plans (for example factors), the
+default method delegates to \code{\link[stats:contrasts]{stats::contrasts()}}, so attaching fmrigds does
+not break base model-contrast code.
 }

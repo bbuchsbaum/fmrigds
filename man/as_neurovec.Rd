@@ -38,12 +38,18 @@ Extract a single assay from a GDS object and return it as a
 dimension.
 }
 \examples{
-\dontrun{
-# Stack all subjects into a 4D volume
-vec4d <- as_neurovec(gds, assay = "beta", along = "subject")
+if (requireNamespace("neuroim2", quietly = TRUE)) {
+  sp4 <- neuroim2::NeuroSpace(c(4, 4, 2, 4), spacing = c(2, 2, 2))
+  vec4d <- neuroim2::NeuroVec(array(rnorm(128), c(4, 4, 2, 4)), sp4)
+  gds <- as_gds(vec4d, along = "subject", subjects = paste0("sub0", 1:4))
 
-# Stack specific contrasts
-vec4d <- as_neurovec(gds, assay = "t", along = "contrast",
-                     subset_contrasts = c("faces", "places"))
+  # Stack all subjects into a 4D volume
+  vec <- as_neurovec(gds, assay = "beta", along = "subject")
+  print(dim(vec))
+
+  # Stack specific subjects
+  vec <- as_neurovec(gds, assay = "beta", along = "subject",
+                     subset_subjects = c("sub01", "sub02"))
+  print(dim(vec))
 }
 }

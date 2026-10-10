@@ -31,8 +31,16 @@ Apply regex patterns to filenames or paths to extract values for new
 metadata columns.
 }
 \examples{
-\dontrun{
+root <- tempfile("study_")
+d <- file.path(root, "sub-01")
+dir.create(d, recursive = TRUE)
+invisible(file.create(file.path(d, c("run-1_faces.nii", "run-2_faces.nii",
+                                     "run-1_houses.nii"))))
+catalog <- image_catalog(root, "sub-*/*.nii")
+
 catalog <- assign_meta(catalog, "run", "run-([0-9]+)", source = "basename")
-catalog <- assign_meta(catalog, "contrast", "([^_]+)\\\\.nii", replacement = "\\\\1")
-}
+catalog <- assign_meta(catalog, "contrast", "_([^_]+)\\\\.nii", replacement = "\\\\1")
+catalog$metadata[, c("basename", "run", "contrast")]
+
+unlink(root, recursive = TRUE)
 }

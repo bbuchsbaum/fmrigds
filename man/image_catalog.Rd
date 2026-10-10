@@ -26,12 +26,22 @@ Sweeps a directory tree for files matching a glob pattern and extracts
 metadata from file paths using regex capture groups.
 }
 \examples{
-\dontrun{
+# Create a small study tree (empty placeholder files are enough for discovery)
+root <- tempfile("study_")
+for (s in c("01", "02", "03")) {
+  d <- file.path(root, paste0("sub-", s), "analysis")
+  dir.create(d, recursive = TRUE)
+  invisible(file.create(file.path(d, c("cope1.nii.gz", "varcope1.nii.gz"))))
+}
+
 # Discover files with subject extraction
 catalog <- image_catalog(
-  root = "study",
+  root = root,
   pattern = "sub-*/analysis/*.nii.gz",
   path_regex = "sub-(?<subject>[^/]+)"
 )
-}
+catalog
+catalog$metadata[, c("basename", "subject")]
+
+unlink(root, recursive = TRUE)
 }

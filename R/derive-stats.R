@@ -50,15 +50,18 @@ derive_z <- function(arrays) {
   if (all(c("t", "df") %in% names(arrays))) {
     t <- arrays$t
     df <- .broadcast_df(arrays$df, dim(t))
-    p_two <- 2 * stats::pt(-abs(t), df)
-    return(stats::qnorm(1 - p_two / 2) * sign(t))
+    # Work on the log scale: the two-sided-equivalent z has the same one-tail
+    # probability as |t|. `qnorm(1 - p/2)` loses all precision (Inf) once p
+    # underflows relative to 1, e.g. t = 12 with df = 100.
+    log_tail <- stats::pt(-abs(t), df, log.p = TRUE)
+    return(-stats::qnorm(log_tail, log.p = TRUE) * sign(t))
   }
 
   if ("p" %in% names(arrays)) {
     if (!"beta" %in% names(arrays)) {
       stop("Cannot derive signed z from p without effect sign (beta)", call. = FALSE)
     }
-    return(stats::qnorm(1 - arrays$p / 2) * sign(arrays$beta))
+    return(.z_from_two_sided_p(arrays$p) * sign(arrays$beta))
   }
 
   # Derive p from F if available, then z if sign information exists
@@ -67,10 +70,16 @@ derive_z <- function(arrays) {
     if (!"beta" %in% names(arrays)) {
       stop("Cannot derive signed z from F without effect sign (beta); use p or Fisher/Lancaster combiners.", call. = FALSE)
     }
-    return(stats::qnorm(1 - pF / 2) * sign(arrays$beta))
+    return(.z_from_two_sided_p(pF) * sign(arrays$beta))
   }
 
   stop("Cannot derive z: require {t, df} or {p, beta}", call. = FALSE)
+}
+
+# |z| with two-sided tail probability p, computed with the upper tail so that
+# tiny p-values map to large finite z instead of Inf.
+.z_from_two_sided_p <- function(p) {
+  stats::qnorm(p / 2, lower.tail = FALSE)
 }
 
 derive_p <- function(arrays) {

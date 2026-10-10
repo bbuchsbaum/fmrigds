@@ -36,9 +36,11 @@
 #' @export
 #'
 #' @examples
-#' \dontrun{
-#' vol <- neuroim2::read_vol("beta.nii.gz")
-#' gds_obj <- as_gds(vol, subject = "sub-01", contrast = "faces")
+#' if (requireNamespace("neuroim2", quietly = TRUE)) {
+#'   sp <- neuroim2::NeuroSpace(c(4, 4, 2), spacing = c(2, 2, 2))
+#'   vol <- neuroim2::NeuroVol(array(rnorm(32), c(4, 4, 2)), sp)
+#'   gds_obj <- as_gds(vol, subject = "sub-01", contrast = "faces")
+#'   print(gds_obj)
 #' }
 as_gds.NeuroVol <- function(x,
                             assay_name = "beta",
@@ -82,13 +84,51 @@ as_gds.NeuroVol <- function(x,
     storage = storage
   )
 
-  new_gds(
+  .new_gds_with_synthetic_var(
     assays = setNames(list(beta_arr, var_arr), c(assay_name, "var")),
     space = sp,
     subjects = as.character(subject),
     contrasts = as.character(contrast),
     ...
   )
+}
+
+# new_gds() wrapper for importers that fabricate a unit `var` placeholder.
+# Tags it exactly like gds_from_neurovols(): an array attribute (consumption-
+# site backstop) plus metadata$synthetic_var (reduce()-verb guard), so
+# variance-weighted reducers refuse it. Caller-supplied `metadata` is kept.
+.new_gds_with_synthetic_var <- function(assays, ...) {
+  if (!is.null(assays$var)) attr(assays$var, "synthetic_unit_variance") <- TRUE
+  dots <- list(...)
+  meta <- dots$metadata %||% list()
+  meta$synthetic_var <- TRUE
+  dots$metadata <- NULL
+  do.call(new_gds, c(list(assays = assays, metadata = meta), dots))
+}
+
+# Ensure an image shares the reference grid (spatial dims and affine within
+# tolerance) before its voxels are packed alongside the first image's.
+.check_neuroim_grid <- function(vol, ref_dim, ref_affine, label, tol = 1e-4) {
+  d <- dim(vol)
+  d <- as.integer(d)[seq_len(min(3L, length(d)))]
+  if (!identical(d, as.integer(ref_dim))) {
+    stop(
+      "Grid mismatch for ", label, ": spatial dimensions ", paste(d, collapse = "x"),
+      " differ from the first image's ", paste(ref_dim, collapse = "x"),
+      ". Resample all images to a common grid first.",
+      call. = FALSE
+    )
+  }
+  aff <- tryCatch(neuroim2::trans(neuroim2::space(vol)), error = function(e) NULL)
+  if (!is.null(aff) && !is.null(ref_affine) &&
+      max(abs(as.numeric(aff) - as.numeric(ref_affine))) > tol) {
+    stop(
+      "Grid mismatch for ", label, ": voxel-to-world affine differs from the first image's. ",
+      "Resample/register all images to a common grid first.",
+      call. = FALSE
+    )
+  }
+  invisible(TRUE)
 }
 
 #' @rdname as_gds.NeuroVol
@@ -121,15 +161,19 @@ as_gds.DenseNeuroVol <- as_gds.NeuroVol
 #' @export
 #'
 #' @examples
-#' \dontrun{
-#' # 4D volume where each volume is a subject
-#' vec4d <- neuroim2::read_vec("all_subjects.nii.gz")
-#' gds_obj <- as_gds(vec4d, along = "subject",
-#'                   subjects = c("sub-01", "sub-02", "sub-03"))
+#' if (requireNamespace("neuroim2", quietly = TRUE)) {
+#'   sp4 <- neuroim2::NeuroSpace(c(4, 4, 2, 3), spacing = c(2, 2, 2))
+#'   vec4d <- neuroim2::NeuroVec(array(rnorm(96), c(4, 4, 2, 3)), sp4)
 #'
-#' # 4D volume where each volume is a contrast
-#' gds_obj <- as_gds(vec4d, along = "contrast",
-#'                   contrasts = c("faces", "places", "objects"))
+#'   # 4D volume where each volume is a subject
+#'   gds_obj <- as_gds(vec4d, along = "subject",
+#'                     subjects = c("sub-01", "sub-02", "sub-03"))
+#'   print(subjects(gds_obj))
+#'
+#'   # 4D volume where each volume is a contrast
+#'   gds_obj <- as_gds(vec4d, along = "contrast",
+#'                     contrasts = c("faces", "places", "objects"))
+#'   print(contrasts(gds_obj))
 #' }
 as_gds.NeuroVec <- function(x,
                             assay_name = "beta",
@@ -221,7 +265,7 @@ as_gds.NeuroVec <- function(x,
     storage = storage
   )
 
-  new_gds(
+  .new_gds_with_synthetic_var(
     assays = setNames(list(beta_arr, var_arr), c(assay_name, "var")),
     space = sp,
     subjects = as.character(subjects),
@@ -261,23 +305,26 @@ as_gds.DenseNeuroVec <- as_gds.NeuroVec
 #' @export
 #'
 #' @examples
-#' \dontrun{
-#' # Load beta and variance maps for each subject
-#' beta_vols <- list(
-#'   `sub-01` = neuroim2::read_vol("sub-01_beta.nii.gz"),
-#'   `sub-02` = neuroim2::read_vol("sub-02_beta.nii.gz")
-#' )
-#' var_vols <- list(
-#'   `sub-01` = neuroim2::read_vol("sub-01_var.nii.gz"),
-#'   `sub-02` = neuroim2::read_vol("sub-02_var.nii.gz")
-#' )
+#' if (requireNamespace("neuroim2", quietly = TRUE)) {
+#'   sp <- neuroim2::NeuroSpace(c(4, 4, 2), spacing = c(2, 2, 2))
+#'   make_vol <- function(x) neuroim2::NeuroVol(array(x, c(4, 4, 2)), sp)
 #'
-#' gds_obj <- gds_from_neurovols(beta_vols, var = var_vols)
+#'   # Beta and variance maps for each subject
+#'   beta_vols <- list(
+#'     `sub-01` = make_vol(rnorm(32)),
+#'     `sub-02` = make_vol(rnorm(32)),
+#'     `sub-03` = make_vol(rnorm(32))
+#'   )
+#'   var_vols <- lapply(beta_vols, function(v) make_vol(runif(32, 0.5, 1.5)))
 #'
-#' # With subject covariates
-#' covars <- data.frame(age = c(25, 30), group = c("A", "B"),
-#'                      row.names = c("sub-01", "sub-02"))
-#' gds_obj <- gds_from_neurovols(beta_vols, var = var_vols, col_data = covars)
+#'   gds_obj <- gds_from_neurovols(beta_vols, var = var_vols)
+#'   print(gds_obj)
+#'
+#'   # With subject covariates
+#'   covars <- data.frame(age = c(25, 30, 35), group = c("A", "B", "A"),
+#'                        row.names = c("sub-01", "sub-02", "sub-03"))
+#'   gds_obj <- gds_from_neurovols(beta_vols, var = var_vols, col_data = covars)
+#'   print(col_data(gds_obj))
 #' }
 gds_from_neurovols <- function(beta,
                                 var = NULL,
@@ -344,6 +391,16 @@ gds_from_neurovols <- function(beta,
   # Build arrays
   beta_arr <- array(NA_real_, dim = c(n_samples, n_subj, 1L))
   var_arr <- array(NA_real_, dim = c(n_samples, n_subj, 1L))
+
+  if (anyDuplicated(subjects)) {
+    stop("'beta' names (subject IDs) must be unique", call. = FALSE)
+  }
+  ref_affine <- neuroim2::trans(nspace)
+  for (subj in subjects) {
+    .check_neuroim_grid(beta[[subj]], vdim, ref_affine, paste0("beta '", subj, "'"))
+    if (has_var) .check_neuroim_grid(var[[subj]], vdim, ref_affine, paste0("var '", subj, "'"))
+    if (has_se) .check_neuroim_grid(se[[subj]], vdim, ref_affine, paste0("se '", subj, "'"))
+  }
 
   for (j in seq_len(n_subj)) {
     subj <- subjects[j]
@@ -434,38 +491,29 @@ gds_from_neurovols <- function(beta,
 #' @export
 #'
 #' @examples
-#' \dontrun{
-#' # Example 1: Nested list structure (subjects x contrasts)
-#' beta <- list(
-#'   `sub-01` = list(
-#'     faces = neuroim2::read_vol("sub-01_faces_beta.nii.gz"),
-#'     places = neuroim2::read_vol("sub-01_places_beta.nii.gz")
-#'   ),
-#'   `sub-02` = list(
-#'     faces = neuroim2::read_vol("sub-02_faces_beta.nii.gz"),
-#'     places = neuroim2::read_vol("sub-02_places_beta.nii.gz")
-#'   )
-#' )
-#' var <- list(
-#'   `sub-01` = list(
-#'     faces = neuroim2::read_vol("sub-01_faces_var.nii.gz"),
-#'     places = neuroim2::read_vol("sub-01_places_var.nii.gz")
-#'   ),
-#'   `sub-02` = list(
-#'     faces = neuroim2::read_vol("sub-02_faces_var.nii.gz"),
-#'     places = neuroim2::read_vol("sub-02_places_var.nii.gz")
-#'   )
-#' )
+#' if (requireNamespace("neuroim2", quietly = TRUE)) {
+#'   sp <- neuroim2::NeuroSpace(c(4, 4, 2), spacing = c(2, 2, 2))
+#'   make_vol <- function(x) neuroim2::NeuroVol(array(x, c(4, 4, 2)), sp)
+#'   subj <- c("sub-01", "sub-02")
 #'
-#' gds_obj <- gds_from_neurovol_nested(beta, var = var)
+#'   # Example 1: Nested list structure (subjects x contrasts)
+#'   beta <- lapply(stats::setNames(subj, subj), function(s)
+#'     list(faces = make_vol(rnorm(32)), places = make_vol(rnorm(32))))
+#'   var <- lapply(stats::setNames(subj, subj), function(s)
+#'     list(faces = make_vol(runif(32, 0.5, 1.5)),
+#'          places = make_vol(runif(32, 0.5, 1.5))))
 #'
-#' # Example 2: List of 4D NeuroVecs (each subject has multi-contrast 4D file)
-#' beta_vecs <- list(
-#'   `sub-01` = neuroim2::read_vec("sub-01_allcons_beta.nii.gz"),
-#'   `sub-02` = neuroim2::read_vec("sub-02_allcons_beta.nii.gz")
-#' )
-#' gds_obj <- gds_from_neurovol_nested(beta_vecs,
-#'                                      contrasts = c("faces", "places", "objects"))
+#'   gds_obj <- gds_from_neurovol_nested(beta, var = var)
+#'   print(gds_obj)
+#'
+#'   # Example 2: List of 4D NeuroVecs (each subject has a multi-contrast 4D image)
+#'   sp4 <- neuroim2::NeuroSpace(c(4, 4, 2, 3), spacing = c(2, 2, 2))
+#'   beta_vecs <- lapply(stats::setNames(subj, subj), function(s)
+#'     neuroim2::NeuroVec(array(rnorm(96), c(4, 4, 2, 3)), sp4))
+#'   # Without variance maps a unit-variance placeholder is used (with a warning)
+#'   gds_obj <- gds_from_neurovol_nested(beta_vecs,
+#'                                       contrasts = c("faces", "places", "objects"))
+#'   print(contrasts(gds_obj))
 #' }
 gds_from_neurovol_nested <- function(beta,
                                   var = NULL,
@@ -564,12 +612,40 @@ gds_from_neurovol_nested <- function(beta,
   beta_arr <- array(NA_real_, dim = c(n_samples, n_subj, n_con))
   var_arr <- array(NA_real_, dim = c(n_samples, n_subj, n_con))
 
+  if (anyDuplicated(subjects)) {
+    stop("'beta' names (subject IDs) must be unique", call. = FALSE)
+  }
+  ref_affine <- neuroim2::trans(nspace)
+  check_elem <- function(obj, what, subj) {
+    if (is_neurovec_input) {
+      if (is.null(obj)) stop("Missing ", what, " for subject '", subj, "'", call. = FALSE)
+      .check_neuroim_grid(obj, vdim, ref_affine, paste0(what, " '", subj, "'"))
+      n4 <- dim(obj)[4]
+      if (length(dim(obj)) < 4L || n4 < n_con) {
+        stop(what, " NeuroVec for subject '", subj, "' has fewer than ", n_con,
+             " volumes", call. = FALSE)
+      }
+    } else {
+      for (con in contrasts) {
+        vol <- obj[[con]]
+        if (is.null(vol)) {
+          stop("Missing ", what, " volume for subject '", subj, "', contrast '", con, "'",
+               call. = FALSE)
+        }
+        .check_neuroim_grid(vol, vdim, ref_affine, paste0(what, " '", subj, "'/'", con, "'"))
+      }
+    }
+  }
+
   # Extract data
   for (j in seq_len(n_subj)) {
     subj <- subjects[j]
     beta_subj <- beta[[subj]]
     var_subj <- if (has_var) var[[subj]] else NULL
     se_subj <- if (has_se) se[[subj]] else NULL
+    check_elem(beta_subj, "beta", subj)
+    if (has_var) check_elem(var_subj, "var", subj)
+    if (has_se) check_elem(se_subj, "se", subj)
 
     for (k in seq_len(n_con)) {
       con <- contrasts[k]
@@ -708,13 +784,23 @@ gds_from_neurovol_nested <- function(beta,
 #' @export
 #'
 #' @examples
-#' \dontrun{
-#' # Extract beta maps as list of NeuroVols (one per subject)
-#' vols <- as_neurovol_list(gds, assay = "beta")
-#' vols$sub01  # NeuroVol for subject "sub01"
+#' if (requireNamespace("neuroim2", quietly = TRUE)) {
+#'   sp4 <- neuroim2::NeuroSpace(c(4, 4, 2, 4), spacing = c(2, 2, 2))
+#'   vec4d <- neuroim2::NeuroVec(array(rnorm(128), c(4, 4, 2, 4)), sp4)
+#'   gds <- as_gds(vec4d, along = "subject", subjects = paste0("sub0", 1:4))
 #'
-#' # Extract by contrast
-#' vols_by_con <- as_neurovol_list(gds, assay = "t", by = "contrast")
+#'   # Extract beta maps as list of NeuroVols (one per subject)
+#'   vols <- as_neurovol_list(gds, assay = "beta")
+#'   print(names(vols))
+#'   print(vols$sub01)  # NeuroVol for subject "sub01"
+#'
+#'   # Extract by contrast (here: one subject with three contrasts)
+#'   sp3 <- neuroim2::NeuroSpace(c(4, 4, 2, 3), spacing = c(2, 2, 2))
+#'   vec_con <- neuroim2::NeuroVec(array(rnorm(96), c(4, 4, 2, 3)), sp3)
+#'   gds_con <- as_gds(vec_con, along = "contrast",
+#'                     contrasts = c("faces", "places", "objects"))
+#'   vols_by_con <- as_neurovol_list(gds_con, assay = "beta", by = "contrast")
+#'   print(names(vols_by_con))
 #' }
 as_neurovol_list <- function(x,
                               assay = "beta",
@@ -837,13 +923,19 @@ as_neurovol_list <- function(x,
 #' @export
 #'
 #' @examples
-#' \dontrun{
-#' # Stack all subjects into a 4D volume
-#' vec4d <- as_neurovec(gds, assay = "beta", along = "subject")
+#' if (requireNamespace("neuroim2", quietly = TRUE)) {
+#'   sp4 <- neuroim2::NeuroSpace(c(4, 4, 2, 4), spacing = c(2, 2, 2))
+#'   vec4d <- neuroim2::NeuroVec(array(rnorm(128), c(4, 4, 2, 4)), sp4)
+#'   gds <- as_gds(vec4d, along = "subject", subjects = paste0("sub0", 1:4))
 #'
-#' # Stack specific contrasts
-#' vec4d <- as_neurovec(gds, assay = "t", along = "contrast",
-#'                      subset_contrasts = c("faces", "places"))
+#'   # Stack all subjects into a 4D volume
+#'   vec <- as_neurovec(gds, assay = "beta", along = "subject")
+#'   print(dim(vec))
+#'
+#'   # Stack specific subjects
+#'   vec <- as_neurovec(gds, assay = "beta", along = "subject",
+#'                      subset_subjects = c("sub01", "sub02"))
+#'   print(dim(vec))
 #' }
 as_neurovec <- function(x,
                         assay = "beta",
@@ -978,16 +1070,23 @@ as_neurovec <- function(x,
 #' @export
 #'
 #' @examples
-#' \dontrun{
+#' beta <- array(rnorm(5 * 4), c(5, 4, 1))
+#' var <- array(1, c(5, 4, 1))
+#' gds <- new_gds(list(beta = beta, var = var), space_sample_labels(letters[1:5]),
+#'                subjects = paste0("s", 1:4), contrasts = "c1",
+#'                col_data = data.frame(group = c("patients", "controls",
+#'                                                "patients", "controls"),
+#'                                      row.names = paste0("s", 1:4)))
+#'
 #' # Split by group column in col_data
 #' gds_by_group <- split(gds, "group")
 #' gds_by_group$patients  # GDS with only patient subjects
-#' gds_by_group$controls  # GDS with only control subjects
+#' subjects(gds_by_group$controls)
 #'
 #' # Or provide a factor directly
 #' groups <- factor(c("A", "B", "A", "B"))
 #' gds_split <- split(gds, groups)
-#' }
+#' names(gds_split)
 split.gds <- function(x, f, drop = TRUE, ...) {
 
   stopifnot(inherits(x, "gds"))
@@ -1060,9 +1159,10 @@ split.gds <- function(x, f, drop = TRUE, ...) {
     stop("Only voxel spaces can be converted to neuroim2 NeuroSpace", call. = FALSE)
   }
 
-  # Extract spacing from affine (diagonal elements of upper-left 3x3)
-  # This is a simplification; full affine may have rotations
-  spacing <- abs(c(sp$affine[1, 1], sp$affine[2, 2], sp$affine[3, 3]))
+  # Voxel spacing is the length of each affine column (robust to rotations /
+  # oblique acquisitions, where the diagonal alone underestimates it).
+  A <- as.matrix(sp$affine)[1:3, 1:3, drop = FALSE]
+  spacing <- sqrt(colSums(A^2))
 
   # Origin is the translation column
   origin <- sp$affine[1:3, 4]
@@ -1096,12 +1196,22 @@ split.gds <- function(x, f, drop = TRUE, ...) {
 #' @export
 #'
 #' @examples
-#' \dontrun{
-#' # Get beta maps for all patients
-#' patient_vols <- extract_group(gds, "diagnosis", "patient", assay = "beta")
+#' if (requireNamespace("neuroim2", quietly = TRUE)) {
+#'   sp4 <- neuroim2::NeuroSpace(c(4, 4, 2, 4), spacing = c(2, 2, 2))
+#'   vec4d <- neuroim2::NeuroVec(array(rnorm(128), c(4, 4, 2, 4)), sp4)
+#'   gds <- as_gds(vec4d, along = "subject", subjects = paste0("sub0", 1:4))
+#'   gds <- with_col_data(gds, data.frame(
+#'     diagnosis = c("patient", "control", "patient", "control"),
+#'     row.names = subjects(gds)
+#'   ))
 #'
-#' # Get t-maps for controls
-#' control_ts <- extract_group(gds, "diagnosis", "control", assay = "t")
+#'   # Get beta maps for all patients
+#'   patient_vols <- extract_group(gds, "diagnosis", "patient", assay = "beta")
+#'   print(names(patient_vols))
+#'
+#'   # Get beta maps for controls
+#'   control_vols <- extract_group(gds, "diagnosis", "control", assay = "beta")
+#'   print(names(control_vols))
 #' }
 extract_group <- function(x, group_var, group_level, assay = "beta", ...) {
   stopifnot(inherits(x, "gds"))

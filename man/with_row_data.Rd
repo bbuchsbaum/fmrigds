@@ -12,7 +12,7 @@ with_row_data(x, row_data)
 \item{row_data}{Data frame keyed by sample identifiers (rownames) when available}
 }
 \value{
-A \code{\link{gds_plan}} (for plans/sources) or a \code{\link{gds}} (for realised objects)
+A \code{\link[=as_plan]{gds_plan}} (for plans/sources) or a \code{\link{gds}} (for realised objects)
 }
 \description{
 Attach sample-level metadata to a plan or GDS

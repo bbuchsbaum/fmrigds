@@ -103,7 +103,7 @@ gds_metadata <- function(schema_version = "0.1.0",
 #' @param hash Optional pre-computed hash
 #'
 #' @return A provenance node list
-#' @export
+#' @noRd
 provenance_node <- function(op_name,
                             params,
                             inputs = list(),
@@ -135,7 +135,7 @@ provenance_node <- function(op_name,
 #' @param inputs Parent node identifiers
 #'
 #' @return Updated metadata list
-#' @export
+#' @noRd
 add_provenance_node <- function(metadata,
                                 op_name,
                                 params,
@@ -195,11 +195,11 @@ assay.gds <- function(x, name = "beta", ...) x$assays[[name]]
 #' Discoverability helper for finding assay names to pass to [assay()],
 #' [write_nifti_assays()], or [write_out()] without having to run a job and
 #' inspect `names(assays(fit))`. Works on a realised [`gds`], a lazy
-#' [`gds_plan`]/[`gds_source`] (reporting the *input* assays the source probed),
+#' [`gds_plan`][as_plan()]/[`gds_source`] (reporting the *input* assays the source probed),
 #' or---when `reducer` is supplied---reports a reducer's declared output stems
 #' without computing anything.
 #'
-#' @param x A realised [`gds`], a [`gds_plan`], or a [`gds_source`].
+#' @param x A realised [`gds`], a [`gds_plan`][as_plan()], or a [`gds_source`].
 #' @param reducer Optional reducer name (e.g. `"meta:re"`, `"ols:voxelwise"`, or
 #'   an alias like `"random"`). When supplied, `x` is ignored and the reducer's
 #'   declared `provides` stems are returned. Regression/LMM reducers expand
@@ -215,11 +215,14 @@ assay.gds <- function(x, name = "beta", ...) x$assays[[name]]
 #'   [list_posthoc()], [write_nifti_assays()]
 #' @export
 #' @examples
-#' \dontrun{
+#' beta <- array(rnorm(5 * 4), c(5, 4, 1))
+#' var <- array(1, c(5, 4, 1))
+#' g <- new_gds(list(beta = beta, var = var), space_sample_labels(letters[1:5]),
+#'              subjects = paste0("s", 1:4), contrasts = "c1")
+#'
 #' fit <- one_sample(g) |> compute()
 #' list_assays(fit)                       # names + roles of computed assays
 #' list_assays(reducer = "meta:re")       # what random-effects would produce
-#' }
 list_assays <- function(x, reducer = NULL, info = TRUE) {
   if (!is.null(reducer)) {
     red <- get_reducer(.normalize_reducer_name(reducer))
@@ -300,24 +303,56 @@ subjects.gds <- function(x) x$subjects
 
 #' @export
 subjects.gds_plan <- function(x) {
-  # Prefer subjects from the bound source probe, fall back to plan meta
-  x$source$probe$subjects %||% x$meta$subjects
+  # Start from the bound source probe (fall back to plan meta) and replay the
+  # plan's subject-axis operations so the accessor matches compute().
+  out <- x$source$probe$subjects %||% x$meta$subjects
+  .plan_axis_after_nodes(x, out, axis = "subject")
 }
 
 #' Extract contrast identifiers from a GDS object
 #'
-#' @param x A GDS object
+#' For objects that are not GDS objects or plans (for example factors), the
+#' default method delegates to [stats::contrasts()], so attaching fmrigds does
+#' not break base model-contrast code.
+#'
+#' @param x A GDS object or plan
+#' @param ... Passed to [stats::contrasts()] by the default method.
 #'
 #' @return Character vector of contrast names
 #' @export
-contrasts <- function(x) UseMethod("contrasts")
+contrasts <- function(x, ...) UseMethod("contrasts")
 
 #' @export
-contrasts.gds <- function(x) x$contrasts
+contrasts.default <- function(x, ...) stats::contrasts(x, ...)
 
 #' @export
-contrasts.gds_plan <- function(x) {
-  x$source$probe$contrasts %||% (x$meta$contrasts %||% character())
+contrasts.gds <- function(x, ...) x$contrasts
+
+#' @export
+contrasts.gds_plan <- function(x, ...) {
+  out <- x$source$probe$contrasts %||% (x$meta$contrasts %||% character())
+  .plan_axis_after_nodes(x, out, axis = "contrast")
+}
+
+# Replay subset_axis and reduce nodes on a subject/contrast axis.
+.plan_axis_after_nodes <- function(plan, values, axis = c("subject", "contrast")) {
+  axis <- match.arg(axis)
+  for (node in plan$nodes %||% list()) {
+    if (identical(node$op, "subset_axis")) {
+      idx <- node[[axis]]
+      if (!is.null(idx) && !is.null(values)) {
+        values <- values[.coerce_named_index(idx, values, axis = axis)]
+      }
+    } else if (identical(node$op, "reduce")) {
+      if (identical(axis, "subject")) {
+        values <- "meta"
+      } else {
+        red <- get_reducer(.normalize_reducer_name(node$method))
+        if (identical(red$input_shape, "joint_contrast")) values <- "model"
+      }
+    }
+  }
+  values
 }
 
 #' Extract column (subject) metadata from a GDS object
@@ -483,6 +518,13 @@ metadata.gds <- function(x) x$metadata
     if (!is.null(space$dim) && prod(space$dim) != n_samples) {
       stop("Space dimensions do not align with sample count", call. = FALSE)
     }
+  }
+  if (inherits(space, c("space_sample_labels", "space_parcels")) &&
+      !is.null(space$labels) && length(space$labels) != n_samples) {
+    stop(sprintf(
+      "Space has %d labels but the sample dimension is %d; labels must match samples",
+      length(space$labels), n_samples
+    ), call. = FALSE)
   }
   invisible(NULL)
 }

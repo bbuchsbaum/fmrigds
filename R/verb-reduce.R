@@ -1,6 +1,6 @@
 #' Reduce across subjects (meta-analysis)
 #'
-#' @param x A [`gds_plan`], [`gds_source`], or realised [`gds`]
+#' @param x A [`gds_plan`][as_plan()], [`gds_source`], or realised [`gds`]
 #' @param method Reduction method. Built-ins include `"fixed"`, `"random"`,
 #'   `"stouffer"`, and `"fisher"`. Registry-backed reducers include
 #'   meta-analytic regression reducers such as `"meta:fe_reg"` and the
@@ -8,7 +8,12 @@
 #'   `"lmm:ri_slope1"`, `"lmm:ri_knownvar"`, and
 #'   `"lmm:ri_slope1_knownvar"`, plus permutation reducers
 #'   `"perm:onesample"` and `"perm:twosample"`.
-#' @param weights Weighting scheme (`"1/var"`, `"n_eff"`, `"equal"`, `"custom"`)
+#' @param weights Weighting scheme (`"1/var"`, `"n_eff"`, `"equal"`, `"custom"`).
+#'   Registered reducers apply their own weighting, so only the default
+#'   `"1/var"` is accepted for every reducer. `"equal"` is accepted for
+#'   unweighted and evidence-combining reducers (e.g. `"ols:voxelwise"`,
+#'   `"stouffer"`); other schemes raise an error unless the reducer lists them in
+#'   `options_schema$weights`. Unknown `method` names also raise an error.
 #' @param by Grouping variable (e.g., `"contrast"`)
 #' @param formula Optional model formula. For meta-regression reducers the design
 #'   is built from subject-level `col_data`. For repeated-measures LMM reducers,
@@ -23,7 +28,7 @@
 #' of the fmrigds workflow you already have:
 #'
 #' - Start from files or another external source with [gds()]. That returns a
-#'   [`gds_plan`] you can pipe directly into `reduce()`.
+#'   [`gds_plan`][as_plan()] you can pipe directly into `reduce()`.
 #' - Start from an in-memory result with a realised [`gds`] returned by
 #'   [compute()] or created directly with [new_gds()]. `reduce()` will convert
 #'   it with [as_plan()] for you.
@@ -31,8 +36,8 @@
 #'   most users do not need this because [gds()] creates the source binding
 #'   automatically.
 #'
-#' If you want that conversion to be explicit, use [as_plan()] or its alias
-#' [plan()] before calling `reduce()`.
+#' If you want that conversion to be explicit, use [as_plan()]
+#' before calling `reduce()`.
 #'
 #' For worked examples, see `vignette("fmrigds")` for the basic source -> plan
 #' -> compute workflow and `vignette("as-plan-and-spatial-fdr")` for chaining
@@ -92,7 +97,7 @@
 #'   `p_g`, `p_perm`, `p_fwer`.
 #'
 #' @return Updated plan
-#' @seealso [gds()], [compute()], [as_plan()], [plan()], [new_gds()], [gds_source()]
+#' @seealso [gds()], [compute()], [as_plan()], [new_gds()], [gds_source()]
 #' @export
 reduce <- function(x,
                    method = c("fixed", "random", "stouffer", "fisher"),
@@ -110,8 +115,15 @@ reduce <- function(x,
   if (!is.list(options)) {
     stop("`options` must be a list", call. = FALSE)
   }
-  plan <- as_plan(x)
   reducer <- get_reducer(.normalize_reducer_name(method))
+  if (is.null(reducer)) {
+    stop(.unknown_reducer_message(method), call. = FALSE)
+  }
+  .check_reducer_weights(reducer, method, weights)
+  if (is.character(reducer$options_schema$weights) && is.null(options$weights)) {
+    options$weights <- weights
+  }
+  plan <- as_plan(x)
 
   # Guard: variance-weighted reducers on a synthetic unit-variance placeholder
   # (beta/stat maps ingested without standard errors) would yield meaningless
@@ -121,15 +133,10 @@ reduce <- function(x,
     isTRUE(plan$source$probe$metadata$synthetic_var)
   if (synthetic_var) {
     red <- reducer
-    # For a registered reducer, its declared inputs are authoritative: an
+    # The registered reducer's declared inputs are authoritative: an
     # unweighted reducer such as ols:voxelwise does not consume `var` and must
-    # not be blocked (the default weights = "1/var" is ignored by it). Only fall
-    # back to the weight scheme for unknown/legacy reducers.
-    needs_var <- if (!is.null(red)) {
-      "var" %in% (red$requires %||% character())
-    } else {
-      weights %in% c("1/var", "n_eff")
-    }
+    # not be blocked (the default weights = "1/var" is ignored by it).
+    needs_var <- "var" %in% (red$requires %||% character())
     if (needs_var) {
       stop(sprintf(
         paste0(
@@ -171,6 +178,51 @@ reduce <- function(x,
   )
 }
 
+.reducer_aliases <- c(
+  fixed = "meta:fe",
+  random = "meta:re",
+  stouffer = "combine:stouffer",
+  fisher = "combine:fisher"
+)
+
+.unknown_reducer_message <- function(method) {
+  sprintf(
+    "Unknown reducer '%s'. Available reducers: %s (aliases: %s). Register custom reducers with register_reducer().",
+    method,
+    paste(list_reducers(), collapse = ", "),
+    paste(sprintf("%s -> %s", names(.reducer_aliases), .reducer_aliases), collapse = ", ")
+  )
+}
+
+# Weight schemes other than the default "1/var" are only honoured when the
+# reducer declares them. Registered reducers never receive the `weights`
+# argument directly, so silently accepting "n_eff"/"custom" (or "equal" for a
+# variance-weighted reducer) would run a different analysis than requested.
+#
+# A reducer declares support either through its model_contract weight_mode
+# ("unweighted"/"evidence" reducers are inherently equal-weighted, so
+# weights = "equal" is accepted) or by listing the supported schemes in an
+# `options_schema$weights` entry, in which case the scheme is forwarded as
+# `options$weights`.
+.check_reducer_weights <- function(reducer, method, weights) {
+  if (identical(weights, "1/var")) return(invisible(TRUE))
+  declared <- reducer$options_schema$weights %||% NULL
+  if (is.character(declared) && weights %in% declared) return(invisible(TRUE))
+  mode <- reducer$model_contract$weight_mode %||% NA_character_
+  if (identical(weights, "equal") && mode %in% c("unweighted", "evidence")) {
+    return(invisible(TRUE))
+  }
+  stop(sprintf(
+    paste0(
+      "weights = \"%s\" is not supported by reducer '%s' (weight mode: %s); ",
+      "registered reducers apply their own weighting and would silently ignore it. ",
+      "Use the default weights = \"1/var\"%s."
+    ),
+    weights, reducer$name, if (is.na(mode)) "unspecified" else mode,
+    if (identical(weights, "equal")) ", or an unweighted reducer such as \"ols:voxelwise\" or \"stouffer\"" else ""
+  ), call. = FALSE)
+}
+
 .attach_reducer_data <- function(plan, data) {
   if (!is.data.frame(data)) {
     stop("`data` must be a data.frame.", call. = FALSE)
@@ -209,7 +261,7 @@ reduce <- function(x,
 #' @param ... Arguments passed to reduce(), then compute()
 #'
 #' @return A realized GDS object
-#' @export
+#' @noRd
 reduce_eager <- function(x, ...) {
   compute(reduce(x, ...))
 }

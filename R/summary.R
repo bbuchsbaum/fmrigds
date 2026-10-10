@@ -186,7 +186,7 @@ explain_plan <- function(plan) {
 #' @export
 preview <- function(plan, n = 3, assays = NULL) {
   plan <- as_plan(plan)
-  n_total <- as.integer(plan$source$probe$dims[["sample"]] %||% dim(assays(compute(plan))[[1]])[1])
+  n_total <- .preview_sample_count(plan)
   n <- min(as.integer(n), n_total)
   blk <- list(sample = seq_len(n))
   if (!is.null(assays)) {
@@ -194,3 +194,26 @@ preview <- function(plan, n = 3, assays = NULL) {
   }
   compute(plan, block = blk)
 }
+
+# Number of samples on the source axis, without a full compute when the probe
+# or space already tells us. Falls back to a single-sample adapter read.
+.preview_sample_count <- function(plan) {
+  probe <- plan$source$probe
+  n <- tryCatch(probe$dims[["sample"]], error = function(e) NULL)
+  if (!is.null(n) && length(n) == 1L && !is.na(n)) return(as.integer(n))
+  sp <- probe$space
+  if (inherits(sp, c("space_sample_labels", "space_parcels")) && length(sp$labels)) {
+    return(length(sp$labels))
+  }
+  if (inherits(sp, "space_voxel")) {
+    if (identical(sp$storage, "packed") && !is.null(sp$mask_idx)) return(length(sp$mask_idx))
+    if (!is.null(sp$dim)) return(as.integer(prod(sp$dim)))
+  }
+  if (!is.null(probe$mask_idx)) return(length(probe$mask_idx))
+  if (length(probe$assays)) {
+    arr <- compute(plan, assays = probe$assays[1L])
+    if (is.list(arr) && !inherits(arr, "gds") && length(arr)) return(dim(arr[[1L]])[1L])
+  }
+  dim(assays(compute(plan))[[1L]])[1L]
+}
+

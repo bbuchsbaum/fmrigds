@@ -17,7 +17,7 @@ examine_group(
 )
 }
 \arguments{
-\item{x}{A subject-level \code{\link{gds_plan}}, \code{\link{gds_source}}, or \code{\link{gds}}, optionally
+\item{x}{A subject-level \code{\link[=as_plan]{gds_plan}}, \code{\link{gds_source}}, or \code{\link{gds}}, optionally
 containing one group reducer and a post-hoc conclusion tail.}
 
 \item{method}{Reducer method when \code{x} has no reducer.}

@@ -24,14 +24,21 @@ Divide a GDS object into a list of GDS objects based on a grouping factor
 from \code{col_data} (subject-level metadata).
 }
 \examples{
-\dontrun{
+beta <- array(rnorm(5 * 4), c(5, 4, 1))
+var <- array(1, c(5, 4, 1))
+gds <- new_gds(list(beta = beta, var = var), space_sample_labels(letters[1:5]),
+               subjects = paste0("s", 1:4), contrasts = "c1",
+               col_data = data.frame(group = c("patients", "controls",
+                                               "patients", "controls"),
+                                     row.names = paste0("s", 1:4)))
+
 # Split by group column in col_data
 gds_by_group <- split(gds, "group")
 gds_by_group$patients  # GDS with only patient subjects
-gds_by_group$controls  # GDS with only control subjects
+subjects(gds_by_group$controls)
 
 # Or provide a factor directly
 groups <- factor(c("A", "B", "A", "B"))
 gds_split <- split(gds, groups)
-}
+names(gds_split)
 }

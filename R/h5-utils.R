@@ -1,5 +1,20 @@
 # Internal HDF5 helpers shared by adapters
 
+# Write a character vector as a dataset. A zero-length vector written with
+# hdf5r's default variable-length string type cannot be read back (HDF5 raises
+# "H5Dvlen_reclaim(): invalid argument" on read), so empty vectors are stored
+# with a fixed-length string type, which reads back as character(0).
+.h5_create_character_dataset <- function(group, name, x) {
+  x <- as.character(x)
+  ds <- if (length(x)) {
+    group$create_dataset(name, x)
+  } else {
+    group$create_dataset(name, x, dtype = hdf5r::H5T_STRING$new(type = "c", size = 1L))
+  }
+  if (inherits(ds, "H5D")) ds$close()
+  invisible(NULL)
+}
+
 .h5_safe_exists <- function(h5, path) {
   tryCatch({ obj <- h5$open(path); obj$close(); TRUE }, error = function(e) FALSE)
 }

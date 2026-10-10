@@ -23,10 +23,26 @@ Check that the catalog has consistent file coverage across subjects
 and report any missing or extra files.
 }
 \examples{
-\dontrun{
+# Build a tiny study tree with empty placeholder files
+root <- tempfile("study_")
+for (s in c("01", "02")) {
+  d <- file.path(root, paste0("sub-", s))
+  dir.create(d, recursive = TRUE)
+  invisible(file.create(file.path(d, c("cope1.nii.gz", "varcope1.nii.gz"))))
+}
+catalog <- image_catalog(root, "sub-*/*.nii.gz",
+                         path_regex = "sub-(?<subject>[^/]+)")
+
 report <- validate(catalog)
 print(report)
 
 report <- validate(catalog, expect = c("cope1.nii.gz", "varcope1.nii.gz"))
-}
+
+# Remove one file to see an inconsistency being reported
+invisible(file.remove(file.path(root, "sub-02", "varcope1.nii.gz")))
+catalog <- image_catalog(root, "sub-*/*.nii.gz",
+                         path_regex = "sub-(?<subject>[^/]+)")
+validate(catalog)
+
+unlink(root, recursive = TRUE)
 }

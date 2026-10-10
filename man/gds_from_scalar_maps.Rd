@@ -52,13 +52,27 @@ beta image with meaningful uncertainty. The resulting GDS uses the NIfTI
 adapter's unit-variance placeholder behavior for beta-only sources.
 }
 \examples{
-\dontrun{
-g <- gds_from_scalar_maps(
-  files = c("sub-01/maps/auc.nii.gz", "sub-02/maps/auc.nii.gz"),
-  subject = c("sub-01", "sub-02"),
-  contrast = "auc",
-  col_data = participants
-)
-fit <- group_ols(g, ~ group) |> compute()
+if (requireNamespace("neuroim2", quietly = TRUE) &&
+    requireNamespace("RNifti", quietly = TRUE)) {
+  # Write tiny 4x4x2 subject-level metric maps for four subjects
+  dir <- tempfile("scalar_maps_")
+  dir.create(dir)
+  subj <- c("sub-01", "sub-02", "sub-03", "sub-04")
+  files <- file.path(dir, paste0(subj, "_auc.nii.gz"))
+  for (f in files) RNifti::writeNifti(array(rnorm(32), c(4, 4, 2)), f)
+  participants <- data.frame(subject = subj,
+                             group = c("control", "control", "patient", "patient"))
+
+  # Beta-only maps: a unit-variance placeholder is added (with a warning)
+  g <- gds_from_scalar_maps(
+    files = files,
+    subject = subj,
+    contrast = "auc",
+    col_data = participants
+  )
+  print(g)
+  fit <- group_ols(g, ~ group) |> compute()
+
+  unlink(dir, recursive = TRUE)
 }
 }

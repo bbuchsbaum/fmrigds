@@ -7,7 +7,7 @@
 list_assays(x, reducer = NULL, info = TRUE)
 }
 \arguments{
-\item{x}{A realised \code{\link{gds}}, a \code{\link{gds_plan}}, or a \code{\link{gds_source}}.}
+\item{x}{A realised \code{\link{gds}}, a \code{\link[=as_plan]{gds_plan}}, or a \code{\link{gds_source}}.}
 
 \item{reducer}{Optional reducer name (e.g. \code{"meta:re"}, \code{"ols:voxelwise"}, or
 an alias like \code{"random"}). When supplied, \code{x} is ignored and the reducer's
@@ -27,16 +27,19 @@ A data frame (or a character vector when \code{info = FALSE}).
 Discoverability helper for finding assay names to pass to \code{\link[=assay]{assay()}},
 \code{\link[=write_nifti_assays]{write_nifti_assays()}}, or \code{\link[=write_out]{write_out()}} without having to run a job and
 inspect \code{names(assays(fit))}. Works on a realised \code{\link{gds}}, a lazy
-\code{\link{gds_plan}}/\code{\link{gds_source}} (reporting the \emph{input} assays the source probed),
+\code{\link[=as_plan]{gds_plan}}/\code{\link{gds_source}} (reporting the \emph{input} assays the source probed),
 or---when \code{reducer} is supplied---reports a reducer's declared output stems
 without computing anything.
 }
 \examples{
-\dontrun{
+beta <- array(rnorm(5 * 4), c(5, 4, 1))
+var <- array(1, c(5, 4, 1))
+g <- new_gds(list(beta = beta, var = var), space_sample_labels(letters[1:5]),
+             subjects = paste0("s", 1:4), contrasts = "c1")
+
 fit <- one_sample(g) |> compute()
 list_assays(fit)                       # names + roles of computed assays
 list_assays(reducer = "meta:re")       # what random-effects would produce
-}
 }
 \seealso{
 \code{\link[=assays]{assays()}}, \code{\link[=assay]{assay()}}, \code{\link[=assay_info]{assay_info()}}, \code{\link[=list_reducers]{list_reducers()}},

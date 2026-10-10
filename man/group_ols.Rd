@@ -21,7 +21,7 @@ two_sample(
 )
 }
 \arguments{
-\item{x}{A realised \code{\link{gds}} or \code{\link{gds_plan}}.}
+\item{x}{A realised \code{\link{gds}} or \code{\link[=as_plan]{gds_plan}}.}
 
 \item{formula}{One-sided model formula for \code{\link[=group_ols]{group_ols()}}.}
 
@@ -42,7 +42,7 @@ subjects before fitting the one-sample model.}
 omitted, all non-baseline levels are retained in the model.}
 }
 \value{
-A \code{\link{gds_plan}} with an OLS reduce node.
+A \code{\link[=as_plan]{gds_plan}} with an OLS reduce node.
 }
 \description{
 These helpers wrap \code{reduce(method = "ols:voxelwise")} for subject-level map
@@ -50,9 +50,17 @@ workflows. They return a lazy GDS plan; call \code{\link[=compute]{compute()}} t
 fitted maps.
 }
 \examples{
-\dontrun{
+# Synthetic voxel-like data: 5 samples x 4 subjects x 1 contrast
+beta <- array(rnorm(5 * 4), c(5, 4, 1))
+var <- array(1, c(5, 4, 1))
+g <- new_gds(list(beta = beta, var = var), space_sample_labels(letters[1:5]),
+             subjects = paste0("s", 1:4), contrasts = "c1",
+             col_data = data.frame(group = c("control", "control",
+                                             "patient", "patient"),
+                                   row.names = paste0("s", 1:4)))
+
 fit <- group_ols(g, ~ group) |> compute()
+names(assays(fit))
 one <- one_sample(g) |> compute()
-two <- two_sample(g, group = "diagnosis", baseline = "control") |> compute()
-}
+two <- two_sample(g, group = "group", baseline = "control") |> compute()
 }

@@ -55,7 +55,7 @@ assay_info <- function(name) {
 #' @param name Assay name
 #'
 #' @return Logical, TRUE if assay can be linearly mapped
-#' @export
+#' @noRd
 can_map_linear <- function(name) {
   info <- assay_info(name)
   if (is.null(info)) return(FALSE)

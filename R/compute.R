@@ -77,13 +77,17 @@ compute <- function(x,
     contrast_names = plan$meta$contrast_names %||% NULL
   )
 
+  # A sample block restricts the realised sample axis: subset the space and
+  # row_data to the samples actually read so they stay aligned with the arrays.
+  init <- .block_initial_axes(plan, arrays, block)
+
   node_result <- .apply_plan_nodes(
     arrays,
     plan,
-    plan$source$probe$space,
+    init$space,
     plan$source$probe$subjects,
     col_data = col_data(plan),
-    row_data = row_data(plan),
+    row_data = init$row_data,
     contrast_data = contrast_data(plan)
   )
   arrays <- node_result$arrays
@@ -199,9 +203,10 @@ compute <- function(x,
 #' @param plan A gds_plan object
 #'
 #' @return Character digest hash
-#' @export
+#' @noRd
 digest_plan <- function(plan) {
   if (inherits(plan, "fmri_group_plan")) {
+    .require_frame_deps("digest_plan() on an fmri_group_plan")
     design_digest <- digest::digest(
       list(
         observation_ids = plan$design$observation_ids,
@@ -243,7 +248,7 @@ digest_plan <- function(plan) {
 #' @param node Operation node list
 #'
 #' @return Canonicalized node list
-#' @export
+#' @noRd
 canonicalize_node <- function(node) {
   params <- node[!names(node) %in% c("op", "node_id")]
   params <- params[order(names(params))]
@@ -304,10 +309,12 @@ canonicalize_node <- function(node) {
       )
       arrays <- res$arrays
       subset_info <- res$subset
-      if (!is.null(subset_info$samples) && !is.null(current_row_data)) {
-        current_row_data <- current_row_data[subset_info$samples, , drop = FALSE]
-      }
-      if (!is.null(subset_info$samples)) {
+      # Only touch the sample axis metadata when samples were requested;
+      # subject/contrast-only subsets must leave the space untouched.
+      if (!is.null(node$sample)) {
+        if (!is.null(current_row_data)) {
+          current_row_data <- current_row_data[subset_info$samples, , drop = FALSE]
+        }
         current_space <- .subset_space(current_space, subset_info$samples)
       }
       if (!is.null(subset_info$subjects)) {
@@ -470,13 +477,28 @@ canonicalize_node <- function(node) {
   if (is.null(idx)) {
     return(space)
   }
-  if (exists("space_subset", mode = "function")) {
-    return(space_subset(space, idx))
+  # pack = TRUE turns a dense voxel space into a packed one over `idx`.
+  space_subset(space, idx, pack = TRUE)
+}
+
+.block_initial_axes <- function(plan, arrays, block) {
+  space <- plan$source$probe$space
+  rd <- row_data(plan)
+  idx <- block$sample %||% NULL
+  if (is.null(idx) || !length(arrays)) {
+    return(list(space = space, row_data = rd))
   }
-  if (inherits(space, "space_parcels") || inherits(space, "space_sample_labels")) {
-    space$labels <- space$labels[idx]
+  if (is.logical(idx)) idx <- which(idx)
+  n_read <- dim(arrays[[1L]])[1L]
+  if (length(idx) != n_read) {
+    # Adapter ignored the block; the arrays still span the full sample axis.
+    return(list(space = space, row_data = rd))
   }
-  space
+  if (inherits(space, c("space_voxel", "space_parcels", "space_sample_labels"))) {
+    space <- .subset_space(space, idx)
+  }
+  if (!is.null(rd) && nrow(rd) >= max(idx)) rd <- rd[idx, , drop = FALSE]
+  list(space = space, row_data = rd)
 }
 
 ## optimize_plan is implemented in R/plan-optimizer.R

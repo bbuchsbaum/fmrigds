@@ -15,7 +15,7 @@ reduce(
 )
 }
 \arguments{
-\item{x}{A \code{\link{gds_plan}}, \code{\link{gds_source}}, or realised \code{\link{gds}}}
+\item{x}{A \code{\link[=as_plan]{gds_plan}}, \code{\link{gds_source}}, or realised \code{\link{gds}}}
 
 \item{method}{Reduction method. Built-ins include \code{"fixed"}, \code{"random"},
 \code{"stouffer"}, and \code{"fisher"}. Registry-backed reducers include
@@ -25,7 +25,12 @@ restricted repeated-measures Gaussian LMM reducers \code{"lmm:ri"},
 \code{"lmm:ri_slope1_knownvar"}, plus permutation reducers
 \code{"perm:onesample"} and \code{"perm:twosample"}.}
 
-\item{weights}{Weighting scheme (\code{"1/var"}, \code{"n_eff"}, \code{"equal"}, \code{"custom"})}
+\item{weights}{Weighting scheme (\code{"1/var"}, \code{"n_eff"}, \code{"equal"}, \code{"custom"}).
+Registered reducers apply their own weighting, so only the default
+\code{"1/var"} is accepted for every reducer. \code{"equal"} is accepted for
+unweighted and evidence-combining reducers (e.g. \code{"ols:voxelwise"},
+\code{"stouffer"}); other schemes raise an error unless the reducer lists them in
+\code{options_schema$weights}. Unknown \code{method} names also raise an error.}
 
 \item{by}{Grouping variable (e.g., \code{"contrast"})}
 
@@ -85,7 +90,7 @@ Reduce across subjects (meta-analysis)
 of the fmrigds workflow you already have:
 \itemize{
 \item Start from files or another external source with \code{\link[=gds]{gds()}}. That returns a
-\code{\link{gds_plan}} you can pipe directly into \code{reduce()}.
+\code{\link[=as_plan]{gds_plan}} you can pipe directly into \code{reduce()}.
 \item Start from an in-memory result with a realised \code{\link{gds}} returned by
 \code{\link[=compute]{compute()}} or created directly with \code{\link[=new_gds]{new_gds()}}. \code{reduce()} will convert
 it with \code{\link[=as_plan]{as_plan()}} for you.
@@ -94,8 +99,8 @@ most users do not need this because \code{\link[=gds]{gds()}} creates the source
 automatically.
 }
 
-If you want that conversion to be explicit, use \code{\link[=as_plan]{as_plan()}} or its alias
-\code{\link[=plan]{plan()}} before calling \code{reduce()}.
+If you want that conversion to be explicit, use \code{\link[=as_plan]{as_plan()}}
+before calling \code{reduce()}.
 
 For worked examples, see \code{vignette("fmrigds")} for the basic source -> plan
 -> compute workflow and \code{vignette("as-plan-and-spatial-fdr")} for chaining
@@ -129,5 +134,5 @@ non-finite effects/design values or non-finite, nonpositive variances.
 }
 
 \seealso{
-\code{\link[=gds]{gds()}}, \code{\link[=compute]{compute()}}, \code{\link[=as_plan]{as_plan()}}, \code{\link[=plan]{plan()}}, \code{\link[=new_gds]{new_gds()}}, \code{\link[=gds_source]{gds_source()}}
+\code{\link[=gds]{gds()}}, \code{\link[=compute]{compute()}}, \code{\link[=as_plan]{as_plan()}}, \code{\link[=new_gds]{new_gds()}}, \code{\link[=gds_source]{gds_source()}}
 }

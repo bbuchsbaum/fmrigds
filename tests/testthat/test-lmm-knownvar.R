@@ -155,10 +155,14 @@ test_that("known-variance LMM reducers declare and enforce their input contract"
 
   bad <- fixture$gds
   bad$assays$var[1, 1, 1] <- 0
-  expect_error(
-    reduce(as_plan(bad), method = "lmm:ri_knownvar", formula = ~ time) |> compute(),
-    "strictly positive sampling variances"
+  # A non-positive variance invalidates only the affected sample (NA output)
+  # instead of aborting the whole run.
+  bad_out <- NULL
+  expect_warning(
+    bad_out <- reduce(as_plan(bad), method = "lmm:ri_knownvar", formula = ~ time) |> compute(),
+    "non-positive sampling variances"
   )
+  expect_true(is.na(assay(bad_out, "coef:time")[1, 1, 1]))
 
   arrays <- list(
     beta = assay(fixture$gds, "beta"),

@@ -7,7 +7,7 @@
 register_map(x, family, overwrite = FALSE)
 }
 \arguments{
-\item{x}{A \code{\link{gds_plan}} or realised \code{\link{gds}}}
+\item{x}{A \code{\link[=as_plan]{gds_plan}} or realised \code{\link{gds}}}
 
 \item{family}{A \code{\link{MapFamily}} object}
 

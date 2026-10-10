@@ -20,11 +20,25 @@ A filtered image_catalog.
 Filter catalog files based on metadata conditions.
 }
 \examples{
-\dontrun{
+# Build a tiny study tree with empty placeholder files
+root <- tempfile("study_")
+for (s in c("01", "02")) {
+  d <- file.path(root, paste0("sub-", s))
+  dir.create(d, recursive = TRUE)
+  invisible(file.create(file.path(d, c("cope1.nii.gz", "varcope1.nii.gz"))))
+}
+catalog <- image_catalog(root, "sub-*/*.nii.gz",
+                         path_regex = "sub-(?<subject>[^/]+)")
+
+catalog <- assign_meta(catalog, "stat_type", "^([a-z]+)[0-9]+")
+
 # Keep only files from subject "01"
 sub_catalog <- subset(catalog, subject == "01")
+sub_catalog
 
 # Multiple conditions
-sub_catalog <- subset(catalog, subject \%in\% c("01", "02") & run == "1")
-}
+sub_catalog <- subset(catalog, subject \%in\% c("01", "02") & stat_type == "cope")
+sub_catalog$metadata$basename
+
+unlink(root, recursive = TRUE)
 }

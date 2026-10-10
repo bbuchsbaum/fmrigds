@@ -32,19 +32,41 @@ register_adapter <- function(name,
   if (!is.null(scan) && !is.function(scan)) {
     stop("`scan` must be NULL or a function.", call. = FALSE)
   }
-  .adapter_registry[[name]] <- list(
-    name = name,
-    detect = detect,
-    open = open,
-    probe = probe,
-    read = read,
-    close = close,
-    capabilities = capabilities,
-    scan = scan,
-    ...
+  extra <- list(...)
+  priority <- extra$priority %||% 0
+  if (!is.numeric(priority) || length(priority) != 1L || is.na(priority)) {
+    stop("Adapter `priority` must be a single number.", call. = FALSE)
+  }
+  extra$priority <- NULL
+  # Registration order is kept (stable across re-registration of the same
+  # name) so auto-detection ties are broken deterministically.
+  prev <- .adapter_registry[[name]]
+  order <- if (!is.null(prev$registration_order)) {
+    prev$registration_order
+  } else {
+    .adapter_registration_counter$n <- .adapter_registration_counter$n + 1L
+    .adapter_registration_counter$n
+  }
+  .adapter_registry[[name]] <- c(
+    list(
+      name = name,
+      detect = detect,
+      open = open,
+      probe = probe,
+      read = read,
+      close = close,
+      capabilities = capabilities,
+      scan = scan,
+      priority = as.numeric(priority),
+      registration_order = order
+    ),
+    extra
   )
   invisible(.adapter_registry[[name]])
 }
+
+.adapter_registration_counter <- new.env(parent = emptyenv())
+.adapter_registration_counter$n <- 0L
 
 .adapter_capability_defaults <- function() {
   list(
@@ -136,7 +158,15 @@ detect_adapter <- function(source, prefer = NULL) {
     return(prefer)
   }
 
-  best <- names[which.max(scores)]
-  if (scores[best] <= 0) stop("No adapter detected for source", call. = FALSE)
-  best
+  if (max(scores) <= 0) stop("No adapter detected for source", call. = FALSE)
+  # Highest score wins; ties are broken by declared priority (higher first),
+  # then by registration order (earlier first) -- never by name.
+  priority <- vapply(names, function(name) {
+    as.numeric(.adapter_registry[[name]]$priority %||% 0)
+  }, numeric(1))
+  reg_order <- vapply(names, function(name) {
+    as.numeric(.adapter_registry[[name]]$registration_order %||% Inf)
+  }, numeric(1))
+  ord <- order(-scores, -priority, reg_order)
+  names[ord[1L]]
 }

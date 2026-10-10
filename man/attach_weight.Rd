@@ -17,7 +17,10 @@ attach_weight(g, name, array)
 Updated GDS with weights stored in assays
 }
 \description{
-Attach a custom weight array to a GDS
+Stores a weight array as an assay. Note that none of the built-in registered
+reducers currently consume custom weight assays: \code{\link[=reduce]{reduce()}} refuses
+\code{weights = "custom"} (and \code{"n_eff"}) unless the selected reducer declares
+support for that scheme, rather than silently ignoring it.
 }
 \examples{
 beta <- array(0, dim = c(2,2,1)); var <- array(1, dim = c(2,2,1))

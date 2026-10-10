@@ -17,7 +17,10 @@
     }
     exact_name <- paste0("delta_stat_exact:", estimand)
     analytic_name <- paste0("delta_stat:", estimand)
-    delta_name <- if (exact_name %in% names(examination$subject_maps$assays)) {
+    exact_subjects <- examination$subject_maps$metadata$examination$exact_refit_subjects
+    has_exact <- is.null(exact_subjects) || deleted_subject %in% exact_subjects
+    delta_name <- if (has_exact &&
+                      exact_name %in% names(examination$subject_maps$assays)) {
       exact_name
     } else if (analytic_name %in% names(examination$subject_maps$assays)) {
       analytic_name

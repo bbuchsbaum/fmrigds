@@ -1,0 +1,13 @@
+fmrigds is Copyright (c) 2025 Brad Buchsbaum and released under the MIT
+license (see LICENSE).
+
+The vignettes bundle the following web fonts (vignettes/fonts/*.woff2). Each
+is distributed under the SIL Open Font License, Version 1.1
+(https://openfontlicense.org):
+
+  Familjen Grotesk   Copyright The Familjen Grotesk Project Authors
+  Hanken Grotesk     Copyright The Hanken Grotesk Project Authors
+  JetBrains Mono     Copyright The JetBrains Mono Project Authors
+  Newsreader         Copyright The Newsreader Project Authors
+  Space Grotesk      Copyright The Space Grotesk Project Authors
+  Spline Sans Mono   Copyright The Spline Sans Mono Project Authors

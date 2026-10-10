@@ -47,7 +47,7 @@ contrast-level metadata during ingestion.}
 \value{
 An object of class \code{c("gds", "group_data")}
 
-A \code{\link{gds_plan}}
+A \code{\link[=as_plan]{gds_plan}}
 }
 \description{
 Create a Group Data Set (GDS)

@@ -553,7 +553,13 @@ plot.gds_examination <- function(x,
     }
     rows <- list()
     index <- 1L
-    sample_index <- sp$mask_idx %||% seq_len(prod(sp$dim))
+    # Only packed storage maps rows to mask voxels; dense storage carries
+    # one row per grid voxel even when a mask is recorded.
+    sample_index <- if (identical(sp$storage, "packed") && !is.null(sp$mask_idx)) {
+      sp$mask_idx
+    } else {
+      seq_len(prod(sp$dim))
+    }
     for (assay_name in assay_names) {
       for (k in seq_along(selected_contrasts)) {
         full <- rep(NA_real_, prod(sp$dim))

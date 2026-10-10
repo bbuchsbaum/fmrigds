@@ -26,7 +26,7 @@ test_that("nt:tfce_fwer registration follows neurothresh availability", {
   list(g = g, null_fun = sf$null_fun)
 }
 
-test_that("nt:tfce_fwer computes q, sig_mask, and tfce on packed voxel data", {
+test_that("nt:tfce_fwer computes p_fwer, sig_mask, and tfce on packed voxel data", {
   skip_if_not_installed("neurothresh")
   skip_if(!("nt:tfce_fwer" %in% list_posthoc()))
 
@@ -43,8 +43,9 @@ test_that("nt:tfce_fwer computes q, sig_mask, and tfce on packed voxel data", {
     )
   ) |> compute()
 
-  expect_true(all(c("q", "sig_mask", "tfce") %in% names(assays(out))))
-  q <- assay(out, "q")[, 1, 1]
+  expect_true(all(c("p_fwer", "sig_mask", "tfce") %in% names(assays(out))))
+  expect_false("q" %in% names(assays(out)))
+  q <- assay(out, "p_fwer")[, 1, 1]
   expect_true(all(is.finite(q)))
   expect_true(all(q >= 0 & q <= 1))
   sig <- assay(out, "sig_mask")[, 1, 1]

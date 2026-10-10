@@ -41,7 +41,7 @@ mask <- function(x, policy = MaskPolicy()) {
 #' @param ... Arguments passed to mask(), then compute()
 #'
 #' @return A realized GDS object
-#' @export
+#' @noRd
 mask_eager <- function(x, ...) {
   compute(mask(x, ...))
 }

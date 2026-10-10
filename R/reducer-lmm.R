@@ -43,8 +43,10 @@
 #' variances are independent.
 #'
 #' Fixed-effect standard errors use the fitted covariance as a plug-in estimate,
-#' and `p_coef:*` uses residual degrees of freedom (`n - p`). Satterthwaite and
-#' Kenward--Roger corrections are not applied.
+#' and `p_coef:*` uses per-coefficient containment degrees of freedom
+#' (reported in `df_coef:*`): coefficients of between-subject columns use
+#' `N - rank(X_between)`, all others the residual df `N*K - p`. Satterthwaite
+#' and Kenward--Roger corrections are not applied.
 #'
 #' @section Output assays:
 #' Both reducers expand fixed effects per model term (`<term>` = design-matrix
