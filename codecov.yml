@@ -1,0 +1,11 @@
+coverage:
+  status:
+    project:
+      default:
+        # Coverage of this package varies by a few lines between runs
+        # (randomised test data, environment-dependent skips); do not fail
+        # a PR for drops smaller than this.
+        threshold: 0.5%
+    patch:
+      default:
+        target: auto
