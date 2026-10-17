@@ -7,13 +7,17 @@ Depends:
 Authors@R: c(
     person("Brad", "Buchsbaum", email = "brad.buchsbaum@gmail.com", role = c("aut", "cre"))
     )
-Description: Provides lazy, spatially typed group-analysis plans for
-    observation-by-feature functional magnetic resonance imaging (fMRI)
-    frames together with compatibility workflows for first-level statistical
-    outputs represented as sample by subject by contrast Group Data Sets
-    (GDS). Supports bounded feature-block reducers, tabular, 'NIfTI', 'HDF5',
-    and 'fmristore' inputs, space-aware transformations, provenance tracking,
-    and reproducible export.
+Description: Group-level analysis of first-level functional magnetic
+    resonance imaging (fMRI) statistics organised as sample by subject by
+    contrast Group Data Sets (GDS). Analyses are written as lazy plans and
+    executed in bounded feature blocks, with fixed- and random-effects
+    meta-analysis, ordinary least squares, linear mixed models, permutation
+    tests and multiple-comparison correction. Reads tabular, 'NIfTI' and
+    'HDF5' inputs (including 'fmristore' layouts), supports space-aware
+    masking and mapping between voxel, parcel and label spaces, tracks
+    provenance and exports results reproducibly. Integration with
+    observation-by-feature 'fmridataset' frames is available when that
+    optional package is installed.
 License: MIT + file LICENSE
 Copyright: See inst/COPYRIGHTS for bundled vignette fonts.
 Encoding: UTF-8

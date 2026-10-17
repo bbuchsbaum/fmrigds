@@ -31,3 +31,4 @@
 ^sprint[0-9]+\.md$
 ^sprint_plan\.md$
 ^cran-comments\.md$
+^codecov\.yml$
