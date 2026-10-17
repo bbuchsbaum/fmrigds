@@ -1,5 +1,13 @@
 # fmrigds 0.1.0
 
+## Group statistics for front ends
+
+- Reducers that declare `"cov_tri"` in `provides` (e.g. `ols:voxelwise`) no
+  longer create a bogus `cov_tri` base assay (the packed covariance matrix
+  flattened and truncated to the sample count, or all `NA` when covariance
+  was not requested). Only the per-pair `cov:<a>:<b>` assays and the
+  [coef_cov_tri()] attachment are produced.
+
 ## CRAN readiness
 
 - `Rcpp` is now imported. Previously compiled reducers failed in a fresh

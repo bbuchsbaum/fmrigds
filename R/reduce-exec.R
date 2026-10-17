@@ -45,10 +45,12 @@ apply_reduce <- function(node, arrays, weights, subjects, col_data = NULL, contr
 
   # Prepare outputs
   out_fields <- reducer$provides
-  # Prepare base fields (scalar/vector per sample) and allow dynamic param fields later
+  # Prepare base fields (scalar/vector per sample) and allow dynamic param fields later.
+  # `cov_tri` is a packed [L x samples] matrix: it is transported below into
+  # per-pair `cov:<a>:<b>` assays and an attachment, never as a base assay.
   reg_fields <- intersect(
     out_fields,
-    c("coef", "se_coef", "z_coef", "t_coef", "p_coef")
+    c("coef", "se_coef", "z_coef", "t_coef", "p_coef", "cov_tri")
   )
   base_fields <- setdiff(out_fields, reg_fields)
   out_arrays <- lapply(base_fields, function(.) array(NA_real_, dim = c(n_samples, 1, n_contrast)))
