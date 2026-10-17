@@ -128,7 +128,7 @@ coef_contrast <- function(x,
       out[[paste0("se_contrast:", lab)]] <- se
       if (identical(stat, "t")) {
         dfa <- df_for(used)
-        p <- .p_from_t(tz, dfa, alternative)
+        p <- .p_from_t(as.numeric(tz), as.numeric(dfa), alternative)
         out[[paste0("t_contrast:", lab)]] <- tz
         out[[paste0("df_contrast:", lab)]] <- dfa
       } else {
@@ -190,18 +190,6 @@ coef_contrast <- function(x,
     row_data = x$row_data,
     metadata = x$metadata
   )
-}
-
-.p_from_t <- function(t, df, alternative = "two.sided") {
-  t <- as.numeric(t)
-  df <- as.numeric(df)
-  if (identical(alternative, "greater")) {
-    stats::pt(t, df, lower.tail = FALSE)
-  } else if (identical(alternative, "less")) {
-    stats::pt(t, df, lower.tail = TRUE)
-  } else {
-    2 * stats::pt(-abs(t), df)
-  }
 }
 
 .coef_contrast_matrix <- function(C, terms) {

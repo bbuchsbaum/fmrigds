@@ -17,6 +17,10 @@
   for all rows of `C`. Checked against `lm()`, `vcov()` and `anova()`.
 - FDR post-hocs given `options$source = "p_<family>:<name>"` now write
   `q_<family>:<name>` (e.g. `q_contrast:<name>`) instead of a bare `q`.
+- New parametric `ttest:welch` reducer: per-feature two-sample Welch t test
+  (group from `formula = ~ group` or `options$group`) with Welch-Satterthwaite
+  df, identical to `stats::t.test(var.equal = FALSE)`; outputs `beta_g`,
+  `var_g`, `se_g`, `t_g`, `df`, `z_g`, `p_g`, `n0`, `n1`.
 
 ## CRAN readiness
 
