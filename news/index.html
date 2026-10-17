@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">fmrigds</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.0.9001</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -33,6 +33,11 @@
       <small>Source: <a href="https://github.com/bbuchsbaum/fmrigds/blob/main/NEWS.md" class="external-link"><code>NEWS.md</code></a></small>
     </div>
 
+    <div class="section level2">
+<h2 class="pkg-version" data-toc-text="development version" id="fmrigds-development-version">fmrigds (development version)<a class="anchor" aria-label="anchor" href="#fmrigds-development-version"></a></h2>
+<ul><li>
+<code><a href="../reference/reduce.html">reduce()</a></code> forwards the <code>weights</code> scheme to reducers that declare <code>options_schema$weights</code> even when <code>options</code> holds another option whose name starts with <code>weights</code> (e.g. <code>weights_custom</code>): <code>options$weights</code> partially matched it, so the requested scheme was silently not forwarded. Option reads now use exact matching. The Stouffer kernel’s <code>opts$weights</code> had the same problem.</li>
+</ul></div>
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="0.1.0" id="fmrigds-010">fmrigds 0.1.0<a class="anchor" aria-label="anchor" href="#fmrigds-010"></a></h2>
 <div class="section level3">
