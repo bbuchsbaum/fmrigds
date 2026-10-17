@@ -34,6 +34,11 @@
   slices per contrast and block exactly like `beta` and passes as
   `opts$inputs`; a missing assay is an error. Regression reducers without a
   design matrix take term names from the row names of their `coef` matrix.
+- Documented the tiny-variance policy of the inverse-variance reducers
+  (`meta:fe`, `meta:re`, `meta:fe_reg`, `meta:re_reg`; `?reduce`, "Variance
+  floor"): subjects with non-finite or non-positive variance are excluded per
+  sample, and positive variances are floored at `eps = 1e-12`
+  (`options$eps`). Behaviour is unchanged and now pinned by tests.
 
 ## CRAN readiness
 

@@ -119,6 +119,25 @@ For worked examples, see \code{vignette("fmrigds")} for the basic source -> plan
 -> compute workflow and \code{vignette("as-plan-and-spatial-fdr")} for chaining
 verbs on realised GDS objects.
 }
+\section{Variance floor}{
+
+The inverse-variance reducers \code{"meta:fe"}/\code{"fixed"}, \code{"meta:re"}/\code{"random"},
+\code{"meta:fe_reg"} and \code{"meta:re_reg"} share one validity rule and one floor,
+in both the R and compiled kernels, which front ends may rely on:
+\itemize{
+\item a subject enters a sample only if its effect and variance are finite and
+the variance is strictly positive (zero, negative, \code{NA} and infinite
+variances exclude that subject for that sample);
+\item a positive variance below \code{eps = 1e-12} is floored to \code{eps} before
+weighting, i.e. the weight is \code{1 / max(var, eps)} and never exceeds
+\code{1e12} (random-effects weights are \code{1 / (max(var, eps) + tau2)}).
+}
+
+\code{options = list(eps = ...)} overrides the floor. Rescale effects whose
+sampling variances are legitimately below \code{1e-12}, since the floor would
+otherwise equalise their weights.
+}
+
 \section{Output assays}{
 
 Reducers collapse the subject axis and write group-level assays (named on the

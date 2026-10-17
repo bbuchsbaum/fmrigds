@@ -84,6 +84,21 @@
 #' - Non-finite subjects are dropped per sample; samples with fewer than
 #'   `options$min_group` (default and minimum 2) finite subjects in either
 #'   group are `NA`. `options$alternative` sets the tail of `p_g`.
+#' @section Variance floor:
+#' The inverse-variance reducers `"meta:fe"`/`"fixed"`, `"meta:re"`/`"random"`,
+#' `"meta:fe_reg"` and `"meta:re_reg"` share one validity rule and one floor,
+#' in both the R and compiled kernels, which front ends may rely on:
+#' - a subject enters a sample only if its effect and variance are finite and
+#'   the variance is strictly positive (zero, negative, `NA` and infinite
+#'   variances exclude that subject for that sample);
+#' - a positive variance below `eps = 1e-12` is floored to `eps` before
+#'   weighting, i.e. the weight is `1 / max(var, eps)` and never exceeds
+#'   `1e12` (random-effects weights are `1 / (max(var, eps) + tau2)`).
+#'
+#' `options = list(eps = ...)` overrides the floor. Rescale effects whose
+#' sampling variances are legitimately below `1e-12`, since the floor would
+#' otherwise equalise their weights.
+#'
 #' @section Output assays:
 #' Reducers collapse the subject axis and write group-level assays (named on the
 #' realised GDS, retrievable with [assays()]/[assay()]):
