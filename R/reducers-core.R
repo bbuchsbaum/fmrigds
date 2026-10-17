@@ -245,7 +245,7 @@ core_meta_re_reg_dl_kernel <- function(beta,
 }
 
 core_stouffer_kernel <- function(beta = NULL, var = NULL, X = NULL, df = NULL, opts = list(), z) {
-  w <- opts$weights %||% NULL
+  w <- opts[["weights"]] %||% NULL
   if (exists("stouffer_combine_cpp", mode = "function")) { # nocov start
     return(stouffer_combine_cpp(z, weights = w, min_subj = opts$min_subjects %||% 1L))
   } # nocov end
