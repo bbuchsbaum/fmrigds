@@ -150,8 +150,10 @@ reduce <- function(x,
     stop(.unknown_reducer_message(method), call. = FALSE)
   }
   .check_reducer_weights(reducer, method, weights)
-  if (is.character(reducer$options_schema$weights) && is.null(options$weights)) {
-    options$weights <- weights
+  # [[ ]], not $: `options$weights` partially matches an option such as
+  # `weights_custom`, which would leave the requested scheme unforwarded.
+  if (is.character(reducer$options_schema[["weights"]]) && is.null(options[["weights"]])) {
+    options[["weights"]] <- weights
   }
   plan <- as_plan(x)
 
@@ -236,7 +238,7 @@ reduce <- function(x,
 # `options$weights`.
 .check_reducer_weights <- function(reducer, method, weights) {
   if (identical(weights, "1/var")) return(invisible(TRUE))
-  declared <- reducer$options_schema$weights %||% NULL
+  declared <- reducer$options_schema[["weights"]] %||% NULL
   if (is.character(declared) && weights %in% declared) return(invisible(TRUE))
   mode <- reducer$model_contract$weight_mode %||% NA_character_
   if (identical(weights, "equal") && mode %in% c("unweighted", "evidence")) {

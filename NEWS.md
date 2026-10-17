@@ -1,3 +1,12 @@
+# fmrigds (development version)
+
+- `reduce()` forwards the `weights` scheme to reducers that declare
+  `options_schema$weights` even when `options` holds another option whose name
+  starts with `weights` (e.g. `weights_custom`): `options$weights` partially
+  matched it, so the requested scheme was silently not forwarded. Option reads
+  now use exact matching. The Stouffer kernel's `opts$weights` had the same
+  problem.
+
 # fmrigds 0.1.0
 
 ## Group statistics for front ends
