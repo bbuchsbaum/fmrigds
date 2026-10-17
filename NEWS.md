@@ -21,6 +21,14 @@
   (group from `formula = ~ group` or `options$group`) with Welch-Satterthwaite
   df, identical to `stats::t.test(var.equal = FALSE)`; outputs `beta_g`,
   `var_g`, `se_g`, `t_g`, `df`, `z_g`, `p_g`, `n0`, `n1`.
+- New `fdr:sabha` post-hoc and exported `spatial_fdr_sabha(z, p, group, alpha,
+  tau, lambda, neighbors, min_pi0, empirical_null)`: voxel-level
+  structure-adaptive weighted BH with groupwise Storey pi0 weights, optional
+  neighbour smoothing, and Efron's central-matching empirical null, with
+  groups numbered by sorted label / factor level. Ported from
+  `fmrireg::spatial_fdr()` (R and C++) and tested to reproduce its results
+  exactly. Vector or matrix (column-wise) input. The parcel-level Simes
+  method `fdr:spatial` is unchanged.
 
 ## CRAN readiness
 

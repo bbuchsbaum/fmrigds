@@ -141,6 +141,16 @@ list_posthoc <- function() {
 #'   FDR. Requires a discrete spatial grouping (one parcel/cluster id per
 #'   sample) via `options$group` or a recognised `row_data` column
 #'   (`feature_group`, `spatial_group`, `group`, `parcel`, `parcel_id`).
+#' - `"fdr:sabha"`: adds `q` (or `q_coef:<term>`), voxel-level
+#'   structure-adaptive weighted BH with groupwise \eqn{\pi_0} weights; see
+#'   [spatial_fdr_sabha()]. Needs the same grouping as `"fdr:spatial"`. By
+#'   default (`options$statistic = "auto"`) it uses `z` (or the
+#'   `z_coef:<term>` family) with Efron's central-matching empirical null, as
+#'   `fmrireg::spatial_fdr()` does, and falls back to the p-value sources of
+#'   `"fdr:bh"`; `statistic = "p"` forces p-values. Further options: `alpha`,
+#'   `tau`, `lambda`, `neighbors`, `min_pi0`, `empirical_null`, `source`.
+#'   Per-map `mu0`, `sigma0`, `threshold`, `k` and `pi0_smooth` are stored in
+#'   the `posthoc/fdr:sabha/<q-name>` attachment.
 #' - `"nt:tfce_fwer"` (needs the optional `neurothresh` package): adds `p_fwer`
 #'   (TFCE FWER-corrected p-values), `sig_mask` (1/0 at `alpha`), and `tfce` (the
 #'   TFCE-enhanced statistic map).
@@ -264,6 +274,16 @@ unregister_posthoc <- function(name) {
       )
     )
   }
+  register_posthoc(
+    "fdr:sabha", .posthoc_sabha_fdr(),
+    requires = c("p"), provides = c("q", "q_coef"),
+    case_deletion = list(
+      supported = TRUE,
+      mode = "recompute",
+      requires_full_space = TRUE,
+      deterministic = TRUE
+    )
+  )
   # Register neurothresh-backed TFCE if optional dependency is available
   if (exists(".posthoc_neurothresh_tfce_fwer", mode = "function") &&
       requireNamespace("neurothresh", quietly = TRUE)) {
