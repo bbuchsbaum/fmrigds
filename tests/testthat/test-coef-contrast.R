@@ -158,3 +158,60 @@ test_that("contrasts of interaction terms read the right covariance (keys with '
   stripped$metadata$attachments <- list()
   expect_error(coef_contrast(stripped, c(`x:y` = 1, z = 1)), "ambiguous")
 })
+
+test_that("a user-supplied df is used for t and p", {
+  fx <- .contrast_fixture(na_voxel = FALSE)
+  fit <- compute(reduce(fx$g, method = "ols:voxelwise", formula = ~ age + grp + dose))
+  res <- coef_contrast(fit, c(age = 1), name = "a", df = 5)
+  t <- as.numeric(assay(fit, "coef:age")) / as.numeric(assay(fit, "se_coef:age"))
+  expect_equal(as.numeric(assay(res, "t_contrast:a")), t, tolerance = 1e-12)
+  expect_equal(as.numeric(assay(res, "df_contrast:a")), rep(5, length(t)))
+  expect_equal(as.numeric(assay(res, "p_contrast:a")), 2 * pt(-abs(t), 5), tolerance = 1e-12)
+  # stat = "t" with a supplied df turns a z-type reducer's contrast into a t test
+  var <- array(1, dim(fx$beta), dimnames(fx$beta))
+  mfit <- compute(reduce(with_col_data(as_gds(list(beta = fx$beta, var = var)), fx$cd),
+                         method = "meta:fe_reg", formula = ~ age))
+  mt <- coef_contrast(mfit, c(age = 1), name = "a", stat = "t", df = 12)
+  expect_equal(as.numeric(assay(mt, "p_contrast:a")),
+               2 * pt(-abs(as.numeric(assay(mfit, "z_coef:age"))), 12), tolerance = 1e-12)
+  expect_error(coef_contrast(fit, c(age = 1), df = c(1, 2)), "scalar or conformable")
+})
+
+test_that("joint tests on z-type reducers are chi-square; single-row chi2 = z^2", {
+  fx <- .contrast_fixture(na_voxel = FALSE)
+  var <- array(runif(length(fx$beta), 0.5, 2), dim(fx$beta), dimnames(fx$beta))
+  mfit <- compute(reduce(with_col_data(as_gds(list(beta = fx$beta, var = var)), fx$cd),
+                         method = "meta:fe_reg", formula = ~ age + grp + dose))
+  res <- coef_contrast(mfit, c(age = 1), joint = TRUE, name = "J")
+  z <- as.numeric(assay(mfit, "z_coef:age"))
+  expect_equal(as.numeric(assay(res, "chi2_contrast:J")), z^2, tolerance = 1e-10)
+  expect_equal(as.numeric(assay(res, "df1_contrast:J")), rep(1, length(z)))
+  expect_equal(as.numeric(assay(res, "p_contrast:J")), pchisq(z^2, 1, lower.tail = FALSE),
+               tolerance = 1e-10)
+})
+
+test_that("contrast labels default to the weighted term names", {
+  fx <- .contrast_fixture(na_voxel = FALSE)
+  fit <- compute(reduce(fx$g, method = "ols:voxelwise", formula = ~ age + grp + dose,
+                        options = list(return_cov = "tri")))
+  res <- coef_contrast(fit, c(age = 1, dose = -1))
+  expect_true("contrast:age+-dose" %in% names(assays(res)))
+  res2 <- coef_contrast(fit, c(age = 2))
+  expect_true("contrast:2*age" %in% names(assays(res2)))
+})
+
+test_that("coef_contrast rejects malformed contrasts and labels", {
+  fx <- .contrast_fixture(na_voxel = FALSE)
+  fit <- compute(reduce(fx$g, method = "ols:voxelwise", formula = ~ age + grp + dose,
+                        options = list(return_cov = "tri")))
+  expect_error(coef_contrast(fit, "age"), "must be numeric")
+  expect_error(coef_contrast(fit, c(age = 1, age = 2)), "more than once")
+  expect_error(coef_contrast(fit, c(age = Inf)), "finite weights")
+  expect_error(coef_contrast(fit, rbind(c(age = 1), c(age = 2)), name = c("a", "a")),
+               "unique non-empty")
+  expect_error(coef_contrast(fit, rbind(c(age = 1), c(dose = 1)), joint = TRUE,
+                             name = c("a", "b")), "single label")
+  no_coef <- fit
+  no_coef$assays <- no_coef$assays[!grepl("^coef:", names(no_coef$assays))]
+  expect_error(coef_contrast(no_coef, c(age = 1)), "no coef:<term> assays")
+})

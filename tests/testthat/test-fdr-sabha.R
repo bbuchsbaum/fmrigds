@@ -276,3 +276,41 @@ test_that("posthoc fdr:sabha handles per-term families and row_data grouping", {
   expect_error(compute(posthoc(compute(reduce(g, method = "ols:voxelwise", formula = ~ x)),
                                "fdr:sabha")), "needs a spatial grouping")
 })
+
+test_that("spatial_fdr_sabha validates inputs and falls back to the theoretical null", {
+  expect_error(spatial_fdr_sabha(group = 1:3), "either z or p")
+  p <- c(0.001, 0.2, 0.5, 0.04, 0.9, 0.03)
+  g <- c(1, 1, 1, 2, 2, 2)
+  expect_error(spatial_fdr_sabha(p = p, group = g, min_pi0 = 2), "min_pi0")
+  expect_error(spatial_fdr_sabha(p = p, group = rep(NA, 6)), "No valid groups")
+  expect_warning(neg <- spatial_fdr_sabha(p = p, group = g, lambda = -1), "lambda < 0")
+  expect_identical(neg$q, spatial_fdr_sabha(p = p, group = g, lambda = 0)$q)
+  # fewer than 10 finite z: the empirical null is N(0, 1), so p = 2 * pnorm(-|z|)
+  z <- c(3.1, -0.4, 0.2, 2.5, -1.1, 0.7)
+  tz <- spatial_fdr_sabha(z = z, group = g)
+  expect_equal(c(tz$mu0, tz$sigma0), c(0, 1))
+  expect_identical(tz$q, spatial_fdr_sabha(p = 2 * pnorm(-abs(z)), group = g)$q)
+})
+
+test_that("posthoc fdr:sabha resolves sources and per-term z families", {
+  I <- sabha_case_inputs()
+  z <- array(I$zA, c(2000, 1, 1), dimnames = list(NULL, "meta", "c1"))
+  g <- new_gds(list(z = z, z_extra = z * 0.5), space_sample_labels(sprintf("f%04d", 1:2000)),
+               subjects = "meta", contrasts = "c1")
+  expect_error(compute(posthoc(g, "fdr:sabha", options = list(group = I$gA, statistic = "t"))),
+               "statistic must be")
+  expect_error(compute(posthoc(g, "fdr:sabha", options = list(group = I$gA, source = "nope"))),
+               "source assay not found")
+  out <- compute(posthoc(g, "fdr:sabha", options = list(group = I$gA, source = "z_extra")))
+  expect_identical(assay(out, "q")[, 1, 1],
+                   spatial_fdr_sabha(z = z[, 1, 1] * 0.5, group = I$gA)$q)
+  # per-term z families map to q_coef:<term>
+  gz <- new_gds(list(`z_coef:a` = z, `z_coef:b` = -z), space_sample_labels(sprintf("f%04d", 1:2000)),
+                subjects = "meta", contrasts = "c1")
+  oz <- compute(posthoc(gz, "fdr:sabha", options = list(group = I$gA)))
+  expect_identical(assay(oz, "q_coef:b")[, 1, 1], spatial_fdr_sabha(z = -z[, 1, 1], group = I$gA)$q)
+  gp <- new_gds(list(p = array(runif(2000), c(2000, 1, 1))),
+                space_sample_labels(sprintf("f%04d", 1:2000)), subjects = "meta", contrasts = "c1")
+  expect_error(compute(posthoc(gp, "fdr:sabha", options = list(group = I$gA, statistic = "z"))),
+               "no z or z_coef")
+})

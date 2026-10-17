@@ -230,7 +230,7 @@ spatial_fdr_sabha <- function(z = NULL,
   if (!statistic %in% c("auto", "z", "p")) {
     stop("fdr:sabha: options$statistic must be \"auto\", \"z\" or \"p\".", call. = FALSE)
   }
-  qname <- function(src) if (grepl("^[pz]_[A-Za-z0-9]+:", src)) sub("^[pz]_", "q_", src) else "q"
+  qname <- function(src) ifelse(grepl("^[pz]_[A-Za-z0-9]+:", src), sub("^[pz]_", "q_", src), "q")
   wrap <- function(lst, kind) lapply(lst, function(a) list(kind = kind, values = a))
   src <- opts$source %||% NULL
   if (!is.null(src)) {
