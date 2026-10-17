@@ -274,9 +274,11 @@ unregister_posthoc <- function(name) {
       )
     )
   }
+  # No `requires`: the handler resolves z or p itself. Requiring "p" would make
+  # the engine persist a theoretical-null p next to empirical-null q values.
   register_posthoc(
     "fdr:sabha", .posthoc_sabha_fdr(),
-    requires = c("p"), provides = c("q", "q_coef"),
+    requires = character(0), provides = c("q", "q_coef"),
     case_deletion = list(
       supported = TRUE,
       mode = "recompute",

@@ -132,3 +132,29 @@ test_that("coef_contrast validates its inputs", {
   expect_error(coef_contrast(reduce(fx$g, method = "ols:voxelwise", formula = ~ age), c(age = 1)),
                "realised gds")
 })
+
+test_that("contrasts of interaction terms read the right covariance (keys with ':')", {
+  set.seed(7)
+  N <- 30; B <- 5
+  subj <- sprintf("s%02d", seq_len(N))
+  cd <- data.frame(x = rnorm(N), y = rnorm(N), z = rnorm(N), row.names = subj)
+  X <- model.matrix(~ x + x:y + y:z + z, cd)
+  beta <- array(NA_real_, c(B, N, 1), dimnames = list(paste0("v", seq_len(B)), subj, "c1"))
+  for (b in seq_len(B)) beta[b, , 1] <- drop(X %*% rnorm(ncol(X))) + rnorm(N)
+  g <- with_col_data(as_gds(list(beta = beta, var = array(1, dim(beta), dimnames(beta)))), cd)
+  fit <- compute(reduce(g, method = "ols:voxelwise", formula = ~ x + x:y + y:z + z,
+                        options = list(return_cov = "tri")))
+  # Cov(x:y, z) and Cov(x, y:z) share the key "cov:x:y:z"
+  out <- coef_contrast(fit, c(`x:y` = 1, z = 1), name = "xyz")
+  for (b in seq_len(B)) {
+    m <- lm(beta[b, , 1] ~ x + x:y + y:z + z, data = cd)
+    L <- setNames(numeric(length(coef(m))), names(coef(m)))
+    L[c("x:y", "z")] <- 1
+    expect_equal(assay(out, "se_contrast:xyz")[b, 1, 1],
+                 sqrt(drop(t(L) %*% vcov(m) %*% L)), tolerance = 1e-10)
+  }
+  # Without the attachment the ambiguous assay key is refused, not guessed
+  stripped <- fit
+  stripped$metadata$attachments <- list()
+  expect_error(coef_contrast(stripped, c(`x:y` = 1, z = 1)), "ambiguous")
+})

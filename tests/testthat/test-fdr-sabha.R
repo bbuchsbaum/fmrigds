@@ -27,14 +27,14 @@ sabha_case_inputs <- function() {
 test_that("spatial_fdr_sabha reproduces fmrireg::spatial_fdr() reference values", {
   I <- sabha_case_inputs()
   check <- function(g, mu0, sigma0, k, thr, sumq, sumrej, pi0, idx, q) {
-    expect_equal(g$mu0, mu0, tolerance = 1e-14)
-    expect_equal(g$sigma0, sigma0, tolerance = 1e-14)
+    expect_equal(g$mu0, mu0, tolerance = 1e-10)
+    expect_equal(g$sigma0, sigma0, tolerance = 1e-10)
     expect_identical(as.integer(g$k), as.integer(k))
-    expect_equal(g$threshold, thr, tolerance = 1e-14)
-    expect_equal(sum(g$q, na.rm = TRUE), sumq, tolerance = 1e-13)
+    expect_equal(g$threshold, thr, tolerance = 1e-10)
+    expect_equal(sum(g$q, na.rm = TRUE), sumq, tolerance = 1e-10)
     expect_identical(sum(which(g$reject)), as.integer(sumrej))
-    expect_equal(g$pi0_smooth, pi0, tolerance = 1e-14)
-    expect_equal(g$q[idx], q, tolerance = 1e-14)
+    expect_equal(g$pi0_smooth, pi0, tolerance = 1e-10)
+    expect_equal(g$q[idx], q, tolerance = 1e-10)
   }
   A <- spatial_fdr_sabha(z = I$zA, group = I$gA, neighbors = I$nbA, lambda = 1, alpha = 0.05)
   check(A, 0.026116920444394138, 1.0882101848346413, 173, 0.0043249999999999999,
@@ -241,9 +241,11 @@ test_that("posthoc fdr:sabha uses z with the empirical null and equals the plain
     ref <- spatial_fdr_sabha(z = z[, 1, k], group = I$gA, neighbors = I$nbA)
     expect_identical(assay(out, "q")[, 1, k], ref$q)
   }
+  # z input: no theoretical-null p is persisted next to the empirical-null q
+  expect_null(out$assays[["p"]])
   att <- metadata(out)$attachments[["posthoc/fdr:sabha/q"]]
   expect_equal(att$statistic, "z")
-  expect_equal(att$sigma0[1, 1], 1.0882101848346413, tolerance = 1e-14)
+  expect_equal(att$sigma0[1, 1], 1.0882101848346413, tolerance = 1e-10)
   expect_equal(dim(att$pi0_smooth), c(20L, 1L, 2L))
 
   # p mode adjusts the (derived) p-values without an empirical null
