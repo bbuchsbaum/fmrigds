@@ -343,14 +343,14 @@ core_lancaster_kernel <- function(beta = NULL, var = NULL, X = NULL, df = NULL, 
   out
 }
 
-.infer_two_sample_group <- function(X, opts = list()) {
+.infer_two_sample_group <- function(X, opts = list(), context = "perm:twosample") {
   group <- opts$group %||% NULL
   if (!is.null(group)) {
     f <- as.factor(group)
     if (nlevels(f) != 2L) stop("options$group must contain exactly two groups", call. = FALSE)
     return(as.integer(f) - 1L)
   }
-  if (is.null(X)) stop("perm:twosample requires X or options$group", call. = FALSE)
+  if (is.null(X)) stop(context, " requires X or options$group", call. = FALSE)
   term <- opts$term %||% NULL
   j <- if (is.null(term)) {
     ncol(X)
@@ -365,7 +365,7 @@ core_lancaster_kernel <- function(beta = NULL, var = NULL, X = NULL, df = NULL, 
   x <- X[, j]
   ux <- sort(unique(x[is.finite(x)]))
   if (length(ux) != 2L) {
-    stop("perm:twosample expects the tested design column to have exactly two finite values", call. = FALSE)
+    stop(context, " expects the tested design column to have exactly two finite values", call. = FALSE)
   }
   as.integer(x == ux[2L])
 }
@@ -453,6 +453,68 @@ core_perm_twosample_kernel <- function(beta, var = NULL, X = NULL, df = NULL, op
     stop("perm:twosample requires compiled C++ support", call. = FALSE)
   } # nocov end
   .add_parametric_p_from_t(res, opts$alternative %||% "two.sided")
+}
+
+# Signed normal-equivalent of a t statistic: the z with the same one-tail
+# probability, computed on the log scale so it stays finite in the far tail.
+.z_from_t <- function(t, df) {
+  z <- -stats::qnorm(stats::pt(-abs(t), df, log.p = TRUE), log.p = TRUE) * sign(t)
+  z[!is.finite(t) | !is.finite(df)] <- NA_real_
+  z
+}
+
+# Parametric Welch two-sample t test per column of `beta` [subjects x samples].
+# The effect is mean(group == 1) - mean(group == 0), i.e. second level minus
+# first level, matching stats::t.test(y[g == 1], y[g == 0], var.equal = FALSE).
+# Non-finite subjects are dropped per sample; samples with fewer than
+# `min_group` finite subjects in either group are NA.
+core_ttest_welch_kernel <- function(beta, var = NULL, X = NULL, df = NULL, opts = list()) {
+  if (is.null(beta)) stop("ttest:welch requires beta", call. = FALSE)
+  group <- .infer_two_sample_group(X, opts, context = "ttest:welch")
+  if (length(group) != nrow(beta)) {
+    stop(sprintf("ttest:welch: group has length %d but there are %d subjects.",
+                 length(group), nrow(beta)), call. = FALSE)
+  }
+  if (anyNA(group)) stop("ttest:welch: group labels must not be missing.", call. = FALSE)
+  min_group <- max(2L, as.integer(opts$min_group %||% 2L))
+  alt <- opts$alternative %||% "two.sided"
+  ok <- is.finite(beta)
+  y <- beta
+  y[!ok] <- 0
+  moments <- function(rows) {
+    n <- colSums(ok[rows, , drop = FALSE])
+    m <- colSums(y[rows, , drop = FALSE]) / n
+    dev <- y[rows, , drop = FALSE] - rep(m, each = length(rows))
+    dev[!ok[rows, , drop = FALSE]] <- 0
+    v <- colSums(dev * dev) / (n - 1)
+    list(n = n, m = m, v = v)
+  }
+  g0 <- moments(which(group == 0L))
+  g1 <- moments(which(group == 1L))
+  a0 <- g0$v / g0$n
+  a1 <- g1$v / g1$n
+  se2 <- a0 + a1
+  est <- g1$m - g0$m
+  dfw <- se2^2 / (a0^2 / (g0$n - 1) + a1^2 / (g1$n - 1))
+  bad <- g0$n < min_group | g1$n < min_group | !is.finite(se2) | se2 <= 0
+  se <- sqrt(se2)
+  tval <- est / se
+  est[g0$n < min_group | g1$n < min_group] <- NA_real_
+  se[bad] <- NA_real_
+  se2[bad] <- NA_real_
+  tval[bad] <- NA_real_
+  dfw[bad] <- NA_real_
+  list(
+    beta_g = est,
+    var_g = se2,
+    se_g = se,
+    t_g = tval,
+    df = dfw,
+    z_g = .z_from_t(tval, dfw),
+    p_g = .p_from_t(tval, dfw, alt),
+    n0 = as.numeric(g0$n),
+    n1 = as.numeric(g1$n)
+  )
 }
 
 register_core_reducers <- function() {
@@ -634,6 +696,22 @@ register_core_reducers <- function() {
       alternative = c("two.sided", "less", "greater"),
       variance = c("welch", "pooled")
     ),
+    model_contract = list(
+      uses_X = TRUE,
+      estimands = "linear",
+      weight_mode = "unweighted",
+      missingness = "samplewise",
+      synthetic_variance = "allow_effect_only",
+      deletion = "unsupported"
+    )
+  )
+
+  register_reducer(
+    name = "ttest:welch",
+    fun = function(beta, var, X, z, p, df, df1, df2, opts) core_ttest_welch_kernel(beta, var, X, df, opts),
+    requires = c("beta", "X"),
+    provides = c("beta_g", "var_g", "se_g", "t_g", "df", "z_g", "p_g", "n0", "n1"),
+    options_schema = list(alternative = c("two.sided", "less", "greater")),
     model_contract = list(
       uses_X = TRUE,
       estimands = "linear",

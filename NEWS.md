@@ -1,5 +1,52 @@
 # fmrigds 0.1.0
 
+## Group statistics for front ends
+
+- Reducers that declare `"cov_tri"` in `provides` (e.g. `ols:voxelwise`) no
+  longer create a bogus `cov_tri` base assay (the packed covariance matrix
+  flattened and truncated to the sample count, or all `NA` when covariance
+  was not requested). Only the per-pair `cov:<a>:<b>` assays and the
+  [coef_cov_tri()] attachment are produced. Attachments now record their
+  contrast label, and `compute()` drops covariance attachments carried over
+  from an earlier reduce when the plan subsets samples or contrasts.
+- New `coef_contrast(x, C, stat, df, alternative, joint, name)` computes
+  per-feature linear contrasts of `coef:<term>` assays from a realised
+  regression-type result (`ols:voxelwise`, `meta:*_reg`, `lmm:*`): estimate,
+  SE (from the `cov:<a>:<b>` assays, which follow any subsetting of the
+  result; the packed covariance attachment is used only to resolve keys made
+  ambiguous by interaction terms, and only while it still matches the
+  samples and contrasts), t with df
+  (`df_coef:<term>`, `df_res` or `df`) or z, and p, as
+  `contrast:`/`se_contrast:`/`t_contrast:`/`df_contrast:`/`z_contrast:`/
+  `p_contrast:<name>` assays. `joint = TRUE` gives one F (or chi-square) test
+  for all rows of `C`. Checked against `lm()`, `vcov()` and `anova()`.
+- FDR post-hocs given `options$source = "p_<family>:<name>"` now write
+  `q_<family>:<name>` (e.g. `q_contrast:<name>`) instead of a bare `q`.
+- New parametric `ttest:welch` reducer: per-feature two-sample Welch t test
+  (group from `formula = ~ group` or `options$group`) with Welch-Satterthwaite
+  df, identical to `stats::t.test(var.equal = FALSE)`; outputs `beta_g`,
+  `var_g`, `se_g`, `t_g`, `df`, `z_g`, `p_g`, `n0`, `n1`.
+- New `fdr:sabha` post-hoc and exported `spatial_fdr_sabha(z, p, group, alpha,
+  tau, lambda, neighbors, min_pi0, empirical_null)`: voxel-level
+  structure-adaptive weighted BH with groupwise Storey pi0 weights, optional
+  neighbour smoothing, and Efron's central-matching empirical null, with
+  groups numbered by sorted label / factor level. Ported from
+  `fmrireg::spatial_fdr()` (R and C++) and tested to reproduce its results
+  exactly, except that a group's Storey size counts only tests with a finite
+  p-value (the original counted missing tests, lowering pi0 and making
+  q-values anti-conservative in groups with missing tests). Vector or matrix (column-wise) input. The parcel-level Simes
+  method `fdr:spatial` is unchanged.
+- `register_reducer()` gains `extra_inputs`: contrastwise reducers can declare
+  additional per-feature assays (e.g. a voxelwise covariate) that the engine
+  slices per contrast and block exactly like `beta` and passes as
+  `opts$inputs`; a missing assay is an error. Regression reducers without a
+  design matrix take term names from the row names of their `coef` matrix.
+- Documented the tiny-variance policy of the inverse-variance reducers
+  (`meta:fe`, `meta:re`, `meta:fe_reg`, `meta:re_reg`; `?reduce`, "Variance
+  floor"): subjects with non-finite or non-positive variance are excluded per
+  sample, and positive variances are floored at `eps = 1e-12`
+  (`options$eps`). Behaviour is unchanged and now pinned by tests.
+
 ## CRAN readiness
 
 - `Rcpp` is now imported. Previously compiled reducers failed in a fresh

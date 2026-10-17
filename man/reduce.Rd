@@ -22,7 +22,8 @@ reduce(
 meta-analytic regression reducers such as \code{"meta:fe_reg"} and the
 restricted repeated-measures Gaussian LMM reducers \code{"lmm:ri"},
 \code{"lmm:ri_slope1"}, \code{"lmm:ri_knownvar"}, and
-\code{"lmm:ri_slope1_knownvar"}, plus permutation reducers
+\code{"lmm:ri_slope1_knownvar"}, the parametric two-sample Welch test
+\code{"ttest:welch"}, plus permutation reducers
 \code{"perm:onesample"} and \code{"perm:twosample"}.}
 
 \item{weights}{Weighting scheme (\code{"1/var"}, \code{"n_eff"}, \code{"equal"}, \code{"custom"}).
@@ -68,6 +69,18 @@ and \code{col_data}, or use \code{options$group} directly.
 \code{"perm:twosample"} \code{variance = "welch"} or \code{"pooled"}.
 \item Outputs include \code{t_g}, parametric \code{p_g}, permutation \code{p_perm}, and
 max-|t| family-wise \code{p_fwer}.
+}
+
+Welch two-sample t test (\code{"ttest:welch"}):
+\itemize{
+\item Unweighted, per sample and contrast, identical to
+\code{stats::t.test(y[g == 2], y[g == 1], var.equal = FALSE)} where \code{g} is the
+two-level group: the effect is second level minus first level. The group
+is the last (or \code{options$term}) column of the design built from \code{formula}
+(e.g. \code{~ group}), or \code{options$group} directly.
+\item Non-finite subjects are dropped per sample; samples with fewer than
+\code{options$min_group} (default and minimum 2) finite subjects in either
+group are \code{NA}. \code{options$alternative} sets the tail of \code{p_g}.
 }}
 
 \item{formula}{Optional model formula. For meta-regression reducers the design
@@ -106,6 +119,25 @@ For worked examples, see \code{vignette("fmrigds")} for the basic source -> plan
 -> compute workflow and \code{vignette("as-plan-and-spatial-fdr")} for chaining
 verbs on realised GDS objects.
 }
+\section{Variance floor}{
+
+The inverse-variance reducers \code{"meta:fe"}/\code{"fixed"}, \code{"meta:re"}/\code{"random"},
+\code{"meta:fe_reg"} and \code{"meta:re_reg"} share one validity rule and one floor,
+in both the R and compiled kernels, which front ends may rely on:
+\itemize{
+\item a subject enters a sample only if its effect and variance are finite and
+the variance is strictly positive (zero, negative, \code{NA} and infinite
+variances exclude that subject for that sample);
+\item a positive variance below \code{eps = 1e-12} is floored to \code{eps} before
+weighting, i.e. the weight is \code{1 / max(var, eps)} and never exceeds
+\code{1e12} (random-effects weights are \code{1 / (max(var, eps) + tau2)}).
+}
+
+\code{options = list(eps = ...)} overrides the floor. Rescale effects whose
+sampling variances are legitimately below \code{1e-12}, since the floor would
+otherwise equalise their weights.
+}
+
 \section{Output assays}{
 
 Reducers collapse the subject axis and write group-level assays (named on the
@@ -130,6 +162,10 @@ non-finite effects/design values or non-finite, nonpositive variances.
 \code{p_g}.
 \item \code{"perm:onesample"}/\code{"perm:twosample"}: \code{beta_g}, \code{se_g}, \code{t_g}, \code{df},
 \code{p_g}, \code{p_perm}, \code{p_fwer}.
+\item \code{"ttest:welch"}: \code{beta_g} (mean difference), \code{var_g}, \code{se_g}, \code{t_g},
+Welch--Satterthwaite \code{df}, \code{p_g}, the normal-equivalent \code{z_g} (same
+p-value as \code{t_g}), and per-group finite counts \code{n0}, \code{n1}; \code{z}/\code{p} mirror
+\code{z_g}/\code{p_g}.
 }
 }
 

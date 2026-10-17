@@ -6,7 +6,8 @@
 #'   meta-analytic regression reducers such as `"meta:fe_reg"` and the
 #'   restricted repeated-measures Gaussian LMM reducers `"lmm:ri"`,
 #'   `"lmm:ri_slope1"`, `"lmm:ri_knownvar"`, and
-#'   `"lmm:ri_slope1_knownvar"`, plus permutation reducers
+#'   `"lmm:ri_slope1_knownvar"`, the parametric two-sample Welch test
+#'   `"ttest:welch"`, plus permutation reducers
 #'   `"perm:onesample"` and `"perm:twosample"`.
 #' @param weights Weighting scheme (`"1/var"`, `"n_eff"`, `"equal"`, `"custom"`).
 #'   Registered reducers apply their own weighting, so only the default
@@ -73,6 +74,31 @@
 #'   `"perm:twosample"` `variance = "welch"` or `"pooled"`.
 #' - Outputs include `t_g`, parametric `p_g`, permutation `p_perm`, and
 #'   max-|t| family-wise `p_fwer`.
+#'
+#' Welch two-sample t test (`"ttest:welch"`):
+#' - Unweighted, per sample and contrast, identical to
+#'   `stats::t.test(y[g == 2], y[g == 1], var.equal = FALSE)` where `g` is the
+#'   two-level group: the effect is second level minus first level. The group
+#'   is the last (or `options$term`) column of the design built from `formula`
+#'   (e.g. `~ group`), or `options$group` directly.
+#' - Non-finite subjects are dropped per sample; samples with fewer than
+#'   `options$min_group` (default and minimum 2) finite subjects in either
+#'   group are `NA`. `options$alternative` sets the tail of `p_g`.
+#' @section Variance floor:
+#' The inverse-variance reducers `"meta:fe"`/`"fixed"`, `"meta:re"`/`"random"`,
+#' `"meta:fe_reg"` and `"meta:re_reg"` share one validity rule and one floor,
+#' in both the R and compiled kernels, which front ends may rely on:
+#' - a subject enters a sample only if its effect and variance are finite and
+#'   the variance is strictly positive (zero, negative, `NA` and infinite
+#'   variances exclude that subject for that sample);
+#' - a positive variance below `eps = 1e-12` is floored to `eps` before
+#'   weighting, i.e. the weight is `1 / max(var, eps)` and never exceeds
+#'   `1e12` (random-effects weights are `1 / (max(var, eps) + tau2)`).
+#'
+#' `options = list(eps = ...)` overrides the floor. Rescale effects whose
+#' sampling variances are legitimately below `1e-12`, since the floor would
+#' otherwise equalise their weights.
+#'
 #' @section Output assays:
 #' Reducers collapse the subject axis and write group-level assays (named on the
 #' realised GDS, retrievable with [assays()]/[assay()]):
@@ -95,6 +121,10 @@
 #'   `p_g`.
 #' - `"perm:onesample"`/`"perm:twosample"`: `beta_g`, `se_g`, `t_g`, `df`,
 #'   `p_g`, `p_perm`, `p_fwer`.
+#' - `"ttest:welch"`: `beta_g` (mean difference), `var_g`, `se_g`, `t_g`,
+#'   Welch--Satterthwaite `df`, `p_g`, the normal-equivalent `z_g` (same
+#'   p-value as `t_g`), and per-group finite counts `n0`, `n1`; `z`/`p` mirror
+#'   `z_g`/`p_g`.
 #'
 #' @return Updated plan
 #' @seealso [gds()], [compute()], [as_plan()], [new_gds()], [gds_source()]

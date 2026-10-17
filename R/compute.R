@@ -117,6 +117,18 @@ compute <- function(x,
     }
   }
 
+  metadata <- plan$source$probe$metadata
+  # Covariance attachments carried over from an earlier reduce are indexed by
+  # the original sample and contrast axes; once this plan narrows those axes
+  # they no longer line up with the assays, so drop them (the cov:* assays are
+  # subset along with everything else).
+  narrows <- !is.null(block$sample) ||
+    any(vapply(plan$nodes, function(n) identical(n$op, "subset_axis"), logical(1)))
+  if (narrows && length(metadata$attachments)) {
+    keep <- !vapply(metadata$attachments,
+                    function(a) is.list(a) && identical(a$type, "cov_tri"), logical(1))
+    metadata$attachments <- metadata$attachments[keep]
+  }
   gds <- new_gds(
     assays = arrays,
     space = space,
@@ -124,7 +136,7 @@ compute <- function(x,
     contrasts = contrasts,
     col_data = col_data_final,
     row_data = row_data_final,
-    metadata = plan$source$probe$metadata
+    metadata = metadata
   )
 
   contrast_data_final <- if ("contrast_data" %in% names(node_result)) {

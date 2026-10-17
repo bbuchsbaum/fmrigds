@@ -12,7 +12,8 @@ to the realised GDS. The FDR methods adjust the object's p-value assay(s):
 a genuine bare \code{p} (from meta/combine reducers or a tabular \code{p} column) yields
 a single \code{q}; a per-term \verb{p_coef:<term>} family (from regression/LMM reducers
 such as \code{ols:voxelwise}) yields one \verb{q_coef:<term>} per term. Pass
-\code{options = list(source = "p_coef:<term>")} to adjust one specific term.
+\code{options = list(source = "p_coef:<term>")} to adjust one specific term (or
+\code{"p_contrast:<name>"} from \code{\link[=coef_contrast]{coef_contrast()}}, giving \verb{q_contrast:<name>}).
 }
 \section{Methods and outputs}{
 
@@ -24,6 +25,16 @@ column-wise per subject x contrast.
 FDR. Requires a discrete spatial grouping (one parcel/cluster id per
 sample) via \code{options$group} or a recognised \code{row_data} column
 (\code{feature_group}, \code{spatial_group}, \code{group}, \code{parcel}, \code{parcel_id}).
+\item \code{"fdr:sabha"}: adds \code{q} (or \verb{q_coef:<term>}), voxel-level
+structure-adaptive weighted BH with groupwise \eqn{\pi_0} weights; see
+\code{\link[=spatial_fdr_sabha]{spatial_fdr_sabha()}}. Needs the same grouping as \code{"fdr:spatial"}. By
+default (\code{options$statistic = "auto"}) it uses \code{z} (or the
+\verb{z_coef:<term>} family) with Efron's central-matching empirical null, as
+\code{fmrireg::spatial_fdr()} does, and falls back to the p-value sources of
+\code{"fdr:bh"}; \code{statistic = "p"} forces p-values. Further options: \code{alpha},
+\code{tau}, \code{lambda}, \code{neighbors}, \code{min_pi0}, \code{empirical_null}, \code{source}.
+Per-map \code{mu0}, \code{sigma0}, \code{threshold}, \code{k} and \code{pi0_smooth} are stored in
+the \verb{posthoc/fdr:sabha/<q-name>} attachment.
 \item \code{"nt:tfce_fwer"} (needs the optional \code{neurothresh} package): adds \code{p_fwer}
 (TFCE FWER-corrected p-values), \code{sig_mask} (1/0 at \code{alpha}), and \code{tfce} (the
 TFCE-enhanced statistic map).

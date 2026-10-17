@@ -299,6 +299,7 @@ test_that("dense voxel storage with a mask bitmap uses the full grid", {
 
 test_that("as_fmri_frame keeps dense voxel GDS support on the full grid", {
   skip_if_not_installed("fmridataset")
+  skip_if_not_installed("multidesign")
   bitmap <- array(c(TRUE, FALSE, TRUE, TRUE), c(2, 2, 1))
   g <- new_gds(
     list(beta = array(seq_len(4 * 2), c(4, 2, 1)), var = array(1, c(4, 2, 1))),

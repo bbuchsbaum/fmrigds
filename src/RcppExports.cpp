@@ -240,6 +240,58 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// sabha_group_pi0_counts_cpp
+List sabha_group_pi0_counts_cpp(NumericVector p, IntegerVector group, double tau, int G);
+RcppExport SEXP _fmrigds_sabha_group_pi0_counts_cpp(SEXP pSEXP, SEXP groupSEXP, SEXP tauSEXP, SEXP GSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< NumericVector >::type p(pSEXP);
+    Rcpp::traits::input_parameter< IntegerVector >::type group(groupSEXP);
+    Rcpp::traits::input_parameter< double >::type tau(tauSEXP);
+    Rcpp::traits::input_parameter< int >::type G(GSEXP);
+    rcpp_result_gen = Rcpp::wrap(sabha_group_pi0_counts_cpp(p, group, tau, G));
+    return rcpp_result_gen;
+END_RCPP
+}
+// sabha_pi0_smooth_cpp
+NumericVector sabha_pi0_smooth_cpp(NumericVector pi0_raw, List neighbors, double lambda, int iters);
+RcppExport SEXP _fmrigds_sabha_pi0_smooth_cpp(SEXP pi0_rawSEXP, SEXP neighborsSEXP, SEXP lambdaSEXP, SEXP itersSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< NumericVector >::type pi0_raw(pi0_rawSEXP);
+    Rcpp::traits::input_parameter< List >::type neighbors(neighborsSEXP);
+    Rcpp::traits::input_parameter< double >::type lambda(lambdaSEXP);
+    Rcpp::traits::input_parameter< int >::type iters(itersSEXP);
+    rcpp_result_gen = Rcpp::wrap(sabha_pi0_smooth_cpp(pi0_raw, neighbors, lambda, iters));
+    return rcpp_result_gen;
+END_RCPP
+}
+// sabha_weighted_bh_cpp
+List sabha_weighted_bh_cpp(NumericVector p, NumericVector w, double alpha);
+RcppExport SEXP _fmrigds_sabha_weighted_bh_cpp(SEXP pSEXP, SEXP wSEXP, SEXP alphaSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< NumericVector >::type p(pSEXP);
+    Rcpp::traits::input_parameter< NumericVector >::type w(wSEXP);
+    Rcpp::traits::input_parameter< double >::type alpha(alphaSEXP);
+    rcpp_result_gen = Rcpp::wrap(sabha_weighted_bh_cpp(p, w, alpha));
+    return rcpp_result_gen;
+END_RCPP
+}
+// sabha_bh_qvalues_scaled_cpp
+NumericVector sabha_bh_qvalues_scaled_cpp(NumericVector q);
+RcppExport SEXP _fmrigds_sabha_bh_qvalues_scaled_cpp(SEXP qSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< NumericVector >::type q(qSEXP);
+    rcpp_result_gen = Rcpp::wrap(sabha_bh_qvalues_scaled_cpp(q));
+    return rcpp_result_gen;
+END_RCPP
+}
 
 static const R_CallMethodDef CallEntries[] = {
     {"_fmrigds_lmm_ri_objective_cpp", (DL_FUNC) &_fmrigds_lmm_ri_objective_cpp, 5},
@@ -258,6 +310,10 @@ static const R_CallMethodDef CallEntries[] = {
     {"_fmrigds_lancaster_combine_cpp", (DL_FUNC) &_fmrigds_lancaster_combine_cpp, 3},
     {"_fmrigds_perm_onesample_t_cpp", (DL_FUNC) &_fmrigds_perm_onesample_t_cpp, 5},
     {"_fmrigds_perm_twosample_t_cpp", (DL_FUNC) &_fmrigds_perm_twosample_t_cpp, 7},
+    {"_fmrigds_sabha_group_pi0_counts_cpp", (DL_FUNC) &_fmrigds_sabha_group_pi0_counts_cpp, 4},
+    {"_fmrigds_sabha_pi0_smooth_cpp", (DL_FUNC) &_fmrigds_sabha_pi0_smooth_cpp, 4},
+    {"_fmrigds_sabha_weighted_bh_cpp", (DL_FUNC) &_fmrigds_sabha_weighted_bh_cpp, 3},
+    {"_fmrigds_sabha_bh_qvalues_scaled_cpp", (DL_FUNC) &_fmrigds_sabha_bh_qvalues_scaled_cpp, 1},
     {NULL, NULL, 0}
 };
 

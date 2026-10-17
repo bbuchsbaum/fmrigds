@@ -130,7 +130,8 @@ list_posthoc <- function() {
 #' a genuine bare `p` (from meta/combine reducers or a tabular `p` column) yields
 #' a single `q`; a per-term `p_coef:<term>` family (from regression/LMM reducers
 #' such as `ols:voxelwise`) yields one `q_coef:<term>` per term. Pass
-#' `options = list(source = "p_coef:<term>")` to adjust one specific term.
+#' `options = list(source = "p_coef:<term>")` to adjust one specific term (or
+#' `"p_contrast:<name>"` from [coef_contrast()], giving `q_contrast:<name>`).
 #'
 #' @section Methods and outputs:
 #' - `"fdr:bh"`, `"fdr:by"`: add `q` (or per-term `q_coef:<term>`),
@@ -140,6 +141,16 @@ list_posthoc <- function() {
 #'   FDR. Requires a discrete spatial grouping (one parcel/cluster id per
 #'   sample) via `options$group` or a recognised `row_data` column
 #'   (`feature_group`, `spatial_group`, `group`, `parcel`, `parcel_id`).
+#' - `"fdr:sabha"`: adds `q` (or `q_coef:<term>`), voxel-level
+#'   structure-adaptive weighted BH with groupwise \eqn{\pi_0} weights; see
+#'   [spatial_fdr_sabha()]. Needs the same grouping as `"fdr:spatial"`. By
+#'   default (`options$statistic = "auto"`) it uses `z` (or the
+#'   `z_coef:<term>` family) with Efron's central-matching empirical null, as
+#'   `fmrireg::spatial_fdr()` does, and falls back to the p-value sources of
+#'   `"fdr:bh"`; `statistic = "p"` forces p-values. Further options: `alpha`,
+#'   `tau`, `lambda`, `neighbors`, `min_pi0`, `empirical_null`, `source`.
+#'   Per-map `mu0`, `sigma0`, `threshold`, `k` and `pi0_smooth` are stored in
+#'   the `posthoc/fdr:sabha/<q-name>` attachment.
 #' - `"nt:tfce_fwer"` (needs the optional `neurothresh` package): adds `p_fwer`
 #'   (TFCE FWER-corrected p-values), `sig_mask` (1/0 at `alpha`), and `tfce` (the
 #'   TFCE-enhanced statistic map).
@@ -173,7 +184,8 @@ unregister_posthoc <- function(name) {
 # `p_coef:<term>` for single-term models and errored for multi-term models):
 #
 #   * `options$source = "<assay>"` -> adjust exactly that assay; output is
-#     `q_coef:<term>` when the source is `p_coef:<term>`, else `q`.
+#     `q_<family>:<term>` when the source is `p_<family>:<term>` (e.g.
+#     `p_coef:` or `p_contrast:` from [coef_contrast()]), else `q`.
 #   * a genuine bare `p` assay (meta/combine reducers, tabular `p` columns,
 #     or one derived from z/t+df) -> a single `q` (back-compatible).
 #   * one or more `p_coef:<term>` assays (regression/LMM reducers) -> one
@@ -186,7 +198,8 @@ unregister_posthoc <- function(name) {
     if (!src %in% nms) {
       stop("post-hoc FDR: options$source assay not found: ", src, call. = FALSE)
     }
-    out <- if (grepl("^p_coef:", src)) sub("^p_coef:", "q_coef:", src) else "q"
+    # p_<family>:<term> (e.g. p_coef:, p_contrast:) -> q_<family>:<term>
+    out <- if (grepl("^p_[A-Za-z0-9]+:", src)) sub("^p_", "q_", src) else "q"
     return(stats::setNames(list(arrays[[src]]), out))
   }
   if (!is.null(arrays[["p"]])) {
@@ -261,6 +274,18 @@ unregister_posthoc <- function(name) {
       )
     )
   }
+  # No `requires`: the handler resolves z or p itself. Requiring "p" would make
+  # the engine persist a theoretical-null p next to empirical-null q values.
+  register_posthoc(
+    "fdr:sabha", .posthoc_sabha_fdr(),
+    requires = character(0), provides = c("q", "q_coef"),
+    case_deletion = list(
+      supported = TRUE,
+      mode = "recompute",
+      requires_full_space = TRUE,
+      deterministic = TRUE
+    )
+  )
   # Register neurothresh-backed TFCE if optional dependency is available
   if (exists(".posthoc_neurothresh_tfce_fwer", mode = "function") &&
       requireNamespace("neurothresh", quietly = TRUE)) {

@@ -65,3 +65,19 @@ perm_twosample_t_cpp <- function(beta, group_mat, group, tail = 0L, welch = TRUE
     .Call(`_fmrigds_perm_twosample_t_cpp`, beta, group_mat, group, tail, welch, min_group, skip_first)
 }
 
+sabha_group_pi0_counts_cpp <- function(p, group, tau, G) {
+    .Call(`_fmrigds_sabha_group_pi0_counts_cpp`, p, group, tau, G)
+}
+
+sabha_pi0_smooth_cpp <- function(pi0_raw, neighbors, lambda, iters) {
+    .Call(`_fmrigds_sabha_pi0_smooth_cpp`, pi0_raw, neighbors, lambda, iters)
+}
+
+sabha_weighted_bh_cpp <- function(p, w, alpha) {
+    .Call(`_fmrigds_sabha_weighted_bh_cpp`, p, w, alpha)
+}
+
+sabha_bh_qvalues_scaled_cpp <- function(q) {
+    .Call(`_fmrigds_sabha_bh_qvalues_scaled_cpp`, q)
+}
+
