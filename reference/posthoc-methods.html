@@ -4,12 +4,14 @@ to the realised GDS. The FDR methods adjust the object's p-value assay(s):
 a genuine bare p (from meta/combine reducers or a tabular p column) yields
 a single q; a per-term p_coef:&amp;lt;term&amp;gt; family (from regression/LMM reducers
 such as ols:voxelwise) yields one q_coef:&amp;lt;term&amp;gt; per term. Pass
-options = list(source = &quot;p_coef:&amp;lt;term&amp;gt;&quot;) to adjust one specific term."><meta property="og:description" content="Methods are selected by name in posthoc() and add their adjusted-p assays
+options = list(source = &quot;p_coef:&amp;lt;term&amp;gt;&quot;) to adjust one specific term (or
+&quot;p_contrast:&amp;lt;name&amp;gt;&quot; from coef_contrast(), giving q_contrast:&amp;lt;name&amp;gt;)."><meta property="og:description" content="Methods are selected by name in posthoc() and add their adjusted-p assays
 to the realised GDS. The FDR methods adjust the object's p-value assay(s):
 a genuine bare p (from meta/combine reducers or a tabular p column) yields
 a single q; a per-term p_coef:&amp;lt;term&amp;gt; family (from regression/LMM reducers
 such as ols:voxelwise) yields one q_coef:&amp;lt;term&amp;gt; per term. Pass
-options = list(source = &quot;p_coef:&amp;lt;term&amp;gt;&quot;) to adjust one specific term."><link href="../albers.css" rel="stylesheet"><script>window.albersdownDefaults = window.albersdownDefaults || { family: "red", preset: "homage", style: "minimal" };</script><script src="../albers.js"></script></head><body>
+options = list(source = &quot;p_coef:&amp;lt;term&amp;gt;&quot;) to adjust one specific term (or
+&quot;p_contrast:&amp;lt;name&amp;gt;&quot; from coef_contrast(), giving q_contrast:&amp;lt;name&amp;gt;)."><link href="../albers.css" rel="stylesheet"><script>window.albersdownDefaults = window.albersdownDefaults || { family: "red", preset: "homage", style: "minimal" };</script><script src="../albers.js"></script></head><body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
 
 
@@ -50,7 +52,8 @@ to the realised GDS. The FDR methods adjust the object's p-value assay(s):
 a genuine bare <code>p</code> (from meta/combine reducers or a tabular <code>p</code> column) yields
 a single <code>q</code>; a per-term <code>p_coef:&lt;term&gt;</code> family (from regression/LMM reducers
 such as <code>ols:voxelwise</code>) yields one <code>q_coef:&lt;term&gt;</code> per term. Pass
-<code>options = list(source = "p_coef:&lt;term&gt;")</code> to adjust one specific term.</p>
+<code>options = list(source = "p_coef:&lt;term&gt;")</code> to adjust one specific term (or
+<code>"p_contrast:&lt;name&gt;"</code> from <code><a href="coef_contrast.html">coef_contrast()</a></code>, giving <code>q_contrast:&lt;name&gt;</code>).</p>
     </div>
 
 
@@ -69,6 +72,16 @@ column-wise per subject x contrast.</p></li>
 FDR. Requires a discrete spatial grouping (one parcel/cluster id per
 sample) via <code>options$group</code> or a recognised <code>row_data</code> column
 (<code>feature_group</code>, <code>spatial_group</code>, <code>group</code>, <code>parcel</code>, <code>parcel_id</code>).</p></li>
+<li><p><code>"fdr:sabha"</code>: adds <code>q</code> (or <code>q_coef:&lt;term&gt;</code>), voxel-level
+structure-adaptive weighted BH with groupwise \(\pi_0\) weights; see
+<code><a href="spatial_fdr_sabha.html">spatial_fdr_sabha()</a></code>. Needs the same grouping as <code>"fdr:spatial"</code>. By
+default (<code>options$statistic = "auto"</code>) it uses <code>z</code> (or the
+<code>z_coef:&lt;term&gt;</code> family) with Efron's central-matching empirical null, as
+<code>fmrireg::spatial_fdr()</code> does, and falls back to the p-value sources of
+<code>"fdr:bh"</code>; <code>statistic = "p"</code> forces p-values. Further options: <code>alpha</code>,
+<code>tau</code>, <code>lambda</code>, <code>neighbors</code>, <code>min_pi0</code>, <code>empirical_null</code>, <code>source</code>.
+Per-map <code>mu0</code>, <code>sigma0</code>, <code>threshold</code>, <code>k</code> and <code>pi0_smooth</code> are stored in
+the <code>posthoc/fdr:sabha/&lt;q-name&gt;</code> attachment.</p></li>
 <li><p><code>"nt:tfce_fwer"</code> (needs the optional <code>neurothresh</code> package): adds <code>p_fwer</code>
 (TFCE FWER-corrected p-values), <code>sig_mask</code> (1/0 at <code>alpha</code>), and <code>tfce</code> (the
 TFCE-enhanced statistic map).</p></li>

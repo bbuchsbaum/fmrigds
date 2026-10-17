@@ -65,7 +65,8 @@
 meta-analytic regression reducers such as <code>"meta:fe_reg"</code> and the
 restricted repeated-measures Gaussian LMM reducers <code>"lmm:ri"</code>,
 <code>"lmm:ri_slope1"</code>, <code>"lmm:ri_knownvar"</code>, and
-<code>"lmm:ri_slope1_knownvar"</code>, plus permutation reducers
+<code>"lmm:ri_slope1_knownvar"</code>, the parametric two-sample Welch test
+<code>"ttest:welch"</code>, plus permutation reducers
 <code>"perm:onesample"</code> and <code>"perm:twosample"</code>.</p></dd>
 
 
@@ -109,6 +110,14 @@ and <code>col_data</code>, or use <code>options$group</code> directly.</p></li>
 <code>"perm:twosample"</code> <code>variance = "welch"</code> or <code>"pooled"</code>.</p></li>
 <li><p>Outputs include <code>t_g</code>, parametric <code>p_g</code>, permutation <code>p_perm</code>, and
 max-|t| family-wise <code>p_fwer</code>.</p></li>
+</ul><p>Welch two-sample t test (<code>"ttest:welch"</code>):</p><ul><li><p>Unweighted, per sample and contrast, identical to
+<code>stats::t.test(y[g == 2], y[g == 1], var.equal = FALSE)</code> where <code>g</code> is the
+two-level group: the effect is second level minus first level. The group
+is the last (or <code>options$term</code>) column of the design built from <code>formula</code>
+(e.g. <code>~ group</code>), or <code>options$group</code> directly.</p></li>
+<li><p>Non-finite subjects are dropped per sample; samples with fewer than
+<code>options$min_group</code> (default and minimum 2) finite subjects in either
+group are <code>NA</code>. <code>options$alternative</code> sets the tail of <code>p_g</code>.</p></li>
 </ul></dd>
 
 
@@ -147,6 +156,22 @@ before calling <code>reduce()</code>.</p>
 verbs on realised GDS objects.</p>
     </div>
     <div class="section level2">
+    <h2 id="variance-floor">Variance floor<a class="anchor" aria-label="anchor" href="#variance-floor"></a></h2>
+
+
+<p>The inverse-variance reducers <code>"meta:fe"</code>/<code>"fixed"</code>, <code>"meta:re"</code>/<code>"random"</code>,
+<code>"meta:fe_reg"</code> and <code>"meta:re_reg"</code> share one validity rule and one floor,
+in both the R and compiled kernels, which front ends may rely on:</p><ul><li><p>a subject enters a sample only if its effect and variance are finite and
+the variance is strictly positive (zero, negative, <code>NA</code> and infinite
+variances exclude that subject for that sample);</p></li>
+<li><p>a positive variance below <code>eps = 1e-12</code> is floored to <code>eps</code> before
+weighting, i.e. the weight is <code>1 / max(var, eps)</code> and never exceeds
+<code>1e12</code> (random-effects weights are <code>1 / (max(var, eps) + tau2)</code>).</p></li>
+</ul><p><code>options = list(eps = ...)</code> overrides the floor. Rescale effects whose
+sampling variances are legitimately below <code>1e-12</code>, since the floor would
+otherwise equalise their weights.</p>
+    </div>
+    <div class="section level2">
     <h2 id="output-assays">Output assays<a class="anchor" aria-label="anchor" href="#output-assays"></a></h2>
 
 
@@ -170,6 +195,10 @@ non-finite effects/design values or non-finite, nonpositive variances.</p></li>
 <code>p_g</code>.</p></li>
 <li><p><code>"perm:onesample"</code>/<code>"perm:twosample"</code>: <code>beta_g</code>, <code>se_g</code>, <code>t_g</code>, <code>df</code>,
 <code>p_g</code>, <code>p_perm</code>, <code>p_fwer</code>.</p></li>
+<li><p><code>"ttest:welch"</code>: <code>beta_g</code> (mean difference), <code>var_g</code>, <code>se_g</code>, <code>t_g</code>,
+Welch–Satterthwaite <code>df</code>, <code>p_g</code>, the normal-equivalent <code>z_g</code> (same
+p-value as <code>t_g</code>), and per-group finite counts <code>n0</code>, <code>n1</code>; <code>z</code>/<code>p</code> mirror
+<code>z_g</code>/<code>p_g</code>.</p></li>
 </ul></div>
     <div class="section level2">
     <h2 id="see-also">See also<a class="anchor" aria-label="anchor" href="#see-also"></a></h2>

@@ -49,7 +49,8 @@
 <span>  input_shape <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"contrastwise"</span>, <span class="st">"joint_contrast"</span><span class="op">)</span>,</span>
 <span>  model_contract <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  diagnostics <span class="op">=</span> <span class="cn">NULL</span>,</span>
-<span>  frame_fun <span class="op">=</span> <span class="cn">NULL</span></span>
+<span>  frame_fun <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  extra_inputs <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/character.html" class="external-link">character</a></span><span class="op">(</span><span class="op">)</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
 
@@ -99,6 +100,16 @@ while a capability is declared but not yet implemented.</p></dd>
 <dd><p>Optional feature-block kernel for <code>fmri_frame</code> execution.
 It must accept <code>arrays</code>, <code>design</code>, and <code>options</code>, and return aligned result
 assays, result-observation metadata, and per-feature diagnostics.</p></dd>
+
+
+<dt id="arg-extra-inputs">extra_inputs<a class="anchor" aria-label="anchor" href="#arg-extra-inputs"></a></dt>
+<dd><p>Optional character vector naming additional per-feature
+assays (<code>sample x subject x contrast</code>, e.g. a voxelwise covariate) that a
+contrastwise reducer consumes. For each contrast the engine slices every
+named assay to a <code>subjects x samples</code> matrix, exactly like <code>beta</code>, and
+passes them as the named list <code>opts$inputs</code>. Execution fails if a named
+assay is absent. Like the subject-level inputs, these assays are dropped
+from the reduced result.</p></dd>
 
 </dl></div>
     <div class="section level2">
