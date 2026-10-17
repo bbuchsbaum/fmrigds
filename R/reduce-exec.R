@@ -36,6 +36,15 @@ apply_reduce <- function(node, arrays, weights, subjects, col_data = NULL, contr
     ))
   }
 
+  extra_inputs <- reducer$extra_inputs %||% character()
+  missing_inputs <- setdiff(extra_inputs, names(arrays))
+  if (length(missing_inputs)) {
+    stop(sprintf(
+      "Reducer '%s' requires per-feature assay(s) %s, which the data do not carry.",
+      reducer$name, paste(sprintf("'%s'", missing_inputs), collapse = ", ")
+    ), call. = FALSE)
+  }
+
   beta <- arrays$beta
   var  <- arrays$var
   z    <- arrays$z
@@ -63,6 +72,10 @@ apply_reduce <- function(node, arrays, weights, subjects, col_data = NULL, contr
   param_arrays <- list()
   # Validate and prepare reducer options once
   opts_root <- validate_reducer_options(reducer$options_schema %||% list(), node$options %||% list())
+  if (length(extra_inputs) && !is.null(opts_root$inputs)) {
+    stop("options$inputs is reserved for the per-feature assays of reducer '",
+         reducer$name, "'.", call. = FALSE)
+  }
   # A formula is authoritative and is always resolved against the realized
   # subject axis. Never reuse a plan-construction-time X after subject
   # subsetting or reordering.
@@ -104,6 +117,12 @@ apply_reduce <- function(node, arrays, weights, subjects, col_data = NULL, contr
     # sample (e.g. after map_to()/align() with Satterthwaite df), so derive a
     # [samples x subjects] df matrix and run the kernel per distinct df row.
     opts_local <- opts_root
+    if (length(extra_inputs)) {
+      opts_local$inputs <- stats::setNames(
+        lapply(extra_inputs, function(nm) .slice_subjects_samples(arrays[[nm]], k)),
+        extra_inputs
+      )
+    }
     lancaster_dfmat <- NULL
     if (identical(reducer$name, "combine:lancaster") && is.null(opts_local$dfw)) {
       df_src <- arrays$df %||% arrays$df1
@@ -139,7 +158,8 @@ apply_reduce <- function(node, arrays, weights, subjects, col_data = NULL, contr
     #
     # Handle regression/parametric results (matrix outputs): expand into param-suffixed assays
     if ((is.matrix(res$coef) && nrow(res$coef) >= 1) || (is.matrix(res$se_coef) && nrow(res$se_coef) >= 1)) {
-      par_names <- colnames(X) %||% paste0("X", seq_len(nrow(res$coef %||% res$se_coef)))
+      par_names <- colnames(X) %||% rownames(res$coef %||% res$se_coef) %||%
+        paste0("X", seq_len(nrow(res$coef %||% res$se_coef)))
       add_matrix <- function(M, prefix) {
         if (is.null(M)) return()
         stopifnot(is.matrix(M), nrow(M) == length(par_names))

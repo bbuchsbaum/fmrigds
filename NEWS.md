@@ -29,6 +29,11 @@
   `fmrireg::spatial_fdr()` (R and C++) and tested to reproduce its results
   exactly. Vector or matrix (column-wise) input. The parcel-level Simes
   method `fdr:spatial` is unchanged.
+- `register_reducer()` gains `extra_inputs`: contrastwise reducers can declare
+  additional per-feature assays (e.g. a voxelwise covariate) that the engine
+  slices per contrast and block exactly like `beta` and passes as
+  `opts$inputs`; a missing assay is an error. Regression reducers without a
+  design matrix take term names from the row names of their `coef` matrix.
 
 ## CRAN readiness
 

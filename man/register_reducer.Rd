@@ -13,7 +13,8 @@ register_reducer(
   input_shape = c("contrastwise", "joint_contrast"),
   model_contract = NULL,
   diagnostics = NULL,
-  frame_fun = NULL
+  frame_fun = NULL,
+  extra_inputs = character()
 )
 }
 \arguments{
@@ -42,6 +43,14 @@ while a capability is declared but not yet implemented.}
 \item{frame_fun}{Optional feature-block kernel for \code{fmri_frame} execution.
 It must accept \code{arrays}, \code{design}, and \code{options}, and return aligned result
 assays, result-observation metadata, and per-feature diagnostics.}
+
+\item{extra_inputs}{Optional character vector naming additional per-feature
+assays (\verb{sample x subject x contrast}, e.g. a voxelwise covariate) that a
+contrastwise reducer consumes. For each contrast the engine slices every
+named assay to a \verb{subjects x samples} matrix, exactly like \code{beta}, and
+passes them as the named list \code{opts$inputs}. Execution fails if a named
+assay is absent. Like the subject-level inputs, these assays are dropped
+from the reduced result.}
 }
 \value{
 Invisibly, the registered reducer \code{name}.

@@ -21,6 +21,13 @@
 #' @param frame_fun Optional feature-block kernel for `fmri_frame` execution.
 #'   It must accept `arrays`, `design`, and `options`, and return aligned result
 #'   assays, result-observation metadata, and per-feature diagnostics.
+#' @param extra_inputs Optional character vector naming additional per-feature
+#'   assays (`sample x subject x contrast`, e.g. a voxelwise covariate) that a
+#'   contrastwise reducer consumes. For each contrast the engine slices every
+#'   named assay to a `subjects x samples` matrix, exactly like `beta`, and
+#'   passes them as the named list `opts$inputs`. Execution fails if a named
+#'   assay is absent. Like the subject-level inputs, these assays are dropped
+#'   from the reduced result.
 #' @return Invisibly, the registered reducer `name`.
 #' @export
 register_reducer <- function(name,
@@ -31,12 +38,21 @@ register_reducer <- function(name,
                              input_shape = c("contrastwise", "joint_contrast"),
                              model_contract = NULL,
                              diagnostics = NULL,
-                             frame_fun = NULL) {
+                             frame_fun = NULL,
+                             extra_inputs = character()) {
   stopifnot(is.character(name), length(name) == 1L, is.function(fun))
   if (!is.null(frame_fun) && !is.function(frame_fun)) {
     stop("`frame_fun` must be NULL or a function.", call. = FALSE)
   }
   input_shape <- match.arg(input_shape)
+  extra_inputs <- as.character(extra_inputs %||% character())
+  if (anyNA(extra_inputs) || any(!nzchar(extra_inputs)) || anyDuplicated(extra_inputs)) {
+    stop("`extra_inputs` must be unique, non-empty assay names.", call. = FALSE)
+  }
+  if (length(extra_inputs) && !identical(input_shape, "contrastwise")) {
+    stop("`extra_inputs` is only supported for contrastwise reducers; joint reducers ",
+         "receive every assay already.", call. = FALSE)
+  }
   model_contract <- .normalize_reducer_model_contract(model_contract)
   diagnostics <- .normalize_reducer_diagnostics(diagnostics)
   .gds_reducers[[name]] <- list(
@@ -48,7 +64,8 @@ register_reducer <- function(name,
     input_shape = input_shape,
     model_contract = model_contract,
     diagnostics = diagnostics,
-    frame_fun = frame_fun
+    frame_fun = frame_fun,
+    extra_inputs = extra_inputs
   )
   invisible(name)
 }
