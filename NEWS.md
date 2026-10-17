@@ -7,6 +7,16 @@
   flattened and truncated to the sample count, or all `NA` when covariance
   was not requested). Only the per-pair `cov:<a>:<b>` assays and the
   [coef_cov_tri()] attachment are produced.
+- New `coef_contrast(x, C, stat, df, alternative, joint, name)` computes
+  per-feature linear contrasts of `coef:<term>` assays from a realised
+  regression-type result (`ols:voxelwise`, `meta:*_reg`, `lmm:*`): estimate,
+  SE (from `cov:<a>:<b>` or the packed covariance attachment), t with df
+  (`df_coef:<term>`, `df_res` or `df`) or z, and p, as
+  `contrast:`/`se_contrast:`/`t_contrast:`/`df_contrast:`/`z_contrast:`/
+  `p_contrast:<name>` assays. `joint = TRUE` gives one F (or chi-square) test
+  for all rows of `C`. Checked against `lm()`, `vcov()` and `anova()`.
+- FDR post-hocs given `options$source = "p_<family>:<name>"` now write
+  `q_<family>:<name>` (e.g. `q_contrast:<name>`) instead of a bare `q`.
 
 ## CRAN readiness
 

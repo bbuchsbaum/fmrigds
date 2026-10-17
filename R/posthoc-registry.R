@@ -130,7 +130,8 @@ list_posthoc <- function() {
 #' a genuine bare `p` (from meta/combine reducers or a tabular `p` column) yields
 #' a single `q`; a per-term `p_coef:<term>` family (from regression/LMM reducers
 #' such as `ols:voxelwise`) yields one `q_coef:<term>` per term. Pass
-#' `options = list(source = "p_coef:<term>")` to adjust one specific term.
+#' `options = list(source = "p_coef:<term>")` to adjust one specific term (or
+#' `"p_contrast:<name>"` from [coef_contrast()], giving `q_contrast:<name>`).
 #'
 #' @section Methods and outputs:
 #' - `"fdr:bh"`, `"fdr:by"`: add `q` (or per-term `q_coef:<term>`),
@@ -173,7 +174,8 @@ unregister_posthoc <- function(name) {
 # `p_coef:<term>` for single-term models and errored for multi-term models):
 #
 #   * `options$source = "<assay>"` -> adjust exactly that assay; output is
-#     `q_coef:<term>` when the source is `p_coef:<term>`, else `q`.
+#     `q_<family>:<term>` when the source is `p_<family>:<term>` (e.g.
+#     `p_coef:` or `p_contrast:` from [coef_contrast()]), else `q`.
 #   * a genuine bare `p` assay (meta/combine reducers, tabular `p` columns,
 #     or one derived from z/t+df) -> a single `q` (back-compatible).
 #   * one or more `p_coef:<term>` assays (regression/LMM reducers) -> one
@@ -186,7 +188,8 @@ unregister_posthoc <- function(name) {
     if (!src %in% nms) {
       stop("post-hoc FDR: options$source assay not found: ", src, call. = FALSE)
     }
-    out <- if (grepl("^p_coef:", src)) sub("^p_coef:", "q_coef:", src) else "q"
+    # p_<family>:<term> (e.g. p_coef:, p_contrast:) -> q_<family>:<term>
+    out <- if (grepl("^p_[A-Za-z0-9]+:", src)) sub("^p_", "q_", src) else "q"
     return(stats::setNames(list(arrays[[src]]), out))
   }
   if (!is.null(arrays[["p"]])) {

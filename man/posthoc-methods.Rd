@@ -12,7 +12,8 @@ to the realised GDS. The FDR methods adjust the object's p-value assay(s):
 a genuine bare \code{p} (from meta/combine reducers or a tabular \code{p} column) yields
 a single \code{q}; a per-term \verb{p_coef:<term>} family (from regression/LMM reducers
 such as \code{ols:voxelwise}) yields one \verb{q_coef:<term>} per term. Pass
-\code{options = list(source = "p_coef:<term>")} to adjust one specific term.
+\code{options = list(source = "p_coef:<term>")} to adjust one specific term (or
+\code{"p_contrast:<name>"} from \code{\link[=coef_contrast]{coef_contrast()}}, giving \verb{q_contrast:<name>}).
 }
 \section{Methods and outputs}{
 
