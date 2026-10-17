@@ -212,7 +212,8 @@ apply_reduce <- function(node, arrays, weights, subjects, col_data = NULL, contr
         }
       }
       # Keep attachments for backwards compatibility and richer metadata
-      attachments[[key]] <- list(type = "cov_tri", terms = par_names, pack = "upper", cov_tri = res$cov_tri)
+      attachments[[key]] <- list(type = "cov_tri", terms = par_names, pack = "upper", cov_tri = res$cov_tri,
+                                 contrast = if (length(contrasts) >= k) as.character(contrasts[k]) else NULL)
     }
   }
 

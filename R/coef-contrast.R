@@ -242,34 +242,34 @@ coef_contrast <- function(x,
   as.character(lab)
 }
 
-# Returns function(a, b) -> covariance array of coef:a and coef:b, read from
-# the packed reducer attachments (which name terms unambiguously), then the
-# `cov:a:b`/`cov:b:a` assays, then `se_coef:a`^2 on the diagonal. An assay key
-# is used only when no other pair of terms produces the same key: with terms
-# containing ":" (interactions), `cov:x:y:z` could be Cov(x:y, z) or
-# Cov(x, y:z).
+# Returns function(a, b) -> covariance array of coef:a and coef:b. The
+# `cov:a:b`/`cov:b:a` assays come first: they are subset and blocked along with
+# the coefficients, so they always line up. A key is ambiguous when another pair
+# of coefficient names produces the same string (interactions: `cov:x:y:z` can
+# be Cov(x:y, z) or Cov(x, y:z)); then the reducer's packed attachment, which
+# names terms explicitly, is used if it still matches the current axes. The
+# diagonal can also come from `se_coef:a`^2.
 .coef_contrast_cov_lookup <- function(x, dims) {
   arrays <- x$assays
   att <- .coef_contrast_attachment_cov(x, dims)
   terms <- sub("^coef:", "", grep("^coef:", names(arrays), value = TRUE))
   pair_keys <- outer(terms, terms, function(u, w) paste0("cov:", u, ":", w))
   key_unique <- function(key) sum(pair_keys == key) <= 1L
-  assay_cov <- function(a, b) {
-    for (key in unique(c(paste0("cov:", a, ":", b), paste0("cov:", b, ":", a)))) {
-      if (is.null(arrays[[key]])) next
-      if (!key_unique(key)) {
-        stop(sprintf(paste0(
-          "Covariance assay '%s' is ambiguous: several pairs of coefficient names ",
-          "produce that key. Keep the reducer's covariance attachment ",
-          "(coef_cov_tri()) to form contrasts of these terms."), key), call. = FALSE)
-      }
-      return(arrays[[key]])
-    }
-    NULL
-  }
   function(a, b) {
-    v <- att(a, b)
-    if (is.null(v)) v <- assay_cov(a, b)
+    keys <- unique(c(paste0("cov:", a, ":", b), paste0("cov:", b, ":", a)))
+    present <- keys[vapply(keys, function(k) !is.null(arrays[[k]]), logical(1))]
+    v <- NULL
+    ambiguous <- length(present) && !all(vapply(present, key_unique, logical(1)))
+    if (length(present) && !ambiguous) v <- arrays[[present[1L]]]
+    if (is.null(v)) v <- att(a, b)
+    if (is.null(v) && ambiguous) {
+      stop(sprintf(paste0(
+        "Covariance assay '%s' is ambiguous: several pairs of coefficient names ",
+        "produce that key, and no covariance attachment matching the current ",
+        "samples and contrasts is available. Recompute the reducer on this ",
+        "subset (with return_cov = \"tri\") to form contrasts of these terms."),
+        present[1L]), call. = FALSE)
+    }
     if (is.null(v) && identical(a, b)) {
       se <- arrays[[paste0("se_coef:", a)]]
       if (!is.null(se)) v <- se^2
@@ -297,10 +297,17 @@ coef_contrast <- function(x,
     out <- array(NA_real_, dim = dims)
     found <- FALSE
     for (k in seq_len(dims[3L])) {
-      idx <- which(endsWith(keys, paste0("/contrast=", k)) |
-                     endsWith(keys, paste0("/contrast=", contrasts[k])))
-      if (!length(idx)) next
-      e <- att[[idx[1L]]]
+      # Match by the recorded contrast label; fall back to the position only
+      # for attachments that predate the label and only when nothing was
+      # subset (stale attachments are dropped by compute() when axes narrow).
+      labelled <- vapply(att, function(e) !is.null(e$contrast), logical(1))
+      idx <- which(labelled & vapply(att, function(e) identical(e$contrast, contrasts[k]), logical(1)))
+      if (!length(idx)) {
+        idx <- which(!labelled & endsWith(keys, paste0("/contrast=", k)))
+      }
+      if (length(idx) != 1L) next
+      e <- att[[idx]]
+      if (ncol(e$cov_tri) != dims[1L]) next
       i <- match(a, e$terms); j <- match(b, e$terms)
       if (is.na(i) || is.na(j)) next
       lo <- min(i, j); hi <- max(i, j); p <- length(e$terms)

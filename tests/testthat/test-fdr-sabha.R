@@ -45,14 +45,16 @@ test_that("spatial_fdr_sabha reproduces fmrireg::spatial_fdr() reference values"
         c(0.028879194857822286, 0.058150449184670841, 1, 1, 1, 1, 1, 1))
   B <- spatial_fdr_sabha(p = I$pB, group = I$gB, neighbors = I$nbB, lambda = 0.5,
                          tau = 0.4, min_pi0 = 0.1, alpha = 0.1, empirical_null = FALSE)
-  check(B, 0, 1, 43, 0.021827411167512689, 119.25020117323737, 1316,
+  # Case B has missing p-values: Storey group sizes count finite tests only
+  # (fmrireg's spatial_fdr() counted missing ones until the same fix).
+  check(B, 0, 1, 43, 0.021827411167512689, 119.43344461373988, 1316,
         c(0.33333333333333331, 0.80555555555555547, 0.85827664399092962,
-          0.84421768707482991, 0.91655328798185953),
+          0.84750566893424040, 0.92970521541950113),
         c(1, 29, 58, 86, 115, 143, 172, 200),
-        c(0.059465589063671033, 0.45570493624842373, 0.419706275717949,
-          0.91540134489977587, 0.33367399029906197, 1, 0.81789593167846508,
-          0.27500549259688478))
-  expect_identical(B$m_g, c(49L, 0L, 50L, 49L, 50L))
+        c(0.059278982187982152, 0.454274904599392737, 0.424392815888882724,
+          0.915841462519309535, 0.333922384510125847, 1, 0.822430146986976029,
+          0.278076269382573849))
+  expect_identical(B$m_g, c(47L, 0L, 50L, 49L, 49L))
   C <- spatial_fdr_sabha(z = I$zC, group = I$gC, alpha = 0.05)
   check(C, 0.68492872593075682, 1.6960777500164816, 20, 0.005000000000000001,
         173.44465975698444, 210, c(1, 1, 0.56, 1),
@@ -86,7 +88,7 @@ wbh_reference <- function(p, w, alpha) {
 pi0_reference <- function(p, group, tau) {
   f <- if (is.factor(group)) group else factor(group)
   tail <- tapply(is.finite(p) & p > tau, f, sum)
-  m <- tapply(rep(1L, length(p)), f, sum)
+  m <- tapply(is.finite(p), f, sum)
   est <- as.numeric(tail) / ((1 - tau) * as.numeric(m))
   est[is.na(est)] <- 1
   pmin(pmax(est, 0), 1)
@@ -313,4 +315,17 @@ test_that("posthoc fdr:sabha resolves sources and per-term z families", {
                 space_sample_labels(sprintf("f%04d", 1:2000)), subjects = "meta", contrasts = "c1")
   expect_error(compute(posthoc(gp, "fdr:sabha", options = list(group = I$gA, statistic = "z"))),
                "no z or z_coef")
+})
+
+test_that("Storey pi0 counts only tests with a finite p-value", {
+  # group 1: 10 finite tests, 4 above tau, plus 10 missing; group 2: complete
+  p <- c(c(0.9, 0.8, 0.7, 0.6, rep(0.01, 6)), rep(NA, 10),
+         c(0.9, 0.95, 0.7, 0.6, 0.55, rep(0.02, 5)))
+  g <- rep(c(1, 2), c(20, 10))
+  res <- spatial_fdr_sabha(p = p, group = g, tau = 0.5, lambda = 0)
+  expect_equal(res$pi0_raw, c(4 / (0.5 * 10), 5 / (0.5 * 10)))
+  # the missing tests do not change group 1's estimate
+  res_drop <- spatial_fdr_sabha(p = p[!is.na(p)], group = g[!is.na(p)], tau = 0.5, lambda = 0)
+  expect_equal(res$pi0_raw, res_drop$pi0_raw)
+  expect_equal(res$q[!is.na(p)], res_drop$q)
 })

@@ -215,3 +215,41 @@ test_that("coef_contrast rejects malformed contrasts and labels", {
   no_coef$assays <- no_coef$assays[!grepl("^coef:", names(no_coef$assays))]
   expect_error(coef_contrast(no_coef, c(age = 1)), "no coef:<term> assays")
 })
+
+test_that("contrasts stay aligned after subsetting a fitted result", {
+  fx <- .contrast_fixture(na_voxel = FALSE)
+  fit <- compute(reduce(fx$g, method = "ols:voxelwise", formula = ~ age + grp + dose,
+                        options = list(return_cov = "tri")))
+  full <- coef_contrast(fit, c(age = 1, dose = -1), name = "d")
+  se_full <- assay(full, "se_contrast:d")
+  # contrast subset: c2 must use c2's covariance, not the first stored one
+  c2 <- coef_contrast(compute(subset(fit, contrast = "c2")), c(age = 1, dose = -1), name = "d")
+  expect_equal(as.numeric(assay(c2, "se_contrast:d")), as.numeric(se_full[, 1, 2]),
+               tolerance = 1e-12)
+  # sample subset: rows follow the realised sample axis
+  s <- coef_contrast(compute(subset(fit, sample = c(5, 2, 7))), c(age = 1, dose = -1), name = "d")
+  expect_equal(as.numeric(assay(s, "se_contrast:d")[, 1, 1]),
+               as.numeric(se_full[c(5, 2, 7), 1, 1]), tolerance = 1e-12)
+})
+
+test_that("ambiguous interaction keys error after subsetting instead of guessing", {
+  set.seed(11)
+  N <- 30
+  subj <- sprintf("s%02d", seq_len(N))
+  cd <- data.frame(x = rnorm(N), y = rnorm(N), z = rnorm(N), row.names = subj)
+  X <- model.matrix(~ x + x:y + y:z + z, cd)
+  beta <- array(NA_real_, c(4, N, 2), dimnames = list(paste0("v", 1:4), subj, c("c1", "c2")))
+  for (k in 1:2) for (b in 1:4) beta[b, , k] <- drop(X %*% rnorm(ncol(X))) + rnorm(N)
+  g <- with_col_data(as_gds(list(beta = beta, var = array(1, dim(beta), dimnames(beta)))), cd)
+  fit <- compute(reduce(g, method = "ols:voxelwise", formula = ~ x + x:y + y:z + z,
+                        options = list(return_cov = "tri")))
+  # on the full fit the attachment resolves the ambiguous key, for each contrast
+  full <- coef_contrast(fit, c(`x:y` = 1, z = 1), name = "xyz")
+  m2 <- lm(beta[3, , 2] ~ x + x:y + y:z + z, data = cd)
+  L <- setNames(numeric(length(coef(m2))), names(coef(m2))); L[c("x:y", "z")] <- 1
+  expect_equal(assay(full, "se_contrast:xyz")[3, 1, 2], sqrt(drop(t(L) %*% vcov(m2) %*% L)),
+               tolerance = 1e-10)
+  # after subsetting, the attachment no longer lines up and is not used
+  expect_error(coef_contrast(compute(subset(fit, contrast = "c2")), c(`x:y` = 1, z = 1)),
+               "ambiguous")
+})
