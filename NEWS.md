@@ -1,5 +1,11 @@
 # fmrigds (development version)
 
+- The OpenMP thread count now falls back to `OMP_NUM_THREADS` (first value)
+  when neither `options(fmrigds.threads)` nor `FMRIGDS_THREADS` is set, so
+  `OMP_NUM_THREADS=1` keeps the package single-threaded. Forked workflows
+  (`parallel::mclapply()`) should configure one thread before the first
+  kernel call (#32).
+
 - `reduce()` forwards the `weights` scheme to reducers that declare
   `options_schema$weights` even when `options` holds another option whose name
   starts with `weights` (e.g. `weights_custom`): `options$weights` partially

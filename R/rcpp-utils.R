@@ -4,7 +4,12 @@
 # never grabs every core on a shared machine. The thread count is resolved as:
 #   1. `options(fmrigds.threads = n)` if set to a positive number;
 #   2. otherwise the `FMRIGDS_THREADS` environment variable if set;
-#   3. otherwise the default of 2.
+#   3. otherwise the first value of the `OMP_NUM_THREADS` environment variable
+#      (a comma-separated list is allowed) if it is a positive integer;
+#   4. otherwise the default of 2.
+# Forked workers (e.g. `parallel::mclapply()`) can hang if OpenMP was used in
+# the parent with more than one thread, so set one thread (`OMP_NUM_THREADS=1`
+# or `FMRIGDS_THREADS=1`) before the first kernel call in such workflows.
 # The result is capped by `OMP_THREAD_LIMIT` when that is set and smaller.
 
 .positive_int_or_null <- function(x) {
@@ -19,6 +24,10 @@
   if (is.null(n)) {
     env <- Sys.getenv("FMRIGDS_THREADS", unset = "")
     if (nzchar(env)) n <- .positive_int_or_null(env)
+  }
+  if (is.null(n)) {
+    env <- Sys.getenv("OMP_NUM_THREADS", unset = "")
+    if (nzchar(env)) n <- .positive_int_or_null(trimws(strsplit(env, ",", fixed = TRUE)[[1L]][1L]))
   }
   if (is.null(n)) n <- as.integer(default)
   limit <- Sys.getenv("OMP_THREAD_LIMIT", unset = "")

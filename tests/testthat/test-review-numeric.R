@@ -179,7 +179,7 @@ test_that("propagate_variance_covariance scales correlation by each subject's va
 
 test_that("thread count defaults to at most 2 and honours option and limit", {
   old_opt <- options(fmrigds.threads = NULL)
-  old_env <- Sys.getenv(c("FMRIGDS_THREADS", "OMP_THREAD_LIMIT"), unset = NA)
+  old_env <- Sys.getenv(c("FMRIGDS_THREADS", "OMP_THREAD_LIMIT", "OMP_NUM_THREADS"), unset = NA)
   on.exit({
     options(old_opt)
     for (nm in names(old_env)) {
@@ -187,10 +187,17 @@ test_that("thread count defaults to at most 2 and honours option and limit", {
     }
     fmrigds:::.set_threads_from_option()
   }, add = TRUE)
-  Sys.unsetenv(c("FMRIGDS_THREADS", "OMP_THREAD_LIMIT"))
+  Sys.unsetenv(c("FMRIGDS_THREADS", "OMP_THREAD_LIMIT", "OMP_NUM_THREADS"))
   expect_equal(fmrigds:::.resolve_thread_count(), 2L)
 
-  Sys.setenv(FMRIGDS_THREADS = "4")
+  Sys.setenv(OMP_NUM_THREADS = "1")
+  expect_equal(fmrigds:::.resolve_thread_count(), 1L)
+  Sys.setenv(OMP_NUM_THREADS = "3,2")
+  expect_equal(fmrigds:::.resolve_thread_count(), 3L)
+  Sys.setenv(OMP_NUM_THREADS = "bogus")
+  expect_equal(fmrigds:::.resolve_thread_count(), 2L)
+
+  Sys.setenv(OMP_NUM_THREADS = "1", FMRIGDS_THREADS = "4")
   expect_equal(fmrigds:::.resolve_thread_count(), 4L)
 
   options(fmrigds.threads = 3L)
