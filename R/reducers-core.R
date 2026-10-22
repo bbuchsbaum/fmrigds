@@ -801,7 +801,24 @@ ols_voxelwise_cpp <- function(beta, X, return_cov_tri = FALSE, min_obs = NULL) {
     }
     out
   }
+  # Samples with every subject finite share the full design: fit them in one
+  # matrix step. The loop below handles only samples with missing subjects.
+  complete <- colSums(!is.finite(beta)) == 0L
+  n_obs[complete] <- N
+  batch <- !is.null(A_full) && N >= min_obs && any(complete)
+  if (batch) {
+    idx <- which(complete)
+    Yc <- beta[, idx, drop = FALSE]
+    bh <- A_full %*% (Xt %*% Yc)
+    s2 <- colSums((Yc - X %*% bh)^2) / (N - p)
+    coef[, idx] <- bh
+    se[, idx] <- sqrt(pmax(outer(diag(A_full), s2), 0))
+    sigma2[idx] <- s2
+    df_res[idx] <- N - p
+    if (!is.null(cov_tri)) cov_tri[, idx] <- outer(pack_tri(A_full, 1), s2)
+  }
   for (b in seq_len(B)) {
+    if (batch && complete[b]) next
     y <- beta[, b]
     ok <- is.finite(y)
     nb <- sum(ok)
