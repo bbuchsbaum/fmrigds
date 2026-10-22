@@ -49,3 +49,24 @@ test_that("NIfTI t sources are validated", {
   expect_error(gds(list(t = m$files, df = 10, beta = m$files), format = "nifti"),
                "cannot be combined")
 })
+
+test_that("NIfTI t sources take explicit subject labels and reject empty inputs", {
+  dir <- withr::local_tempdir()
+  m <- .write_t_maps(dir)
+  ids <- paste0("p", seq_along(m$files))
+  g <- compute(gds(nifti_source(t = m$files, df = 12, subjects = ids), format = "nifti"))
+  expect_identical(subjects(g), ids)
+  expect_error(gds(nifti_source(t = m$files, df = 12, subjects = ids[-1]), format = "nifti"),
+               "Length of `subjects`")
+
+  empty <- withr::local_tempdir()
+  expect_error(fmrigds:::.nifti_open(list(t = empty, df = 10)), "No NIfTI `t` files")
+  expect_error(nifti_source(), "`beta`, `se` or `t`")
+})
+
+test_that("a list of t files is detected as a NIfTI source", {
+  dir <- withr::local_tempdir()
+  m <- .write_t_maps(dir)
+  expect_equal(fmrigds:::.nifti_detect(list(t = m$files, df = 10)), 0.8)
+  expect_false(isTRUE(fmrigds:::.nifti_detect(list(t = file.path(dir, "missing.nii.gz"), df = 10))))
+})
