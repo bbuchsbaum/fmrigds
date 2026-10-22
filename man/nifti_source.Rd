@@ -7,6 +7,8 @@
 nifti_source(
   beta = NULL,
   se = NULL,
+  t = NULL,
+  df = NULL,
   subject = NULL,
   subjects = NULL,
   contrast = NULL,
@@ -19,6 +21,11 @@ nifti_source(
 
 \item{se}{Character vector of NIfTI paths or a directory containing standard error images
 (optional, can be \code{NULL} if only \code{beta} is provided)}
+
+\item{t}{Character vector of NIfTI paths or a directory of t-statistic
+images. Use instead of \code{beta}/\code{se}; requires \code{df}.}
+
+\item{df}{Degrees of freedom of the t maps: one value, or one per \code{t} file.}
 
 \item{subject, subjects}{Optional subject labels. When both \code{beta} and \code{se}
 are supplied, these labels declare that the vectors are already aligned in

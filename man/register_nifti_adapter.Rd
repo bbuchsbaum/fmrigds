@@ -34,6 +34,9 @@ occurring with separators like \verb{_}, \code{.}, or \code{-}.
 \item Named list: pass \verb{list(beta = <paths/dir>, se = <paths/dir>)} to explicitly
 provide the sets. See \code{\link[=nifti_source]{nifti_source()}}. Supplying explicit \code{subjects}
 labels pairs beta/se vectors positionally instead of by filename key.
+\item t-statistic maps: \verb{list(t = <paths/dir>, df = <number or one per subject>)}
+gives the assays \code{t} and \code{df} (df constant over voxels) for t-combination
+reducers. t maps cannot be mixed with beta/se/var maps.
 }
 
 Beta-only NIfTI sources are accepted for raw map workflows. When a realised
