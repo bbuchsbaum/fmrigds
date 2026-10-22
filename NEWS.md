@@ -1,5 +1,10 @@
 # fmrigds (development version)
 
+- `ols:voxelwise` fits every sample with all subjects finite in one matrix
+  step instead of one sample at a time (about 4x faster on 100,000 samples);
+  only samples with missing subjects are refitted individually. Results are
+  unchanged.
+
 - The OpenMP thread count now falls back to `OMP_NUM_THREADS` (first value)
   when neither `options(fmrigds.threads)` nor `FMRIGDS_THREADS` is set, so
   `OMP_NUM_THREADS=1` keeps the package single-threaded. Forked workflows
