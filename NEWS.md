@@ -1,5 +1,10 @@
 # fmrigds (development version)
 
+- The NIfTI adapter reads t-statistic maps: `gds(list(t = files, df = df),
+  format = "nifti")` (or `nifti_source(t = , df = )`) gives the assays `t` and
+  `df` for the `combine:*` reducers. `df` is one value or one per subject and
+  is constant over voxels; t maps cannot be mixed with beta/se/var maps.
+
 - `ols:voxelwise` fits every sample with all subjects finite in one matrix
   step instead of one sample at a time (about 4x faster on 100,000 samples);
   only samples with missing subjects are refitted individually. Results are

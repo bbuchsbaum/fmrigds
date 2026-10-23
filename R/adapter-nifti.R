@@ -19,6 +19,9 @@
 #' - Named list: pass `list(beta = <paths/dir>, se = <paths/dir>)` to explicitly
 #'   provide the sets. See [nifti_source()]. Supplying explicit `subjects`
 #'   labels pairs beta/se vectors positionally instead of by filename key.
+#' - t-statistic maps: `list(t = <paths/dir>, df = <number or one per subject>)`
+#'   gives the assays `t` and `df` (df constant over voxels) for t-combination
+#'   reducers. t maps cannot be mixed with beta/se/var maps.
 #'
 #' Beta-only NIfTI sources are accepted for raw map workflows. When a realised
 #' GDS is materialised from beta maps without standard-error images, the adapter
@@ -72,6 +75,12 @@ register_nifti_adapter <- function() {
     }
     beta_files <- if (!is.null(source$beta)) .nifti_normalise_source(source$beta) else NULL
     se_files <- if (!is.null(source$se)) .nifti_normalise_source(source$se) else NULL
+    t_files <- if (!is.null(source$t)) .nifti_normalise_source(source$t) else NULL
+    t_ok <- !is.null(t_files) &&
+      length(t_files) > 0L &&
+      all(file.exists(t_files)) &&
+      all(grepl("\\.nii(\\.gz)?$", t_files, ignore.case = TRUE))
+    if (t_ok) return(0.8)
     beta_ok <- !is.null(beta_files) &&
       length(beta_files) > 0L &&
       all(file.exists(beta_files)) &&
@@ -113,6 +122,9 @@ register_nifti_adapter <- function() {
     files_beta <- if (!is.null(source$beta)) .nifti_normalise_source(source$beta) else NULL
     files_se <- if (!is.null(source$se)) .nifti_normalise_source(source$se) else NULL
     files_var <- if (!is.null(source$var)) .nifti_normalise_source(source$var) else NULL
+    if (!is.null(source$t)) {
+      return(.nifti_open_t(source, files_beta, files_se, files_var, axis))
+    }
     if (!is.null(files_se) && !is.null(files_var)) {
       stop("Provide either `se` or `var` NIfTI files, not both.", call. = FALSE)
     }
@@ -132,6 +144,34 @@ register_nifti_adapter <- function() {
     return(out)
   }
   stop("Unsupported NIfTI source", call. = FALSE)
+}
+
+# t-statistic maps with their degrees of freedom (`df`: one value, or one per
+# subject in file order). They give the assays "t" and "df" for t-combination
+# reducers; t maps cannot be mixed with beta/se/var maps.
+.nifti_open_t <- function(source, files_beta, files_se, files_var, axis) {
+  if (!is.null(files_beta) || !is.null(files_se) || !is.null(files_var)) {
+    stop("A NIfTI `t` source cannot be combined with `beta`, `se` or `var` files.",
+         call. = FALSE)
+  }
+  files_t <- .nifti_normalise_source(source$t)
+  if (!length(files_t)) stop("No NIfTI `t` files found", call. = FALSE)
+  df <- source$df
+  if (is.null(df)) {
+    stop("A NIfTI `t` source requires `df` (one value or one per subject).", call. = FALSE)
+  }
+  df <- as.numeric(df)
+  if (length(df) == 1L) df <- rep(df, length(files_t))
+  if (length(df) != length(files_t)) {
+    stop("`df` must have length 1 or one value per `t` file (", length(files_t), ").",
+         call. = FALSE)
+  }
+  if (anyNA(df) || any(df <= 0)) stop("`df` must be positive.", call. = FALSE)
+  out <- list(files_t = files_t, df = df, contrasts = axis$contrasts)
+  if (!is.null(axis$subjects)) {
+    out$subjects <- .nifti_validate_subjects(axis$subjects, length(files_t))
+  }
+  out
 }
 
 .nifti_attach_source_metadata <- function(source, dots = list()) {
@@ -198,7 +238,7 @@ register_nifti_adapter <- function() {
 
 .nifti_probe <- function(handle, ...) {
   # Read header using neuroim2
-  files1 <- handle$files_beta %||% handle$files_se
+  files1 <- handle$files_beta %||% handle$files_se %||% handle$files_t
   meta <- neuroim2::read_header(files1[1])
 
   # Get dimensions from metadata
@@ -214,7 +254,7 @@ register_nifti_adapter <- function() {
   # cheap to read, so check them all up front instead of failing (or silently
   # mis-registering voxels) at read time.
   .nifti_check_grids(
-    c(handle$files_beta, handle$files_se, handle$files_var),
+    c(handle$files_beta, handle$files_se, handle$files_var, handle$files_t),
     ref_dims = dim_all,
     ref_affine = neuroim2::trans(meta)
   )
@@ -281,6 +321,7 @@ register_nifti_adapter <- function() {
   if (!is.null(handle$files_beta)) assays_avail <- c(assays_avail, "beta")
   if (!is.null(handle$files_se)) assays_avail <- c(assays_avail, "se")
   if (!is.null(handle$files_beta) && is.null(handle$files_se)) assays_avail <- c(assays_avail, "var")
+  if (!is.null(handle$files_t)) assays_avail <- c(assays_avail, "t", "df")
   synthetic_var <- !is.null(handle$files_beta) && is.null(handle$files_se) && is.null(handle$files_var)
   out <- list(
     assays = assays_avail,
@@ -294,7 +335,8 @@ register_nifti_adapter <- function() {
       source_files = c(
         handle$files_beta %||% character(),
         handle$files_se %||% character(),
-        handle$files_var %||% character()
+        handle$files_var %||% character(),
+        handle$files_t %||% character()
       ),
       # Beta-only sources have no real uncertainty; the `var` assay is a
       # synthetic unit-variance placeholder. Flagged so variance-weighted
@@ -459,7 +501,7 @@ register_nifti_adapter <- function() {
 
   samples_total <- length(mask_idx)
   sample_idx <- if (!is.null(block) && !is.null(block$sample)) block$sample else seq_len(samples_total)
-  n_subjects <- length(handle$files_beta %||% handle$files_se)
+  n_subjects <- length(handle$files_beta %||% handle$files_se %||% handle$files_t)
   out <- list()
   read_stack <- function(file_vec, assay_name) {
     if (length(file_vec) != n_subjects) {
@@ -476,6 +518,11 @@ register_nifti_adapter <- function() {
   for (nm in assays) {
     if (identical(nm, "beta") && !is.null(handle$files_beta)) out$beta <- read_stack(handle$files_beta, "beta")
     if (identical(nm, "se") && !is.null(handle$files_se)) out$se <- read_stack(handle$files_se, "se")
+    if (identical(nm, "t") && !is.null(handle$files_t)) out$t <- read_stack(handle$files_t, "t")
+    if (identical(nm, "df") && !is.null(handle$df)) {
+      out$df <- array(rep(handle$df, each = length(sample_idx)),
+                      dim = c(length(sample_idx), n_subjects, n_contrasts))
+    }
     if (identical(nm, "var") && !is.null(handle$files_var)) {
       out$var <- read_stack(handle$files_var, "var")
     } else if (identical(nm, "var") && !is.null(handle$files_beta) && is.null(handle$files_se)) {
@@ -643,6 +690,9 @@ register_nifti_adapter <- function() {
 #'             (optional, can be `NULL` if only `se` is provided)
 #' @param se   Character vector of NIfTI paths or a directory containing standard error images
 #'             (optional, can be `NULL` if only `beta` is provided)
+#' @param t Character vector of NIfTI paths or a directory of t-statistic
+#'   images. Use instead of `beta`/`se`; requires `df`.
+#' @param df Degrees of freedom of the t maps: one value, or one per `t` file.
 #' @param subject,subjects Optional subject labels. When both `beta` and `se`
 #'   are supplied, these labels declare that the vectors are already aligned in
 #'   matching subject order and bypass filename-key pairing.
@@ -657,14 +707,16 @@ register_nifti_adapter <- function() {
 #' str(src)
 nifti_source <- function(beta = NULL,
                          se = NULL,
+                         t = NULL,
+                         df = NULL,
                          subject = NULL,
                          subjects = NULL,
                          contrast = NULL,
                          contrasts = NULL) {
-  if (is.null(beta) && is.null(se)) {
-    stop("Provide at least one of `beta` or `se`", call. = FALSE)
+  if (is.null(beta) && is.null(se) && is.null(t)) {
+    stop("Provide at least one of `beta`, `se` or `t`", call. = FALSE)
   }
-  source <- list(beta = beta, se = se)
+  source <- if (!is.null(t)) list(t = t, df = df) else list(beta = beta, se = se)
   .nifti_attach_source_metadata(
     source,
     list(subject = subject, subjects = subjects, contrast = contrast, contrasts = contrasts)
