@@ -9,7 +9,7 @@ Uses the neuroim2 package for reading NIfTI files."><link href="../albers.css" r
 
     <a class="navbar-brand me-2" href="../index.html">fmrigds</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.0.9001</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.0.9002</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -64,6 +64,9 @@ occurring with separators like <code>_</code>, <code>.</code>, or <code>-</code>
 <li><p>Named list: pass <code>list(beta = &lt;paths/dir&gt;, se = &lt;paths/dir&gt;)</code> to explicitly
 provide the sets. See <code><a href="nifti_source.html">nifti_source()</a></code>. Supplying explicit <code>subjects</code>
 labels pairs beta/se vectors positionally instead of by filename key.</p></li>
+<li><p>t-statistic maps: <code>list(t = &lt;paths/dir&gt;, df = &lt;number or one per subject&gt;)</code>
+gives the assays <code>t</code> and <code>df</code> (df constant over voxels) for t-combination
+reducers. t maps cannot be mixed with beta/se/var maps.</p></li>
 </ul><p>Beta-only NIfTI sources are accepted for raw map workflows. When a realised
 GDS is materialised from beta maps without standard-error images, the adapter
 creates a synthetic <code>var</code> assay filled with 1 and emits a warning. That

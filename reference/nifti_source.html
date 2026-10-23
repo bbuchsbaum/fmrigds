@@ -15,7 +15,7 @@ uncertainty, and variance-weighted reducers will refuse such a GDS.'><link href=
 
     <a class="navbar-brand me-2" href="../index.html">fmrigds</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.0.9001</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.0.9002</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -55,6 +55,8 @@ uncertainty, and variance-weighted reducers will refuse such a GDS.</p>
     <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">nifti_source</span><span class="op">(</span></span>
 <span>  beta <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  se <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  t <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  df <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  subject <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  subjects <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  contrast <span class="op">=</span> <span class="cn">NULL</span>,</span>
@@ -74,6 +76,15 @@ uncertainty, and variance-weighted reducers will refuse such a GDS.</p>
 <dt id="arg-se">se<a class="anchor" aria-label="anchor" href="#arg-se"></a></dt>
 <dd><p>Character vector of NIfTI paths or a directory containing standard error images
 (optional, can be <code>NULL</code> if only <code>beta</code> is provided)</p></dd>
+
+
+<dt id="arg-t">t<a class="anchor" aria-label="anchor" href="#arg-t"></a></dt>
+<dd><p>Character vector of NIfTI paths or a directory of t-statistic
+images. Use instead of <code>beta</code>/<code>se</code>; requires <code>df</code>.</p></dd>
+
+
+<dt id="arg-df">df<a class="anchor" aria-label="anchor" href="#arg-df"></a></dt>
+<dd><p>Degrees of freedom of the t maps: one value, or one per <code>t</code> file.</p></dd>
 
 
 <dt id="arg-subject-subjects">subject, subjects<a class="anchor" aria-label="anchor" href="#arg-subject-subjects"></a></dt>
