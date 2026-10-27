@@ -1,0 +1,67 @@
+frame-fit: 123456789a..bc
+
+== Failed ======================================================================
+-- 1. Error ('test-frame-fit.R:55:3'): fit_group returns a spatially aligned res
+Error: 'design_spec' is not an exported object from 'namespace:multidesign'
+
+-- 2. Error ('test-frame-fit.R:96:3'): frame fits are invariant to feature block
+Error: 'design_spec' is not an exported object from 'namespace:multidesign'
+
+-- 3. Error ('test-frame-fit.R:113:3'): variance-aware frame fit agrees with met
+Error: 'design_spec' is not an exported object from 'namespace:multidesign'
+Backtrace:
+    x
+ 1. \-fmrigds::fit_group(...) at test-frame-fit.R:113:3
+ 2.   +-fmrigds::compute(...) at upstream/R/frame-fit.R:766:3
+ 3.   | \-base::inherits(x, "fmri_group_plan") at upstream/R/compute.R:21:3
+ 4.   \-fmrigds::group_plan(...)
+ 5.     \-base::inherits(design, "design_spec") at upstream/R/frame-fit.R:391:3
+
+-- 4. Error ('test-frame-fit.R:144:3'): fit_group enforces variance random-effec
+Error: 'design_spec' is not an exported object from 'namespace:multidesign'
+
+-- 5. Error ('test-frame-fit.R:168:3'): fit_group honors synchronized observatio
+Error: 'design_spec' is not an exported object from 'namespace:multidesign'
+Backtrace:
+    x
+ 1. \-fmrigds::fit_group(...) at test-frame-fit.R:168:3
+ 2.   +-fmrigds::compute(...) at upstream/R/frame-fit.R:766:3
+ 3.   \-fmrigds::group_plan(...) at upstream/R/compute.R:21:3
+
+-- 6. Error ('test-frame-fit.R:182:3'): group_plan is metadata-only, serializabl
+Error: 'design_spec' is not an exported object from 'namespace:multidesign'
+Backtrace:
+    x
+ 1. \-fmrigds::group_plan(...) at test-frame-fit.R:182:3
+
+-- 7. Error ('test-frame-fit.R:225:3'): group plans map omitted design rows back
+Error: 'design_spec' is not an exported object from 'namespace:multidesign'
+
+-- 8. Error ('test-frame-fit.R:255:3'): known-variance frame reduction handles m
+Error: 'design_spec' is not an exported object from 'namespace:multidesign'
+Backtrace:
+    x
+ 1. \-fmrigds::fit_group(...) at test-frame-fit.R:255:3
+ 2.   +-fmrigds::compute(...) at upstream/R/frame-fit.R:766:3
+ 3.   \-fmrigds::group_plan(...) at upstream/R/compute.R:21:3
+
+-- 9. Error ('test-frame-fit.R:276:3'): OLS frame reducer agrees with dense lm f
+Error: 'design_spec' is not an exported object from 'namespace:multidesign'
+
+-- 10. Error ('test-frame-fit.R:327:3'): OLS frame plans ignore an unused varian
+Error: 'design_spec' is not an exported object from 'namespace:multidesign'
+Backtrace:
+    x
+ 1. \-fmrigds::group_plan(...) at test-frame-fit.R:327:3
+  ... and 2 more
+
+
+Maximum number of 10 failures reached, some test results may be missing.
+
+== DONE ========================================================================
+Don't worry, you'll get it.
+Error:
+! Test failures.
+Warning message:
+package 'testthat' was built under R version 4.5.2 
+Execution halted

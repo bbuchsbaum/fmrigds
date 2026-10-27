@@ -28,7 +28,19 @@
   colSums(is.finite(beta) & is.finite(var) & var > 0)
 }
 
-.colwise_fe <- function(beta, var, eps = 1e-12, alternative = "two.sided", min_subj = 1L) {
+.check_meta_floor <- function(beta, var, eps) {
+  if (!is.numeric(eps) || length(eps) != 1L || !is.finite(eps) || eps < 0) {
+    stop("eps must be a finite nonnegative variance floor", call. = FALSE)
+  }
+  if (eps == 0) return(invisible(NULL))
+  if (any(is.finite(beta) & is.finite(var) & var > 0 & var < eps)) {
+    warning("Explicit eps variance floor applied; inference depends on measurement units", call. = FALSE)
+  }
+  invisible(NULL)
+}
+
+.colwise_fe <- function(beta, var, eps = 0, alternative = "two.sided", min_subj = 1L) {
+  .check_meta_floor(beta, var, eps)
   ok <- is.finite(beta) & is.finite(var) & var > 0
   beta_ok <- beta
   beta_ok[!ok] <- NA_real_
@@ -57,7 +69,8 @@
   out
 }
 
-.colwise_tau2_dl <- function(beta, var, eps = 1e-12) {
+.colwise_tau2_dl <- function(beta, var, eps = 0) {
+  .check_meta_floor(beta, var, eps)
   ok <- is.finite(beta) & is.finite(var) & var > 0
   beta_ok <- beta
   beta_ok[!ok] <- NA_real_
@@ -69,11 +82,11 @@
   Q <- colSums(w * (beta_ok - rep(mu_fe, each = nrow(beta)))^2, na.rm = TRUE)
   k <- colSums(ok)
   C <- sw - colSums(w^2, na.rm = TRUE) / sw
-  pmax(0, (Q - (k - 1)) / pmax(C, .Machine$double.eps))
+  ifelse(Q <= k - 1, 0, ifelse(C > 0, (Q - (k - 1)) / C, NA_real_))
 }
 
 core_meta_fe_kernel <- function(beta, var, X = NULL, df = NULL, opts = list()) {
-  eps <- opts$eps %||% 1e-12
+  eps <- opts$eps %||% 0
   alt <- opts$alternative %||% "two.sided"
   min_subj <- opts$min_subjects %||% 2L
   tail <- if (identical(alt, "less")) 1L else if (identical(alt, "greater")) 2L else 0L
@@ -88,7 +101,7 @@ core_meta_fe_kernel <- function(beta, var, X = NULL, df = NULL, opts = list()) {
 }
 
 core_meta_re_dl_kernel <- function(beta, var, X = NULL, df = NULL, opts = list()) {
-  eps <- opts$eps %||% 1e-12
+  eps <- opts$eps %||% 0
   alt <- opts$alternative %||% "two.sided"
   min_subj <- opts$min_subjects %||% 2L
   tail <- if (identical(alt, "less")) 1L else if (identical(alt, "greater")) 2L else 0L
@@ -148,8 +161,9 @@ core_meta_re_dl_kernel <- function(beta, var, X = NULL, df = NULL, opts = list()
                               var,
                               X,
                               min_subj = 2L,
-                              eps = 1e-12) {
+                              eps = 0) {
   .validate_meta_reg_inputs(beta, var, X)
+  .check_meta_floor(beta, var, eps)
 
   n_sample <- ncol(beta)
   n_coef <- ncol(X)
@@ -217,7 +231,7 @@ core_meta_re_reg_dl_kernel <- function(beta,
   }
   .validate_meta_reg_inputs(beta, var, X)
   min_subj <- opts$min_subjects %||% 2L
-  eps <- opts$eps %||% 1e-12
+  eps <- opts$eps %||% 0
   if (exists("meta_re_reg_dl_cpp", mode = "function")) { # nocov start
     meta_re_reg_dl_cpp(beta, var, X, min_subj = min_subj, eps = eps)
   } else {
@@ -561,7 +575,8 @@ register_core_reducers <- function() {
     name = "meta:fe_reg",
     fun = function(beta, var, X, z, p, df, df1, df2, opts) {
       if (is.null(X)) stop("meta:fe_reg requires X (subjects x p) in options$X", call. = FALSE)
-      eps <- opts$eps %||% 1e-12
+      eps <- opts$eps %||% 0
+      .check_meta_floor(beta, var, eps)
       S <- nrow(beta); B <- ncol(beta); pcols <- ncol(X)
       required <- max(as.integer(opts$min_subjects %||% 2L), pcols + 1L)
       coef <- matrix(NA_real_, pcols, B)

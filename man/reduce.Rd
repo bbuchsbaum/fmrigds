@@ -39,6 +39,10 @@ unweighted and evidence-combining reducers (e.g. \code{"ols:voxelwise"},
 \code{tau2 = NULL}, \code{custom_weights}, or for restricted LMM reducers
 \code{list(fit = "REML", theta_mode = "pooled")} plus
 \code{list(slope = "time", covariance = "diag")} for \code{"lmm:ri_slope1"}.
+Meta-analysis and meta-regression use finite, strictly positive variances
+without flooring by default (\code{eps = 0}). An explicit positive \code{eps} floors
+those variances in squared effect units and warns when applied. This is
+regularization: rescale \code{eps} with the variances when converting units.
 
 Note: Current grouping is per-contrast. Values other than "contrast" are
 not interpreted yet; future versions may extend grouping to other
@@ -128,14 +132,15 @@ in both the R and compiled kernels, which front ends may rely on:
 \item a subject enters a sample only if its effect and variance are finite and
 the variance is strictly positive (zero, negative, \code{NA} and infinite
 variances exclude that subject for that sample);
-\item a positive variance below \code{eps = 1e-12} is floored to \code{eps} before
-weighting, i.e. the weight is \code{1 / max(var, eps)} and never exceeds
-\code{1e12} (random-effects weights are \code{1 / (max(var, eps) + tau2)}).
+\item by default (\code{eps = 0}), positive variances are used without flooring,
+preserving inference under a change of measurement units.
 }
 
-\code{options = list(eps = ...)} overrides the floor. Rescale effects whose
-sampling variances are legitimately below \code{1e-12}, since the floor would
-otherwise equalise their weights.
+\code{options = list(eps = ...)} opts into a nonnegative floor in squared effect
+units: weights are \code{1 / max(var, eps)} (or
+\code{1 / (max(var, eps) + tau2)} for random effects). A warning is emitted when
+the floor is applied. When converting units, scale an explicit \code{eps} with
+the variances to preserve the same regularization.
 }
 
 \section{Output assays}{

@@ -9,7 +9,9 @@ harmonise_contrasts(g, map)
 \arguments{
 \item{g}{A realised GDS}
 
-\item{map}{Named character vector mapping old -> new contrast names}
+\item{map}{Named character vector mapping old -> new contrast names
+(unique, nonempty source names and nonempty destination names). The full
+resulting contrast axis must be unique; renaming does not aggregate data.}
 }
 \value{
 Updated GDS with renamed contrasts

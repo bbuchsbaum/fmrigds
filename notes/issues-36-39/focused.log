@@ -1,0 +1,68 @@
+v | F W  S  OK | Context
+
+/ |          0 | align                                                          
+- |          5 | align                                                          
+| |          7 | align                                                          
+v |          7 | align
+
+/ |          0 | compat                                                         
+v |          9 | compat
+
+/ |          0 | derive-stats-extra                                             
+v |         36 | derive-stats-extra
+
+/ |          0 | derive-stats                                                   
+v |          8 | derive-stats
+
+/ |          0 | issues-36-39                                                   
+- |          5 | issues-36-39                                                   
+/ |         56 | issues-36-39                                                   
+\ | 1      113 | issues-36-39                                                   
+- | 1      168 | issues-36-39                                                   
+\ | 1      177 | issues-36-39                                                   
+\ | 1      201 | issues-36-39                                                   
+x | 1      230 | issues-36-39
+--------------------------------------------------------------------------------
+Error ('test-issues-36-39.R:71:5'): #38 contrast renaming rejects collisions and preserves metadata
+<getvarError/missingArgError/error/condition>
+Error in `subset.default(out, contrast = contrasts(out)[2])`: argument "subset" is missing, with no default
+Backtrace:
+    x
+ 1. +-fmrigds::compute(subset(out, contrast = contrasts(out)[2])) at test-issues-36-39.R:71:5
+ 2. | \-fmrigds::as_plan(x) at source/R/compute.R:22:3
+ 3. +-base::subset(out, contrast = contrasts(out)[2]) at source/R/compute.R:22:3
+ 4. \-base::subset.default(out, contrast = contrasts(out)[2])
+--------------------------------------------------------------------------------
+
+/ |          0 | map                                                            
+v |          8 | map
+
+/ |          0 | propagate-variance                                             
+v |          4 | propagate-variance
+
+/ |          0 | reduce-regression                                              
+v |         13 | reduce-regression
+
+/ |          0 | reducer-kernels                                                
+v |         34 | reducer-kernels
+
+== Results =====================================================================
+Duration: 1.4 s
+
+-- Failed tests ----------------------------------------------------------------
+Error ('test-issues-36-39.R:71:5'): #38 contrast renaming rejects collisions and preserves metadata
+<getvarError/missingArgError/error/condition>
+Error in `subset.default(out, contrast = contrasts(out)[2])`: argument "subset" is missing, with no default
+Backtrace:
+    x
+ 1. +-fmrigds::compute(subset(out, contrast = contrasts(out)[2])) at test-issues-36-39.R:71:5
+ 2. | \-fmrigds::as_plan(x) at source/R/compute.R:22:3
+ 3. +-base::subset(out, contrast = contrasts(out)[2]) at source/R/compute.R:22:3
+ 4. \-base::subset.default(out, contrast = contrasts(out)[2])
+
+[ FAIL 1 | WARN 0 | SKIP 0 | PASS 349 ]
+Error:
+! Test failures.
+Warning message:
+package 'testthat' was built under R version 4.5.2 
+Execution halted

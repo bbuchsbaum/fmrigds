@@ -47,6 +47,10 @@
 #'   `tau2 = NULL`, `custom_weights`, or for restricted LMM reducers
 #'   `list(fit = "REML", theta_mode = "pooled")` plus
 #'   `list(slope = "time", covariance = "diag")` for `"lmm:ri_slope1"`.
+#'   Meta-analysis and meta-regression use finite, strictly positive variances
+#'   without flooring by default (`eps = 0`). An explicit positive `eps` floors
+#'   those variances in squared effect units and warns when applied. This is
+#'   regularization: rescale `eps` with the variances when converting units.
 #'
 #' Note: Current grouping is per-contrast. Values other than "contrast" are
 #' not interpreted yet; future versions may extend grouping to other
@@ -91,13 +95,14 @@
 #' - a subject enters a sample only if its effect and variance are finite and
 #'   the variance is strictly positive (zero, negative, `NA` and infinite
 #'   variances exclude that subject for that sample);
-#' - a positive variance below `eps = 1e-12` is floored to `eps` before
-#'   weighting, i.e. the weight is `1 / max(var, eps)` and never exceeds
-#'   `1e12` (random-effects weights are `1 / (max(var, eps) + tau2)`).
+#' - by default (`eps = 0`), positive variances are used without flooring,
+#'   preserving inference under a change of measurement units.
 #'
-#' `options = list(eps = ...)` overrides the floor. Rescale effects whose
-#' sampling variances are legitimately below `1e-12`, since the floor would
-#' otherwise equalise their weights.
+#' `options = list(eps = ...)` opts into a nonnegative floor in squared effect
+#' units: weights are `1 / max(var, eps)` (or
+#' `1 / (max(var, eps) + tau2)` for random effects). A warning is emitted when
+#' the floor is applied. When converting units, scale an explicit `eps` with
+#' the variances to preserve the same regularization.
 #'
 #' @section Output assays:
 #' Reducers collapse the subject axis and write group-level assays (named on the

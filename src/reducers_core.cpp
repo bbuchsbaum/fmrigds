@@ -14,6 +14,19 @@ using arma::uword;
 
 inline bool finite_(double x) { return std::isfinite(x); }
 
+// eps is an opt-in floor in squared effect units, never a numerical default.
+inline void check_meta_floor(const arma::mat& beta, const arma::mat& var, double eps) {
+  if (!finite_(eps) || eps < 0.0)
+    Rcpp::stop("eps must be a finite nonnegative variance floor");
+  if (eps == 0.0) return;
+  for (uword i = 0; i < var.n_elem; ++i) {
+    if (finite_(beta[i]) && finite_(var[i]) && var[i] > 0.0 && var[i] < eps) {
+      Rcpp::warning("Explicit eps variance floor applied; inference depends on measurement units");
+      break;
+    }
+  }
+}
+
 // Runtime control of OpenMP threads.
 //
 // This is called from .onLoad, where the Rcpp namespace may not be loaded yet.
@@ -40,8 +53,9 @@ void set_omp_threads(SEXP n) {
 // [[Rcpp::export]]
 Rcpp::List meta_fe_cpp(const arma::mat& beta, const arma::mat& var,
                        const int min_subj = 2,
-                       const double eps = 1e-12,
+                       const double eps = 0,
                        const int tail = 0) {
+  check_meta_floor(beta, var, eps);
   const uword S = beta.n_rows;
   const uword B = beta.n_cols;
   NumericVector mu(B), var_mu(B), se_mu(B), z(B), p(B), Q(B), I2(B);
@@ -80,7 +94,7 @@ Rcpp::List meta_fe_cpp(const arma::mat& beta, const arma::mat& var,
         Qb += w * r * r;
       }
     }
-    double I2b = (Qb > eps) ? std::max(0.0, (Qb - (k - 1.0)) / Qb) : 0.0;
+    double I2b = (Qb > 0.0) ? std::max(0.0, (Qb - (k - 1.0)) / Qb) : 0.0;
     double zb = (se_b > 0.0) ? (mu_b / se_b) : NA_REAL;
     double pb = NA_REAL;
     if (finite_(zb)) {
@@ -114,8 +128,9 @@ Rcpp::List meta_fe_cpp(const arma::mat& beta, const arma::mat& var,
 // [[Rcpp::export]]
 Rcpp::List meta_re_dl_cpp(const arma::mat& beta, const arma::mat& var,
                           const int min_subj = 2,
-                          const double eps = 1e-12,
+                          const double eps = 0,
                           const int tail = 0) {
+  check_meta_floor(beta, var, eps);
   const uword S = beta.n_rows;
   const uword B = beta.n_cols;
   NumericVector mu(B), var_mu(B), se_mu(B), z(B), p(B), Q(B), I2(B), tau2(B);
@@ -152,7 +167,8 @@ Rcpp::List meta_re_dl_cpp(const arma::mat& beta, const arma::mat& var,
       }
     }
     double C = sw - (sum_w2 / sw);
-    double t2 = std::max(0.0, (Qb - (k - 1.0)) / std::max(C, eps));
+    double t2 = (Qb <= k - 1.0) ? 0.0 :
+      ((C > 0.0) ? (Qb - (k - 1.0)) / C : NA_REAL);
 
     double sws = 0.0, wys = 0.0;
     for (uword i = 0; i < S; ++i) {
@@ -171,7 +187,7 @@ Rcpp::List meta_re_dl_cpp(const arma::mat& beta, const arma::mat& var,
     double var_re = 1.0 / sws;
     double se_re  = std::sqrt(var_re);
 
-    double I2b = (Qb > eps) ? std::max(0.0, (Qb - (k - 1.0)) / Qb) : 0.0;
+    double I2b = (Qb > 0.0) ? std::max(0.0, (Qb - (k - 1.0)) / Qb) : 0.0;
 
     double zb = (se_re > 0.0) ? (mu_re / se_re) : NA_REAL;
     double pb = NA_REAL;
@@ -209,7 +225,8 @@ Rcpp::List meta_re_dl_cpp(const arma::mat& beta, const arma::mat& var,
 Rcpp::List meta_fe_reg_cpp(const arma::mat& beta, const arma::mat& var,
                            const arma::mat& X,
                            const int min_subj = 2,
-                           const double eps = 1e-12) {
+                           const double eps = 0) {
+  check_meta_floor(beta, var, eps);
   const uword S = beta.n_rows;
   const uword B = beta.n_cols;
   const uword p = X.n_cols;
@@ -274,7 +291,8 @@ Rcpp::List meta_fe_reg_cpp(const arma::mat& beta, const arma::mat& var,
 Rcpp::List meta_re_reg_dl_cpp(const arma::mat& beta, const arma::mat& var,
                               const arma::mat& X,
                               const int min_subj = 2,
-                              const double eps = 1e-12) {
+                              const double eps = 0) {
+  check_meta_floor(beta, var, eps);
   const uword S = beta.n_rows;
   const uword B = beta.n_cols;
   const uword p = X.n_cols;

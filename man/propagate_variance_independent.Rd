@@ -19,4 +19,9 @@ List with \code{beta} and \code{var} arrays in target space
 \description{
 Propagate variance assuming independent samples
 }
+\details{
+Only nonzero coefficients contribute to a target. Missing values
+outside that support are ignored; missing contributors remain missing.
+An all-zero row yields zero effect and variance.
+}
 \keyword{internal}

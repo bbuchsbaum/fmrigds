@@ -1,5 +1,12 @@
 # fmrigds (development version)
 
+- Mapping ignores missing sources outside a target's nonzero support (#36).
+  Default voxel compatibility now checks affines (#37), and contrast renaming
+  rejects collisions while preserving contrast metadata (#38).
+- Inverse-variance meta-analysis and meta-regression now default to `eps = 0`,
+  preserving inference under measurement-unit rescaling (#39). Positive
+  `eps` remains an explicit regularization option and warns when applied.
+
 - The NIfTI adapter reads t-statistic maps: `gds(list(t = files, df = df),
   format = "nifti")` (or `nifti_source(t = , df = )`) gives the assays `t` and
   `df` for the `combine:*` reducers. `df` is one value or one per subject and

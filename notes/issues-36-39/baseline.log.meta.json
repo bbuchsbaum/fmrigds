@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "started_utc": "2026-10-27T12:20:10.029183+00:00",
+  "finished_utc": "2026-10-27T12:20:18.872152+00:00",
+  "duration_seconds": 8.842877,
+  "command": [
+    "env",
+    "LC_ALL=C",
+    "Rscript",
+    "--vanilla",
+    "scripts/repro-issues-36-39.R",
+    "/var/folders/9h/nkjq6vss7mqdl4ck7q1hd8ph0000gp/T/fmrigds-issues-36-39-ogw1n8fb/source"
+  ],
+  "cwd": "/Users/bbuchsbaum/code/fmrigds",
+  "log": "/var/folders/9h/nkjq6vss7mqdl4ck7q1hd8ph0000gp/T/fmrigds-issues-36-39-ogw1n8fb/baseline.log",
+  "exit_code": 0,
+  "child_returncode": 0,
+  "reason": "exited",
+  "detail": null,
+  "timeout_seconds": 300.0,
+  "log_bytes": 1591
+}

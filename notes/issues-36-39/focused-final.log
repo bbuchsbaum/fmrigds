@@ -1,0 +1,45 @@
+v | F W  S  OK | Context
+
+/ |          0 | align                                                          
+- |          5 | align                                                          
+| |          7 | align                                                          
+v |          7 | align
+
+/ |          0 | compat                                                         
+v |          9 | compat
+
+/ |          0 | derive-stats-extra                                             
+\ |         22 | derive-stats-extra                                             
+v |         36 | derive-stats-extra
+
+/ |          0 | derive-stats                                                   
+v |          8 | derive-stats
+
+/ |          0 | issues-36-39                                                   
+- |          5 | issues-36-39                                                   
+| |         51 | issues-36-39                                                   
+/ |         96 | issues-36-39                                                   
+- |        145 | issues-36-39                                                   
+\ |        194 | issues-36-39                                                   
+| |        203 | issues-36-39                                                   
+- |        249 | issues-36-39                                                   
+v |        249 | issues-36-39
+
+/ |          0 | map                                                            
+v |          8 | map
+
+/ |          0 | propagate-variance                                             
+v |          4 | propagate-variance
+
+/ |          0 | reduce-regression                                              
+v |         13 | reduce-regression
+
+/ |          0 | reducer-kernels                                                
+v |         34 | reducer-kernels
+
+== Results =====================================================================
+Duration: 1.8 s
+
+[ FAIL 0 | WARN 0 | SKIP 0 | PASS 368 ]
+Warning message:
+package 'testthat' was built under R version 4.5.2 

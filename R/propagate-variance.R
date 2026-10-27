@@ -7,6 +7,9 @@
 #' @param var Variance array (same dims as beta)
 #'
 #' @return List with `beta` and `var` arrays in target space
+#' @details Only nonzero coefficients contribute to a target. Missing values
+#'   outside that support are ignored; missing contributors remain missing.
+#'   An all-zero row yields zero effect and variance.
 #' @keywords internal
 propagate_variance_independent <- function(M, beta, var) {
   stopifnot(is.array(beta), is.array(var), identical(dim(beta), dim(var)))
@@ -21,11 +24,20 @@ propagate_variance_independent <- function(M, beta, var) {
   beta_out <- array(NA_real_, dim = c(n_target, dims[2], dims[3]))
   var_out <- array(NA_real_, dim = c(n_target, dims[2], dims[3]))
   M2 <- M^2
+  support <- lapply(seq_len(n_target), function(i) which(M[i, ] != 0))
+  multiply <- function(weights, values) {
+    # Keep the dense fast path for fully observed input.
+    if (all(is.finite(values))) return(as.vector(weights %*% values))
+    vapply(seq_len(n_target), function(i) {
+      idx <- support[[i]]
+      sum(weights[i, idx] * values[idx])
+    }, numeric(1))
+  }
 
   for (j in seq_len(dims[2])) {
     for (k in seq_len(dims[3])) {
-      beta_out[, j, k] <- M %*% beta[, j, k]
-      var_out[, j, k] <- M2 %*% var[, j, k]
+      beta_out[, j, k] <- multiply(M, beta[, j, k])
+      var_out[, j, k] <- multiply(M2, var[, j, k])
     }
   }
 

@@ -4,14 +4,20 @@
 \alias{assert_compatible_spaces}
 \title{Assert compatibility between two spaces}
 \usage{
-assert_compatible_spaces(g1, g2, fields = c("type", "dim", "template_id"))
+assert_compatible_spaces(
+  g1,
+  g2,
+  fields = c("type", "dim", "affine", "template_id")
+)
 }
 \arguments{
 \item{g1}{First GDS or space}
 
 \item{g2}{Second GDS or space}
 
-\item{fields}{Fields to compare (subset of c("type","dim","template_id"))}
+\item{fields}{Fields to compare exactly. By default, compares type, voxel
+dimensions and affine, and available identity metadata. An explicit list
+overrides these defaults and can request a weaker metadata-only check.}
 }
 \value{
 TRUE if compatible; otherwise errors

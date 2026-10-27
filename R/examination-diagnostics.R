@@ -34,7 +34,7 @@
   # Eligibility mirrors core_meta_fe_kernel(): `min_subjects` contributing
   # subjects and an `eps` floor on sampling variances.
   min_obs <- .diagnostic_min_subjects(opts)
-  eps <- opts$eps %||% 1e-12
+  eps <- opts$eps %||% 0
   contributed <- matrix(FALSE, n_subject, n_sample)
 
   for (b in seq_len(n_sample)) {
@@ -152,7 +152,7 @@
   n_weight <- max_weight_fraction <- sign_agreement <- rep(NA_real_, n_sample)
   df_res <- rep(NA_real_, n_sample)
 
-  eps <- opts$eps %||% 1e-12
+  eps <- opts$eps %||% 0
   contributed <- matrix(FALSE, n_subject, n_sample)
   for (b in seq_len(n_sample)) {
     y <- beta[, b]

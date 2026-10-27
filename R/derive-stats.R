@@ -121,7 +121,7 @@ aggregate_df_satterthwaite <- function(M, var_source, df_source) {
         df <- df_source[idx, j, k]
         numerator <- (sum((w^2) * s2))^2
         denominator <- sum((w^4) * (s2^2) / df)
-        df_out[i, j, k] <- if (denominator > 0) numerator / denominator else Inf
+        df_out[i, j, k] <- if (is.na(denominator)) NA_real_ else if (denominator > 0) numerator / denominator else Inf
       }
     }
   }

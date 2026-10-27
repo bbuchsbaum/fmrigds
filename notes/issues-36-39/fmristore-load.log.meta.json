@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "started_utc": "2026-10-27T12:25:09.839163+00:00",
+  "finished_utc": "2026-10-27T12:25:11.239160+00:00",
+  "duration_seconds": 1.399937,
+  "command": [
+    "env",
+    "LC_ALL=C",
+    "Rscript",
+    "--vanilla",
+    "-e",
+    "cat(\"Loading fmristore without fmrigds\\n\"); loadNamespace(\"fmristore\")"
+  ],
+  "cwd": "/Users/bbuchsbaum/code/fmrigds",
+  "log": "/var/folders/9h/nkjq6vss7mqdl4ck7q1hd8ph0000gp/T/fmrigds-issues-36-39-ogw1n8fb/fmristore-load.log",
+  "exit_code": 134,
+  "child_returncode": -6,
+  "reason": "signaled",
+  "detail": null,
+  "timeout_seconds": 60.0,
+  "log_bytes": 34
+}

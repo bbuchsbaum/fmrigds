@@ -1,0 +1,20 @@
+frame-gds-projection: ..................................1.........
+
+== Failed ======================================================================
+-- 1. Error ('test-frame-gds-projection.R:203:3'): group result frames project t
+Error: 'design_spec' is not an exported object from 'namespace:multidesign'
+Backtrace:
+    x
+ 1. \-fmrigds::fit_group(...) at test-frame-gds-projection.R:203:3
+ 2.   +-fmrigds::compute(...) at upstream/R/frame-fit.R:766:3
+ 3.   | \-base::inherits(x, "fmri_group_plan") at upstream/R/compute.R:21:3
+ 4.   \-fmrigds::group_plan(...)
+ 5.     \-base::inherits(design, "design_spec") at upstream/R/frame-fit.R:391:3
+
+== DONE ========================================================================
+No one gets it right on their first try
+Error:
+! Test failures.
+Warning message:
+package 'testthat' was built under R version 4.5.2 
+Execution halted

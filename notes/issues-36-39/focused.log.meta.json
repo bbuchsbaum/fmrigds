@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "started_utc": "2026-10-27T12:23:05.865811+00:00",
+  "finished_utc": "2026-10-27T12:23:13.090582+00:00",
+  "duration_seconds": 7.224669,
+  "command": [
+    "env",
+    "LC_ALL=C",
+    "Rscript",
+    "--vanilla",
+    "-e",
+    "testthat::test_local(commandArgs(TRUE)[1], filter=\"issues-36-39|compat|propagate-variance|derive-stats|map$|align$|reducer-kernels|reduce-regression\", stop_on_failure=TRUE)",
+    "/var/folders/9h/nkjq6vss7mqdl4ck7q1hd8ph0000gp/T/fmrigds-issues-36-39-ogw1n8fb/source"
+  ],
+  "cwd": "/Users/bbuchsbaum/code/fmrigds",
+  "log": "/var/folders/9h/nkjq6vss7mqdl4ck7q1hd8ph0000gp/T/fmrigds-issues-36-39-ogw1n8fb/focused.log",
+  "exit_code": 1,
+  "child_returncode": 1,
+  "reason": "exited",
+  "detail": null,
+  "timeout_seconds": 300.0,
+  "log_bytes": 3298
+}

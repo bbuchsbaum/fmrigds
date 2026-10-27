@@ -29,19 +29,19 @@ set_omp_threads <- function(n) {
     invisible(.Call(`_fmrigds_set_omp_threads`, n))
 }
 
-meta_fe_cpp <- function(beta, var, min_subj = 2L, eps = 1e-12, tail = 0L) {
+meta_fe_cpp <- function(beta, var, min_subj = 2L, eps = 0, tail = 0L) {
     .Call(`_fmrigds_meta_fe_cpp`, beta, var, min_subj, eps, tail)
 }
 
-meta_re_dl_cpp <- function(beta, var, min_subj = 2L, eps = 1e-12, tail = 0L) {
+meta_re_dl_cpp <- function(beta, var, min_subj = 2L, eps = 0, tail = 0L) {
     .Call(`_fmrigds_meta_re_dl_cpp`, beta, var, min_subj, eps, tail)
 }
 
-meta_fe_reg_cpp <- function(beta, var, X, min_subj = 2L, eps = 1e-12) {
+meta_fe_reg_cpp <- function(beta, var, X, min_subj = 2L, eps = 0) {
     .Call(`_fmrigds_meta_fe_reg_cpp`, beta, var, X, min_subj, eps)
 }
 
-meta_re_reg_dl_cpp <- function(beta, var, X, min_subj = 2L, eps = 1e-12) {
+meta_re_reg_dl_cpp <- function(beta, var, X, min_subj = 2L, eps = 0) {
     .Call(`_fmrigds_meta_re_reg_dl_cpp`, beta, var, X, min_subj, eps)
 }
 

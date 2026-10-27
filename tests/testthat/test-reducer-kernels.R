@@ -110,7 +110,10 @@ test_that("meta-analysis kernels respect eps parameter", {
   var <- matrix(rep(1e-20, 4), nrow = 4, ncol = 1)
 
   # Should not crash with small eps
-  result <- core_meta_fe_kernel(beta, var, opts = list(eps = 1e-12))
+  expect_warning(
+    result <- core_meta_fe_kernel(beta, var, opts = list(eps = 1e-12)),
+    "Explicit eps variance floor applied"
+  )
   expect_true(is.finite(result$beta_g[1]))
 })
 

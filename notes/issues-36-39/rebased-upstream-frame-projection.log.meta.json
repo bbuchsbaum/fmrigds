@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "started_utc": "2026-10-27T12:34:21.846053+00:00",
+  "finished_utc": "2026-10-27T12:34:24.016927+00:00",
+  "duration_seconds": 2.170839,
+  "command": [
+    "env",
+    "LC_ALL=C",
+    "RGL_USE_NULL=true",
+    "Rscript",
+    "--vanilla",
+    "-e",
+    "options(rgl.useNULL=TRUE); testthat::test_local(commandArgs(TRUE)[1], filter=\"frame-gds-projection\", reporter=\"summary\", stop_on_failure=TRUE)",
+    "/var/folders/9h/nkjq6vss7mqdl4ck7q1hd8ph0000gp/T/fmrigds-issues-36-39-rebased-t2hgv0o3/upstream"
+  ],
+  "cwd": "/Users/bbuchsbaum/code/fmrigds",
+  "log": "/var/folders/9h/nkjq6vss7mqdl4ck7q1hd8ph0000gp/T/fmrigds-issues-36-39-rebased-t2hgv0o3/upstream-frame-projection.log",
+  "exit_code": 1,
+  "child_returncode": 1,
+  "reason": "exited",
+  "detail": null,
+  "timeout_seconds": 60.0,
+  "log_bytes": 873
+}
