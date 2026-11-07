@@ -11,7 +11,7 @@
 #
 # Each dataset: 20 subject maps of Gaussian noise on a 30 x 30 x 20 grid,
 # smoothed with sigma = 1.5 voxels (FWHM ~ 3.5 voxels), mean zero
-# everywhere, restricted to an ellipsoid mask (~9,900 voxels). A dataset
+# everywhere, restricted to an ellipsoid mask (7,208 voxels). A dataset
 # commits a family-wise error at level alpha when any voxel has corrected
 # p <= alpha. Cluster-forming threshold: one-tailed p = 0.01.
 suppressPackageStartupMessages(library(fmrigds))
