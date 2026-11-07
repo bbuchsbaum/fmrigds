@@ -61,14 +61,70 @@ Gaussian responses only, and no general random-effects formula grammar.
 Permutation reducer contract:
 \itemize{
 \item \code{"perm:onesample"} performs an unweighted one-sample sign-flip t test
-for each sample and contrast.
+for each sample and contrast. It does not accept subject weights: omit
+\code{weights} or pass \code{weights = "equal"}; an explicit \code{"1/var"}, \code{"n_eff"} or
+\code{"custom"} is refused rather than silently ignored (#21).
 \item \code{"perm:twosample"} performs an unweighted two-sample label-permutation
 t test. It can infer the tested two-level group column from \code{formula}
 and \code{col_data}, or use \code{options$group} directly.
 \item Common options include \code{n_perm}, \code{seed}, \code{alternative}, and for
 \code{"perm:twosample"} \code{variance = "welch"} or \code{"pooled"}.
 \item Outputs include \code{t_g}, parametric \code{p_g}, permutation \code{p_perm}, and
-max-|t| family-wise \code{p_fwer}.
+max-statistic family-wise \code{p_fwer}. The maximum is taken in the direction
+of \code{alternative} (max t for \code{"greater"}, max -t for \code{"less"}, max |t| for
+\code{"two.sided"}), so \code{p_fwer >= p_perm} always holds (#22).
+}
+
+Spatial (TFCE and cluster) inference with \code{"perm:onesample"}:
+\itemize{
+\item On a voxel space (\code{\link[=space_voxel]{space_voxel()}}), \code{options$spatial = "tfce"},
+\code{"cluster"} or \code{c("tfce", "cluster")} adds whole-brain family-wise
+inference from the same subject-level sign flips. Every null
+distribution (max-T, max-TFCE, largest cluster mass and extent) comes from
+one sign matrix in one pass, so the corrected maps are mutually
+consistent. Each sign flip multiplies a whole subject map by +1 or -1,
+preserving its spatial correlation (unlike voxel-wise sign flipping).
+\item The spatial statistic is the z-equivalent of each voxel's t
+(\code{options$spatial_stat = "z"}, the default; same one-tail probability
+with df = n - 1, so voxels with different subject counts are on one
+scale) or the t statistic itself (\code{"t"}, as in FSL randomise).
+\item TFCE: \code{tfce_H} (default 2), \code{tfce_E} (0.5) and \code{tfce_dh} (0.1); the
+integral is evaluated at heights \verb{dh, 2 dh, ...} up to the map maximum,
+exactly as in \code{\link[neurothresh:tfce_transform]{neurothresh::tfce_transform()}}.
+\item Clusters: the cluster-forming threshold is \code{options$cluster_threshold} on
+the scale of the spatial statistic, or \code{options$cluster_p} (default
+0.001), a one-tailed p converted with that scale (\code{qnorm} for z, \code{qt} with
+df = n_subjects - 1 for t). Clusters are tested by excess mass, the sum of
+\code{stat - threshold} over the cluster (\code{cluster_stat = "mass"}, default),
+or by extent (\code{"extent"}).
+\item \code{options$connectivity} is 6 (default), 18 or 26 (26 is FSL's choice).
+\item Tails: \code{"greater"} uses positive clusters/TFCE, \code{"less"} negative ones,
+\code{"two.sided"} both; the two-sided null takes each permutation's maximum
+over both tails.
+\item Missing data: subjects with non-finite values are dropped voxel by voxel.
+A voxel with fewer than \code{options$min_subjects} (default 2) finite
+subjects, or zero variance, has no statistic: it is excluded from the
+mask for TFCE and clustering (it never exceeds a threshold and does not
+connect its neighbours), and its spatial assays are \code{NA}.
+\item p-values are \verb{(1 + #\{null >= observed\}) / (1 + n_null)}; the observed
+(all +1) sign vector is never part of the null. With generated signs,
+\code{n_perm} null flips are drawn; a user-supplied \code{options$signs} whose first
+row is all +1 has that row excluded.
+\item \code{options$threads} sets the OpenMP team for this call (default: the
+package setting, see \code{options(fmrigds.threads)} / \code{FMRIGDS_THREADS} /
+\code{OMP_NUM_THREADS}). Results do not depend on the thread count.
+\item Extra assays: \code{z_g} (z-equivalent of \code{t_g}), \code{n_eff} (finite subjects),
+and with \code{"tfce"} \code{tfce} (TFCE score in the tested tail, signed like
+\code{t_g}) and \code{p_tfce_fwer}; with \code{"cluster"} \code{cluster_id} (0 outside
+clusters; clusters numbered by decreasing mass) and \code{p_cluster_fwer}
+(the cluster's FWER p, 1 outside clusters). All export with
+\code{\link[=write_nifti_assays]{write_nifti_assays()}}.
+\item The attachment \code{metadata(x)$attachments[["reduce/perm:onesample/contrast=<c>"]]}
+holds the null maxima (\code{null$max_t}, \code{null$tfce}, \code{null$cluster_mass},
+\code{null$cluster_extent}), the settings, and a cluster table with columns
+\code{cluster_id}, \code{sign}, \code{size}, \code{mass}, \code{p_fwer_mass}, \code{p_fwer_extent},
+\code{peak_stat}, \code{peak_t}, \code{peak_sample}, grid indices \code{peak_i/j/k} and
+world coordinates \code{peak_x/y/z} (from the space affine).
 }
 
 Welch two-sample t test (\code{"ttest:welch"}):
@@ -161,7 +217,9 @@ non-finite effects/design values or non-finite, nonpositive variances.
 \item \code{"fisher"}/\code{"combine:fisher"} and \code{"combine:lancaster"}: \code{chi2}, \code{df},
 \code{p_g}.
 \item \code{"perm:onesample"}/\code{"perm:twosample"}: \code{beta_g}, \code{se_g}, \code{t_g}, \code{df},
-\code{p_g}, \code{p_perm}, \code{p_fwer}.
+\code{p_g}, \code{p_perm}, \code{p_fwer}; with \code{options$spatial}, \code{"perm:onesample"}
+adds \code{z_g}, \code{n_eff}, \code{tfce}, \code{p_tfce_fwer}, \code{cluster_id} and
+\code{p_cluster_fwer} (see above).
 \item \code{"ttest:welch"}: \code{beta_g} (mean difference), \code{var_g}, \code{se_g}, \code{t_g},
 Welch--Satterthwaite \code{df}, \code{p_g}, the normal-equivalent \code{z_g} (same
 p-value as \code{t_g}), and per-group finite counts \code{n0}, \code{n1}; \code{z}/\code{p} mirror

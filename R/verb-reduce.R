@@ -66,14 +66,68 @@
 #'
 #' Permutation reducer contract:
 #' - `"perm:onesample"` performs an unweighted one-sample sign-flip t test
-#'   for each sample and contrast.
+#'   for each sample and contrast. It does not accept subject weights: omit
+#'   `weights` or pass `weights = "equal"`; an explicit `"1/var"`, `"n_eff"` or
+#'   `"custom"` is refused rather than silently ignored (#21).
 #' - `"perm:twosample"` performs an unweighted two-sample label-permutation
 #'   t test. It can infer the tested two-level group column from `formula`
 #'   and `col_data`, or use `options$group` directly.
 #' - Common options include `n_perm`, `seed`, `alternative`, and for
 #'   `"perm:twosample"` `variance = "welch"` or `"pooled"`.
 #' - Outputs include `t_g`, parametric `p_g`, permutation `p_perm`, and
-#'   max-|t| family-wise `p_fwer`.
+#'   max-statistic family-wise `p_fwer`. The maximum is taken in the direction
+#'   of `alternative` (max t for `"greater"`, max -t for `"less"`, max |t| for
+#'   `"two.sided"`), so `p_fwer >= p_perm` always holds (#22).
+#'
+#' Spatial (TFCE and cluster) inference with `"perm:onesample"`:
+#' - On a voxel space ([space_voxel()]), `options$spatial = "tfce"`,
+#'   `"cluster"` or `c("tfce", "cluster")` adds whole-brain family-wise
+#'   inference from the same subject-level sign flips. Every null
+#'   distribution (max-T, max-TFCE, largest cluster mass and extent) comes from
+#'   one sign matrix in one pass, so the corrected maps are mutually
+#'   consistent. Each sign flip multiplies a whole subject map by +1 or -1,
+#'   preserving its spatial correlation (unlike voxel-wise sign flipping).
+#' - The spatial statistic is the z-equivalent of each voxel's t
+#'   (`options$spatial_stat = "z"`, the default; same one-tail probability
+#'   with df = n - 1, so voxels with different subject counts are on one
+#'   scale) or the t statistic itself (`"t"`, as in FSL randomise).
+#' - TFCE: `tfce_H` (default 2), `tfce_E` (0.5) and `tfce_dh` (0.1); the
+#'   integral is evaluated at heights `dh, 2 dh, ...` up to the map maximum,
+#'   exactly as in [neurothresh::tfce_transform()].
+#' - Clusters: the cluster-forming threshold is `options$cluster_threshold` on
+#'   the scale of the spatial statistic, or `options$cluster_p` (default
+#'   0.001), a one-tailed p converted with that scale (`qnorm` for z, `qt` with
+#'   df = n_subjects - 1 for t). Clusters are tested by excess mass, the sum of
+#'   `stat - threshold` over the cluster (`cluster_stat = "mass"`, default),
+#'   or by extent (`"extent"`).
+#' - `options$connectivity` is 6 (default), 18 or 26 (26 is FSL's choice).
+#' - Tails: `"greater"` uses positive clusters/TFCE, `"less"` negative ones,
+#'   `"two.sided"` both; the two-sided null takes each permutation's maximum
+#'   over both tails.
+#' - Missing data: subjects with non-finite values are dropped voxel by voxel.
+#'   A voxel with fewer than `options$min_subjects` (default 2) finite
+#'   subjects, or zero variance, has no statistic: it is excluded from the
+#'   mask for TFCE and clustering (it never exceeds a threshold and does not
+#'   connect its neighbours), and its spatial assays are `NA`.
+#' - p-values are `(1 + #{null >= observed}) / (1 + n_null)`; the observed
+#'   (all +1) sign vector is never part of the null. With generated signs,
+#'   `n_perm` null flips are drawn; a user-supplied `options$signs` whose first
+#'   row is all +1 has that row excluded.
+#' - `options$threads` sets the OpenMP team for this call (default: the
+#'   package setting, see `options(fmrigds.threads)` / `FMRIGDS_THREADS` /
+#'   `OMP_NUM_THREADS`). Results do not depend on the thread count.
+#' - Extra assays: `z_g` (z-equivalent of `t_g`), `n_eff` (finite subjects),
+#'   and with `"tfce"` `tfce` (TFCE score in the tested tail, signed like
+#'   `t_g`) and `p_tfce_fwer`; with `"cluster"` `cluster_id` (0 outside
+#'   clusters; clusters numbered by decreasing mass) and `p_cluster_fwer`
+#'   (the cluster's FWER p, 1 outside clusters). All export with
+#'   [write_nifti_assays()].
+#' - The attachment `metadata(x)$attachments[["reduce/perm:onesample/contrast=<c>"]]`
+#'   holds the null maxima (`null$max_t`, `null$tfce`, `null$cluster_mass`,
+#'   `null$cluster_extent`), the settings, and a cluster table with columns
+#'   `cluster_id`, `sign`, `size`, `mass`, `p_fwer_mass`, `p_fwer_extent`,
+#'   `peak_stat`, `peak_t`, `peak_sample`, grid indices `peak_i/j/k` and
+#'   world coordinates `peak_x/y/z` (from the space affine).
 #'
 #' Welch two-sample t test (`"ttest:welch"`):
 #' - Unweighted, per sample and contrast, identical to
@@ -120,7 +174,9 @@
 #' - `"fisher"`/`"combine:fisher"` and `"combine:lancaster"`: `chi2`, `df`,
 #'   `p_g`.
 #' - `"perm:onesample"`/`"perm:twosample"`: `beta_g`, `se_g`, `t_g`, `df`,
-#'   `p_g`, `p_perm`, `p_fwer`.
+#'   `p_g`, `p_perm`, `p_fwer`; with `options$spatial`, `"perm:onesample"`
+#'   adds `z_g`, `n_eff`, `tfce`, `p_tfce_fwer`, `cluster_id` and
+#'   `p_cluster_fwer` (see above).
 #' - `"ttest:welch"`: `beta_g` (mean difference), `var_g`, `se_g`, `t_g`,
 #'   Welch--Satterthwaite `df`, `p_g`, the normal-equivalent `z_g` (same
 #'   p-value as `t_g`), and per-group finite counts `n0`, `n1`; `z`/`p` mirror
@@ -136,6 +192,7 @@ reduce <- function(x,
                    options = list(),
                    formula = NULL,
                    data = NULL) {
+  weights_explicit <- !missing(weights)
   # Allow registry-backed methods in addition to legacy names
   method <- as.character(method)[1]
   # Support alias: ivw -> 1/var
@@ -149,7 +206,7 @@ reduce <- function(x,
   if (is.null(reducer)) {
     stop(.unknown_reducer_message(method), call. = FALSE)
   }
-  .check_reducer_weights(reducer, method, weights)
+  .check_reducer_weights(reducer, method, weights, explicit = weights_explicit)
   # [[ ]], not $: `options$weights` partially matches an option such as
   # `weights_custom`, which would leave the requested scheme unforwarded.
   if (is.character(reducer$options_schema[["weights"]]) && is.null(options[["weights"]])) {
@@ -236,11 +293,26 @@ reduce <- function(x,
 # weights = "equal" is accepted) or by listing the supported schemes in an
 # `options_schema$weights` entry, in which case the scheme is forwarded as
 # `options$weights`.
-.check_reducer_weights <- function(reducer, method, weights) {
-  if (identical(weights, "1/var")) return(invisible(TRUE))
-  declared <- reducer$options_schema[["weights"]] %||% NULL
-  if (is.character(declared) && weights %in% declared) return(invisible(TRUE))
+.check_reducer_weights <- function(reducer, method, weights, explicit = FALSE) {
   mode <- reducer$model_contract$weight_mode %||% NA_character_
+  declared <- reducer$options_schema[["weights"]] %||% NULL
+  if (identical(weights, "1/var")) {
+    # The default "1/var" is tolerated when omitted; asking for it explicitly
+    # from an unweighted reducer would silently run an unweighted analysis.
+    if (isTRUE(explicit) && identical(mode, "unweighted") &&
+        !(is.character(declared) && "1/var" %in% declared)) {
+      stop(sprintf(
+        paste0(
+          "weights = \"1/var\" is not supported by reducer '%s', which is unweighted ",
+          "(every subject counts equally). Omit `weights` or use weights = \"equal\"; ",
+          "for inverse-variance weighting use a meta-analytic reducer such as \"random\"."
+        ),
+        reducer$name
+      ), call. = FALSE)
+    }
+    return(invisible(TRUE))
+  }
+  if (is.character(declared) && weights %in% declared) return(invisible(TRUE))
   if (identical(weights, "equal") && mode %in% c("unweighted", "evidence")) {
     return(invisible(TRUE))
   }

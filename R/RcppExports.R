@@ -25,6 +25,10 @@ lmm_knownvar_fit_cpp <- function(y, sampling_var, X, U_block, residual_var, fit 
     .Call(`_fmrigds_lmm_knownvar_fit_cpp`, y, sampling_var, X, U_block, residual_var, fit)
 }
 
+perm_onesample_spatial_cpp <- function(beta, sign_mat, dims, voxels, connectivity, tail, min_subj, skip_first, do_tfce, do_cluster, H, E, dh, cluster_threshold, stat_type, threads = 0L) {
+    .Call(`_fmrigds_perm_onesample_spatial_cpp`, beta, sign_mat, dims, voxels, connectivity, tail, min_subj, skip_first, do_tfce, do_cluster, H, E, dh, cluster_threshold, stat_type, threads)
+}
+
 set_omp_threads <- function(n) {
     invisible(.Call(`_fmrigds_set_omp_threads`, n))
 }

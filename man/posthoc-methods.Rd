@@ -37,7 +37,12 @@ Per-map \code{mu0}, \code{sigma0}, \code{threshold}, \code{k} and \code{pi0_smoo
 the \verb{posthoc/fdr:sabha/<q-name>} attachment.
 \item \code{"nt:tfce_fwer"} (needs the optional \code{neurothresh} package): adds \code{p_fwer}
 (TFCE FWER-corrected p-values), \code{sig_mask} (1/0 at \code{alpha}), and \code{tfce} (the
-TFCE-enhanced statistic map).
+TFCE-enhanced statistic map). It runs after \code{reduce()}, when the subject
+maps are gone, so it needs a hand-supplied \code{null_fun} or falls back to
+voxel-wise sign flips, which are not a valid null for spatially smooth
+maps. For a one-sample test prefer
+\code{reduce(method = "perm:onesample", options = list(spatial = "tfce"))},
+which flips whole subject maps (see \code{\link[=reduce]{reduce()}}).
 \item \code{"nt:cluster_fdr_perm"} (needs \code{neurothresh}): adds \code{q} (cluster-FDR q
 broadcast to voxels) and \code{sig_mask}.
 }

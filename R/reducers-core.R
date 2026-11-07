@@ -408,6 +408,11 @@ core_perm_onesample_kernel <- function(beta, var = NULL, X = NULL, df = NULL, op
   storage.mode(signs) <- "integer"
   skip_first <- .perm_first_row_is_identity(signs, rep(1L, nrow(beta)), generated, include_observed)
   tail <- .perm_tail_code(opts$alternative %||% "two.sided")
+  spatial <- .perm_spatial_options(opts, n_subject = nrow(beta))
+  if (!is.null(spatial)) {
+    res <- .perm_onesample_spatial(beta, signs, skip_first, opts, spatial)
+    return(.add_parametric_p_from_t(res, opts$alternative %||% "two.sided"))
+  }
   if (exists("perm_onesample_t_cpp", mode = "function")) { # nocov start
     res <- perm_onesample_t_cpp(
       beta,
@@ -676,6 +681,8 @@ register_core_reducers <- function() {
     fun = function(beta, var, X, z, p, df, df1, df2, opts) core_perm_onesample_kernel(beta, var, X, df, opts),
     requires = c("beta"),
     provides = c("beta_g", "se_g", "t_g", "df", "p_g", "p_perm", "p_fwer"),
+    optional_provides = c("z_g", "n_eff", "tfce", "p_tfce_fwer", "cluster_id", "p_cluster_fwer"),
+    uses_space = TRUE,
     options_schema = list(alternative = c("two.sided", "less", "greater")),
     model_contract = list(
       uses_X = FALSE,
