@@ -1,6 +1,7 @@
 # Reducer execution -------------------------------------------------------
 
-apply_reduce <- function(node, arrays, weights, subjects, col_data = NULL, contrast_data = NULL, contrasts = NULL) {
+apply_reduce <- function(node, arrays, weights, subjects, col_data = NULL, contrast_data = NULL, contrasts = NULL,
+                         space = NULL) {
   name <- .normalize_reducer_name(node$method)
   reducer <- get_reducer(name)
   if (is.null(reducer)) {
@@ -64,6 +65,9 @@ apply_reduce <- function(node, arrays, weights, subjects, col_data = NULL, contr
   base_fields <- setdiff(out_fields, reg_fields)
   out_arrays <- lapply(base_fields, function(.) array(NA_real_, dim = c(n_samples, 1, n_contrast)))
   names(out_arrays) <- base_fields
+  # Outputs the kernel returns only for some option settings: allocated when
+  # first returned, so they never appear as all-NA assays.
+  optional_fields <- reducer$optional_provides %||% character()
 
   is_reg <- grepl("^meta:(fe|re)_reg$", reducer$name) || grepl("^ols:voxelwise$", reducer$name)
   design_info <- NULL
@@ -72,6 +76,9 @@ apply_reduce <- function(node, arrays, weights, subjects, col_data = NULL, contr
   param_arrays <- list()
   # Validate and prepare reducer options once
   opts_root <- validate_reducer_options(reducer$options_schema %||% list(), node$options %||% list())
+  if (isTRUE(reducer$uses_space) && is.null(opts_root[["space"]])) {
+    opts_root[["space"]] <- space
+  }
   if (length(extra_inputs) && !is.null(opts_root$inputs)) {
     stop("options$inputs is reserved for the per-feature assays of reducer '",
          reducer$name, "'.", call. = FALSE)
@@ -189,10 +196,22 @@ apply_reduce <- function(node, arrays, weights, subjects, col_data = NULL, contr
       }
     }
     # Scalars/vectors like Q, df_res, tau2 are still handled as usual
-    for (nm in intersect(names(res), base_fields)) {
+    for (nm in intersect(names(res), optional_fields)) {
+      if (is.null(out_arrays[[nm]])) {
+        out_arrays[[nm]] <- array(NA_real_, dim = c(n_samples, 1, n_contrast))
+      }
+    }
+    for (nm in intersect(names(res), c(base_fields, optional_fields))) {
       vec <- as.numeric(res[[nm]])
       if (length(vec) != n_samples) vec <- rep_len(vec, n_samples)
       out_arrays[[nm]][, 1, k] <- vec
+    }
+    # Kernel-level attachment (e.g. permutation null distributions and
+    # cluster tables), keyed by reducer and contrast.
+    if (is.list(res$attachment)) {
+      c_label <- if (length(contrasts) >= k) as.character(contrasts[k]) else as.character(k)
+      key <- paste0("reduce/", reducer$name, "/contrast=", c_label)
+      attachments[[key]] <- c(res$attachment, list(contrast = c_label, contrast_index = k))
     }
     # Optional covariance output: emit assays per parameter pair and also attach packed triangles
     if (!is.null(res$cov_tri)) {

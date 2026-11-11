@@ -368,7 +368,8 @@ canonicalize_node <- function(node) {
       current_row_data <- NULL
       subset_info <- list(samples = NULL, subjects = NULL, contrasts = NULL)
     } else if (op == "reduce") {
-      res <- apply_reduce(node, arrays, node$weights, current_subjects, col_data, current_contrast_data, current_contrasts)
+      res <- apply_reduce(node, arrays, node$weights, current_subjects, col_data, current_contrast_data, current_contrasts,
+                          space = current_space)
       arrays <- res$arrays
       current_subjects <- res$subjects %||% "meta"
       current_contrasts <- res$contrasts %||% current_contrasts

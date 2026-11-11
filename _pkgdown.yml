@@ -25,6 +25,7 @@ articles:
   - repeated-measures-lmm
   - spatial-operations
   - as-plan-and-spatial-fdr
+  - whole-brain-permutation
   - group-examination
 - title: Data formats
   contents: fmristore-ingestion

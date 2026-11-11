@@ -153,7 +153,12 @@ list_posthoc <- function() {
 #'   the `posthoc/fdr:sabha/<q-name>` attachment.
 #' - `"nt:tfce_fwer"` (needs the optional `neurothresh` package): adds `p_fwer`
 #'   (TFCE FWER-corrected p-values), `sig_mask` (1/0 at `alpha`), and `tfce` (the
-#'   TFCE-enhanced statistic map).
+#'   TFCE-enhanced statistic map). It runs after `reduce()`, when the subject
+#'   maps are gone, so it needs a hand-supplied `null_fun` or falls back to
+#'   voxel-wise sign flips, which are not a valid null for spatially smooth
+#'   maps. For a one-sample test prefer
+#'   `reduce(method = "perm:onesample", options = list(spatial = "tfce"))`,
+#'   which flips whole subject maps (see [reduce()]).
 #' - `"nt:cluster_fdr_perm"` (needs `neurothresh`): adds `q` (cluster-FDR q
 #'   broadcast to voxels) and `sig_mask`.
 #'

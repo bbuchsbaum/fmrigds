@@ -28,6 +28,13 @@
 #'   passes them as the named list `opts$inputs`. Execution fails if a named
 #'   assay is absent. Like the subject-level inputs, these assays are dropped
 #'   from the reduced result.
+#' @param optional_provides Optional character vector of outputs that the
+#'   kernel returns only for some option settings (for example the TFCE and
+#'   cluster assays of `"perm:onesample"`). They become assays only when the
+#'   kernel returns them, instead of being written as all-`NA` assays.
+#' @param uses_space Logical; if `TRUE` the engine passes the realised sample
+#'   space (e.g. a [space_voxel()] with the voxel grid and mask) to the kernel
+#'   as `opts$space`, unless the caller supplied one.
 #' @return Invisibly, the registered reducer `name`.
 #' @export
 register_reducer <- function(name,
@@ -39,7 +46,9 @@ register_reducer <- function(name,
                              model_contract = NULL,
                              diagnostics = NULL,
                              frame_fun = NULL,
-                             extra_inputs = character()) {
+                             extra_inputs = character(),
+                             optional_provides = character(),
+                             uses_space = FALSE) {
   stopifnot(is.character(name), length(name) == 1L, is.function(fun))
   if (!is.null(frame_fun) && !is.function(frame_fun)) {
     stop("`frame_fun` must be NULL or a function.", call. = FALSE)
@@ -65,7 +74,10 @@ register_reducer <- function(name,
     model_contract = model_contract,
     diagnostics = diagnostics,
     frame_fun = frame_fun,
-    extra_inputs = extra_inputs
+    extra_inputs = extra_inputs,
+    optional_provides = setdiff(as.character(optional_provides %||% character()),
+                                as.character(provides)),
+    uses_space = isTRUE(uses_space)
   )
   invisible(name)
 }

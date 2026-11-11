@@ -416,14 +416,18 @@
 
   if (!is.null(opts[["reduce"]])) {
     reduce_opts <- .cli_parse_options_kv(opts[["reduce-option"]] %||% NULL)
-    plan <- reduce(
+    reduce_args <- list(
       plan,
       method = as.character(.cli_get_opt(opts, "reduce")),
-      weights = as.character(.cli_get_opt(opts, "weights", "1/var")),
       by = as.character(.cli_get_opt(opts, "reduce-by", "contrast")),
       formula = .cli_get_opt(opts, "formula", NULL),
       options = reduce_opts
     )
+    # Forward --weights only when given, so that unweighted reducers are not
+    # handed an explicit "1/var" they would have to refuse.
+    cli_weights <- .cli_get_opt(opts, "weights", NULL)
+    if (!is.null(cli_weights)) reduce_args$weights <- as.character(cli_weights)
+    plan <- do.call(reduce, reduce_args)
   }
 
   if (!is.null(opts[["posthoc"]])) {

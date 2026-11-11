@@ -101,6 +101,32 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// perm_onesample_spatial_cpp
+Rcpp::List perm_onesample_spatial_cpp(const arma::mat& beta, const arma::imat& sign_mat, const Rcpp::IntegerVector& dims, const Rcpp::IntegerVector& voxels, const int connectivity, const int tail, const int min_subj, const bool skip_first, const bool do_tfce, const bool do_cluster, const double H, const double E, const double dh, const double cluster_threshold, const int stat_type, const int threads);
+RcppExport SEXP _fmrigds_perm_onesample_spatial_cpp(SEXP betaSEXP, SEXP sign_matSEXP, SEXP dimsSEXP, SEXP voxelsSEXP, SEXP connectivitySEXP, SEXP tailSEXP, SEXP min_subjSEXP, SEXP skip_firstSEXP, SEXP do_tfceSEXP, SEXP do_clusterSEXP, SEXP HSEXP, SEXP ESEXP, SEXP dhSEXP, SEXP cluster_thresholdSEXP, SEXP stat_typeSEXP, SEXP threadsSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const arma::mat& >::type beta(betaSEXP);
+    Rcpp::traits::input_parameter< const arma::imat& >::type sign_mat(sign_matSEXP);
+    Rcpp::traits::input_parameter< const Rcpp::IntegerVector& >::type dims(dimsSEXP);
+    Rcpp::traits::input_parameter< const Rcpp::IntegerVector& >::type voxels(voxelsSEXP);
+    Rcpp::traits::input_parameter< const int >::type connectivity(connectivitySEXP);
+    Rcpp::traits::input_parameter< const int >::type tail(tailSEXP);
+    Rcpp::traits::input_parameter< const int >::type min_subj(min_subjSEXP);
+    Rcpp::traits::input_parameter< const bool >::type skip_first(skip_firstSEXP);
+    Rcpp::traits::input_parameter< const bool >::type do_tfce(do_tfceSEXP);
+    Rcpp::traits::input_parameter< const bool >::type do_cluster(do_clusterSEXP);
+    Rcpp::traits::input_parameter< const double >::type H(HSEXP);
+    Rcpp::traits::input_parameter< const double >::type E(ESEXP);
+    Rcpp::traits::input_parameter< const double >::type dh(dhSEXP);
+    Rcpp::traits::input_parameter< const double >::type cluster_threshold(cluster_thresholdSEXP);
+    Rcpp::traits::input_parameter< const int >::type stat_type(stat_typeSEXP);
+    Rcpp::traits::input_parameter< const int >::type threads(threadsSEXP);
+    rcpp_result_gen = Rcpp::wrap(perm_onesample_spatial_cpp(beta, sign_mat, dims, voxels, connectivity, tail, min_subj, skip_first, do_tfce, do_cluster, H, E, dh, cluster_threshold, stat_type, threads));
+    return rcpp_result_gen;
+END_RCPP
+}
 // set_omp_threads
 void set_omp_threads(SEXP n);
 RcppExport SEXP _fmrigds_set_omp_threads(SEXP nSEXP) {
@@ -300,6 +326,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_fmrigds_lmm_lowrank_fit_cpp", (DL_FUNC) &_fmrigds_lmm_lowrank_fit_cpp, 4},
     {"_fmrigds_lmm_knownvar_objective_cpp", (DL_FUNC) &_fmrigds_lmm_knownvar_objective_cpp, 6},
     {"_fmrigds_lmm_knownvar_fit_cpp", (DL_FUNC) &_fmrigds_lmm_knownvar_fit_cpp, 6},
+    {"_fmrigds_perm_onesample_spatial_cpp", (DL_FUNC) &_fmrigds_perm_onesample_spatial_cpp, 16},
     {"_fmrigds_set_omp_threads", (DL_FUNC) &_fmrigds_set_omp_threads, 1},
     {"_fmrigds_meta_fe_cpp", (DL_FUNC) &_fmrigds_meta_fe_cpp, 5},
     {"_fmrigds_meta_re_dl_cpp", (DL_FUNC) &_fmrigds_meta_re_dl_cpp, 5},

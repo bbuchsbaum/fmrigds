@@ -1,0 +1,192 @@
+---
+title: 'Whole-brain sign-flip inference: TFCE and cluster mass'
+output:
+  rmarkdown::html_vignette:
+    toc: yes
+    toc_depth: 2
+    css: albers.css
+    includes:
+      in_header: albers-header.html
+params:
+  family: red
+  preset: interaction
+resource_files:
+- albers.css
+- albers.js
+- albers-header.html
+- fonts
+
+vignette: |
+  %\VignetteIndexEntry{Whole-brain sign-flip inference: TFCE and cluster mass}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+if (requireNamespace("ragg", quietly = TRUE)) knitr::opts_chunk$set(dev = "ragg_png")
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  message = FALSE,
+  warning = FALSE
+)
+library(fmrigds)
+set.seed(42)
+```
+
+A one-sample group analysis asks whether the mean of the subjects' contrast
+maps differs from zero. Under the null hypothesis each subject's map is
+symmetric about zero, so flipping the sign of a whole map leaves its
+distribution unchanged. Flipping whole maps, not single voxels, keeps each
+subject's spatial correlation intact. That is what makes the permutation null
+valid for statistics that depend on spatial extent, such as threshold-free
+cluster enhancement (TFCE) and cluster mass.
+
+`reduce(method = "perm:onesample")` runs this test. With
+`options$spatial`, it also computes TFCE and cluster family-wise error (FWER)
+p-values from the same sign flips as the voxelwise max-T correction.
+
+## A small example
+
+We simulate 14 subjects on a 16 x 16 x 10 grid. Each map is smooth noise,
+and a block of voxels carries a positive effect.
+
+```{r simulate}
+dims <- c(16L, 16L, 10L)
+n_subj <- 14L
+mask_idx <- seq_len(prod(dims))
+
+smooth <- function(a) {
+  # Average each voxel with its six neighbours, twice.
+  for (it in 1:2) {
+    b <- a
+    b[-1, , ] <- b[-1, , ] + a[-dims[1], , ]
+    b[-dims[1], , ] <- b[-dims[1], , ] + a[-1, , ]
+    b[, -1, ] <- b[, -1, ] + a[, -dims[2], ]
+    b[, -dims[2], ] <- b[, -dims[2], ] + a[, -1, ]
+    b[, , -1] <- b[, , -1] + a[, , -dims[3]]
+    b[, , -dims[3]] <- b[, , -dims[3]] + a[, , -1]
+    a <- b / 7
+  }
+  a / sd(a)
+}
+
+effect <- array(0, dims)
+effect[5:9, 5:9, 4:6] <- 1.2
+beta <- vapply(seq_len(n_subj), function(s) {
+  (smooth(array(rnorm(prod(dims)), dims)) + effect)[mask_idx]
+}, numeric(length(mask_idx)))
+
+g <- new_gds(
+  assays = list(beta = array(beta, c(length(mask_idx), n_subj, 1L)),
+                var = array(1, c(length(mask_idx), n_subj, 1L))),
+  space = space_voxel(dims, affine = diag(c(2, 2, 2, 1)), mask_idx = mask_idx,
+                      storage = "packed"),
+  subjects = paste0("sub-", seq_len(n_subj)),
+  contrasts = "task"
+)
+```
+
+The analysis is one `reduce()` call. `spatial = c("tfce", "cluster")` asks
+for both statistics. Clusters are formed at a one-tailed voxel p of 0.01
+(`cluster_p`) and tested by excess mass, the sum of `z - threshold` over the
+cluster.
+
+```{r run}
+res <- g |>
+  reduce(method = "perm:onesample",
+         options = list(n_perm = 1000, seed = 1, alternative = "greater",
+                        spatial = c("tfce", "cluster"), cluster_p = 0.01)) |>
+  compute()
+
+names(assays(res))
+```
+
+The corrected maps are ordinary assays:
+
+```{r maps}
+inside <- as.vector(effect[mask_idx] > 0)
+data.frame(
+  region = c("effect block", "elsewhere"),
+  min_p_maxT = c(min(assay(res, "p_fwer")[inside]), min(assay(res, "p_fwer")[!inside])),
+  min_p_TFCE = c(min(assay(res, "p_tfce_fwer")[inside]), min(assay(res, "p_tfce_fwer")[!inside])),
+  min_p_cluster = c(min(assay(res, "p_cluster_fwer")[inside]),
+                    min(assay(res, "p_cluster_fwer")[!inside]))
+)
+```
+
+Max-T only reaches the strongest voxels of the block; TFCE and cluster mass
+pool evidence over its extent and give smaller p-values. Both spatial methods
+also mark some voxels just outside the block: noise voxels above the
+cluster-forming threshold that touch the block join its cluster and share its
+p-value, and TFCE support spreads to such neighbours. A significant cluster
+says that the cluster contains signal, not that every voxel in it does.
+
+The null distributions and the cluster table are stored in an attachment.
+Peaks are given as grid indices and as world coordinates from the space's
+affine.
+
+```{r clusters}
+att <- metadata(res)$attachments[["reduce/perm:onesample/contrast=task"]]
+head(att$clusters[, c("cluster_id", "size", "mass", "p_fwer_mass", "p_fwer_extent",
+                      "peak_stat", "peak_x", "peak_y", "peak_z")])
+quantile(att$null$tfce, 0.95)   # the 5% FWER TFCE threshold
+```
+
+`write_nifti_assays()` writes the maps for viewing, for example the TFCE
+p-values and the cluster labels:
+
+```{r export, eval = requireNamespace("RNifti", quietly = TRUE)}
+out_dir <- tempfile("perm_maps")
+manifest <- write_nifti_assays(res, out_dir,
+                               assays = c("tfce", "p_tfce_fwer", "cluster_id"))
+basename(manifest$path)
+```
+
+## Options
+
+| option | default | meaning |
+|---|---|---|
+| `spatial` | none | `"tfce"`, `"cluster"` or both |
+| `alternative` | `"two.sided"` | tail for every corrected map; two-sided uses both tails |
+| `n_perm`, `seed` | 5000, none | number of sign flips; seed for reproducibility |
+| `spatial_stat` | `"z"` | z-equivalent of t (`"z"`) or t itself (`"t"`, as in FSL randomise) |
+| `tfce_H`, `tfce_E`, `tfce_dh` | 2, 0.5, 0.1 | TFCE height and extent exponents, height step |
+| `cluster_p` / `cluster_threshold` | 0.001 | cluster-forming threshold as a one-tailed p, or on the statistic's scale |
+| `cluster_stat` | `"mass"` | test clusters by excess mass or by extent |
+| `connectivity` | 6 | voxel neighbourhood: 6, 18 or 26 |
+| `min_subjects` | 2 | voxels with fewer finite subjects are excluded |
+| `threads` | package setting | OpenMP threads for this call |
+
+Missing values are dropped subject by subject at each voxel. When coverage
+differs between subjects, a voxel's t has its own degrees of freedom, which
+is why the default spatial statistic is the z-equivalent of t. A voxel with
+fewer than `min_subjects` finite subjects, or with zero variance, has no
+statistic. It is excluded from the mask: it never exceeds a threshold, it does
+not connect its neighbours into one cluster, and its spatial assays are `NA`.
+
+## Whole-brain data
+
+For real data the source is a set of subject contrast maps and a brain mask.
+The call is the same:
+
+```{r nifti, eval = FALSE}
+files <- sprintf("derivatives/sub-%02d_task_beta.nii.gz", 1:35)
+res <- gds(nifti_source(beta = files, subjects = sprintf("sub-%02d", 1:35)),
+           format = "nifti", mask = "group_mask.nii.gz") |>
+  reduce(method = "perm:onesample",
+         options = list(n_perm = 5000, seed = 1, alternative = "two.sided",
+                        spatial = c("tfce", "cluster"), cluster_p = 0.001)) |>
+  compute()
+write_nifti_assays(res, "group_maps",
+                   assays = c("t_g", "p_fwer", "tfce", "p_tfce_fwer",
+                              "cluster_id", "p_cluster_fwer"))
+```
+
+The permutations run in compiled code, in parallel across sign flips. Set
+the thread count before loading the package with `FMRIGDS_THREADS` (or
+`OMP_NUM_THREADS`), or per call with `options$threads`; the default is two
+threads. On a 243,515-voxel mask with 35 subjects, 5,000 two-sided sign flips
+computing max-T, TFCE and cluster mass together took about one minute with
+eight threads on an Apple M-series laptop (about six minutes with one
+thread); see `inst/examples/fmrigds_perm_spatial_benchmark.R`.

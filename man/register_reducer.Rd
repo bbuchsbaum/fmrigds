@@ -14,7 +14,9 @@ register_reducer(
   model_contract = NULL,
   diagnostics = NULL,
   frame_fun = NULL,
-  extra_inputs = character()
+  extra_inputs = character(),
+  optional_provides = character(),
+  uses_space = FALSE
 )
 }
 \arguments{
@@ -51,6 +53,15 @@ named assay to a \verb{subjects x samples} matrix, exactly like \code{beta}, and
 passes them as the named list \code{opts$inputs}. Execution fails if a named
 assay is absent. Like the subject-level inputs, these assays are dropped
 from the reduced result.}
+
+\item{optional_provides}{Optional character vector of outputs that the
+kernel returns only for some option settings (for example the TFCE and
+cluster assays of \code{"perm:onesample"}). They become assays only when the
+kernel returns them, instead of being written as all-\code{NA} assays.}
+
+\item{uses_space}{Logical; if \code{TRUE} the engine passes the realised sample
+space (e.g. a \code{\link[=space_voxel]{space_voxel()}} with the voxel grid and mask) to the kernel
+as \code{opts$space}, unless the caller supplied one.}
 }
 \value{
 Invisibly, the registered reducer \code{name}.

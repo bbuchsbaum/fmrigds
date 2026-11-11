@@ -1,5 +1,41 @@
 # fmrigds (development version)
 
+- `perm:onesample` gains whole-brain spatial inference from subject-level
+  sign flips: `options = list(spatial = c("tfce", "cluster"))` on a voxel
+  space adds TFCE and cluster-mass (or extent) family-wise p-values. One sign
+  matrix drives the max-T, max-TFCE and largest-cluster nulls in a single
+  compiled, OpenMP-parallel pass over the permutations; the observed flip is
+  never in the null and p = (1 + #{null >= obs}) / (1 + n_null). All three
+  respect `alternative` (two-sided takes each permutation's maximum over both
+  tails). New assays: `z_g`, `n_eff`, `tfce` (signed like `t_g`),
+  `p_tfce_fwer`, `cluster_id`, `p_cluster_fwer`; the attachment
+  `reduce/perm:onesample/contrast=<c>` holds the null maxima and a cluster
+  table (size, mass, FWER p by mass and by extent, peak statistic and peak
+  grid/world coordinates). Options: `spatial_stat` (`"z"` default, or `"t"`),
+  `tfce_H`/`tfce_E`/`tfce_dh`, `cluster_p` or `cluster_threshold`,
+  `cluster_stat`, `connectivity` (6/18/26), `threads`. Voxels with fewer than
+  `min_subjects` finite subjects are excluded from the mask. TFCE and
+  clusters equal `neurothresh::tfce_fwer()` / `neurothresh::label_clusters()`
+  given the same sign flips; the compiled core is vendored from neurothresh
+  (`src/nt_spatial_core.h`), so neurothresh stays optional. On a
+  243,515-voxel mask with 35 subjects, 5,000 two-sided flips with max-T, TFCE
+  and cluster mass take about one minute on eight threads. See
+  `vignette("whole-brain-permutation")`.
+- `perm:onesample` refuses an explicit `weights = "1/var"` (as it already
+  refused `"n_eff"` and `"custom"`): it is unweighted, so the request would
+  have been silently ignored (#21). Omitting `weights` or `weights = "equal"`
+  is unchanged. The same applies to the other unweighted reducers
+  (`ols:voxelwise`, `perm:twosample`, `ttest:welch`). The CLI now forwards
+  `--weights` only when it is given.
+- Regression tests pin the directional max-statistic FWER of
+  `perm:onesample` (#22): `p_fwer >= p_perm` for every `alternative`, with and
+  without spatial statistics. The reproducer in #22 no longer fails on the
+  current code.
+- `register_reducer()` gains `optional_provides` (outputs that become assays
+  only when the kernel returns them) and `uses_space` (the engine passes the
+  realised sample space as `opts$space`). Kernels may return an `attachment`
+  list, stored under `reduce/<reducer>/contrast=<label>`.
+
 - The NIfTI adapter reads t-statistic maps: `gds(list(t = files, df = df),
   format = "nifti")` (or `nifti_source(t = , df = )`) gives the assays `t` and
   `df` for the `combine:*` reducers. `df` is one value or one per subject and
